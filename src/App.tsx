@@ -127,7 +127,7 @@ function App() {
     aliveCount: hostileCount,
     damageEnemy,
     killEnemy,
-  } = useEnemyCombat({ sessionKey: combatSessionKey, count: 8 });
+  } = useEnemyCombat({ sessionKey: combatSessionKey, count: 12 });
 
   useEffect(() => {
     if (state === 'ready') gameAudio.setBattlefieldActive(true);

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   CombatObstacle,
   EnemyCombatant,
@@ -20,6 +21,7 @@ const FRIENDLY_RIFLE_LIFETIME = 2.7;
 const FRIENDLY_RIFLE_DAMAGE = 1;
 const FRIENDLY_MAX_RANGE = 58;
 const TRACER_LENGTH = 0.58;
+const SOLDIER_SCALE = 0.96;
 
 interface FriendlyProjectile {
   active: boolean;
@@ -294,7 +296,6 @@ function StaticFightingPositions() {
 const SOLDIER_GEOMETRY = {
   box: new THREE.BoxGeometry(1, 1, 1),
   leg: new THREE.CylinderGeometry(0.052, 0.066, 1, 7),
-  arm: new THREE.CylinderGeometry(0.043, 0.053, 1, 7),
   canteen: new THREE.CylinderGeometry(0.045, 0.05, 1, 8),
   antenna: new THREE.CylinderGeometry(0.007, 0.012, 1, 6),
   neck: new THREE.CylinderGeometry(0.055, 0.065, 1, 7),
@@ -302,8 +303,6 @@ const SOLDIER_GEOMETRY = {
   hand: new THREE.SphereGeometry(1, 7, 5),
   helmet: new THREE.SphereGeometry(1, 11, 7, 0, Math.PI * 2, 0, Math.PI * 0.68),
   helmetBand: new THREE.TorusGeometry(0.122, 0.011, 5, 14),
-  foreEnd: new THREE.ConeGeometry(1, 1, 4),
-  barrel: new THREE.CylinderGeometry(0.013, 0.017, 1, 7),
   flash: new THREE.ConeGeometry(0.075, 0.2, 7),
 };
 const standardMaterial = (color: string, roughness: number, metalness = 0) => (
@@ -325,11 +324,6 @@ const SOLDIER_MATERIAL = {
   helmetA: standardMaterial('#44523b', 0.82),
   helmetB: standardMaterial('#505b40', 0.82),
   helmetBand: standardMaterial('#323b2d', 1),
-  gunStock: standardMaterial('#282e29', 0.72, 0.24),
-  gunMetal: standardMaterial('#1d2321', 0.56, 0.48),
-  gunDetail: standardMaterial('#222824', 0.62, 0.4),
-  foreEnd: standardMaterial('#30372f', 0.74),
-  barrel: standardMaterial('#1a201e', 0.55, 0.58),
   flash: new THREE.MeshBasicMaterial({
     color: '#ffe28b',
     transparent: true,
@@ -339,6 +333,172 @@ const SOLDIER_MATERIAL = {
     toneMapped: false,
   }),
 };
+
+type SoldierVectorTuple = [number, number, number];
+
+function asNonIndexedGeometry(geometry: THREE.BufferGeometry) {
+  if (!geometry.index) return geometry;
+  const nonIndexed = geometry.toNonIndexed();
+  geometry.dispose();
+  return nonIndexed;
+}
+
+function colorizeSoldierPart(
+  geometry: THREE.BufferGeometry,
+  color: THREE.ColorRepresentation,
+) {
+  const vertexCount = geometry.getAttribute('position').count;
+  const colors = new Float32Array(vertexCount * 3);
+  const resolved = new THREE.Color(color);
+  for (let index = 0; index < vertexCount; index += 1) {
+    const offset = index * 3;
+    colors[offset] = resolved.r;
+    colors[offset + 1] = resolved.g;
+    colors[offset + 2] = resolved.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+function transformedSoldierPart(
+  geometry: THREE.BufferGeometry,
+  color: THREE.ColorRepresentation,
+  position: SoldierVectorTuple,
+  rotation: SoldierVectorTuple = [0, 0, 0],
+) {
+  const normalizedGeometry = asNonIndexedGeometry(geometry);
+  const transform = new THREE.Object3D();
+  transform.position.set(...position);
+  transform.rotation.set(...rotation);
+  transform.updateMatrix();
+  normalizedGeometry.applyMatrix4(transform.matrix);
+  return colorizeSoldierPart(normalizedGeometry, color);
+}
+
+function cylinderBetweenSoldierPoints(
+  start: SoldierVectorTuple,
+  end: SoldierVectorTuple,
+  radiusTop: number,
+  radiusBottom: number,
+  radialSegments = 7,
+) {
+  const startPoint = new THREE.Vector3(...start);
+  const endPoint = new THREE.Vector3(...end);
+  const direction = endPoint.clone().sub(startPoint);
+  const length = direction.length();
+  const midpoint = startPoint.clone().lerp(endPoint, 0.5);
+  const orientation = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize(),
+  );
+  const transform = new THREE.Matrix4().compose(
+    midpoint,
+    orientation,
+    new THREE.Vector3(1, 1, 1),
+  );
+  const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, length, radialSegments);
+  geometry.applyMatrix4(transform);
+  return geometry;
+}
+
+function mergeSoldierParts(parts: THREE.BufferGeometry[]) {
+  const merged = mergeGeometries(parts, false);
+  if (!merged) throw new Error('Unable to merge infantry geometry');
+  for (const part of parts) part.dispose();
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+/**
+ * A tank-scale early M16 silhouette. Every detail is baked into one shared,
+ * vertex-coloured geometry so five readable rifles still cost one mesh each.
+ */
+function buildM16Geometry() {
+  const polymer = '#252b28';
+  const polymerEdge = '#343b36';
+  const gunmetal = '#171d1c';
+  const steelEdge = '#303735';
+  const parts: THREE.BufferGeometry[] = [
+    // Distinct fixed butt stock and butt plate.
+    transformedSoldierPart(new THREE.BoxGeometry(0.09, 0.115, 0.255), polymer, [0, 0, 0.155], [-0.035, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.105, 0.132, 0.026), polymerEdge, [0, -0.004, 0.286], [-0.035, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.073, 0.075, 0.09), polymer, [0, 0.01, 0.005]),
+
+    // Upper/lower receiver, pistol grip, and a slightly canted 20-round magazine.
+    transformedSoldierPart(new THREE.BoxGeometry(0.092, 0.105, 0.19), gunmetal, [0, 0, -0.075]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.082, 0.055, 0.18), steelEdge, [0, 0.057, -0.082]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.052, 0.115, 0.058), polymer, [0, -0.097, 0.002], [-0.18, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.06, 0.105, 0.064), gunmetal, [0, -0.103, -0.105], [0.13, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.056, 0.085, 0.06), steelEdge, [0, -0.188, -0.092], [-0.04, 0, 0]),
+
+    // The raised carry handle is the most readable early-M16 identifier.
+    transformedSoldierPart(new THREE.BoxGeometry(0.047, 0.07, 0.025), gunmetal, [0, 0.105, -0.02], [0.12, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.047, 0.07, 0.025), gunmetal, [0, 0.105, -0.145], [-0.12, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.047, 0.025, 0.145), steelEdge, [0, 0.139, -0.082]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.064, 0.018, 0.022), gunmetal, [0, 0.157, -0.025]),
+
+    // Tapered triangular handguard, long pencil barrel, flash hider, and front sight.
+    transformedSoldierPart(new THREE.CylinderGeometry(0.068, 0.043, 0.25, 6), polymerEdge, [0, 0.006, -0.3], [Math.PI / 2, 0, 0]),
+    transformedSoldierPart(new THREE.CylinderGeometry(0.012, 0.015, 0.29, 7), gunmetal, [0, 0.012, -0.565], [Math.PI / 2, 0, 0]),
+    transformedSoldierPart(new THREE.CylinderGeometry(0.018, 0.022, 0.055, 6), steelEdge, [0, 0.012, -0.738], [Math.PI / 2, 0, 0]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.064, 0.025, 0.027), gunmetal, [0, 0.034, -0.65]),
+    transformedSoldierPart(new THREE.BoxGeometry(0.018, 0.075, 0.018), gunmetal, [0, 0.075, -0.65]),
+  ];
+  return mergeSoldierParts(parts);
+}
+
+function buildShoulderedArmsGeometry(bodyY: number, rifleY: number) {
+  const parts = [
+    // Support arm: shoulder -> tucked elbow -> forward handguard grip.
+    cylinderBetweenSoldierPoints(
+      [-0.16, bodyY + 0.1, -0.012],
+      [-0.205, rifleY - 0.005, -0.18],
+      0.043,
+      0.052,
+    ),
+    cylinderBetweenSoldierPoints(
+      [-0.205, rifleY - 0.005, -0.18],
+      [-0.035, rifleY, -0.41],
+      0.039,
+      0.047,
+    ),
+    // Trigger arm: raised shoulder -> close elbow -> pistol-grip hand.
+    cylinderBetweenSoldierPoints(
+      [0.16, bodyY + 0.095, -0.01],
+      [0.205, rifleY - 0.045, -0.075],
+      0.043,
+      0.052,
+    ),
+    cylinderBetweenSoldierPoints(
+      [0.205, rifleY - 0.045, -0.075],
+      [0.04, rifleY - 0.012, -0.15],
+      0.039,
+      0.047,
+    ),
+  ];
+  const merged = mergeGeometries(parts, false);
+  if (!merged) throw new Error('Unable to merge shouldered arm geometry');
+  for (const part of parts) part.dispose();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+const M16_GEOMETRY = buildM16Geometry();
+const M16_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  vertexColors: true,
+  roughness: 0.68,
+  metalness: 0.28,
+  flatShading: true,
+});
+const SHOULDERED_ARM_GEOMETRY = {
+  kneeling: buildShoulderedArmsGeometry(0.49, 0.57),
+  standing: buildShoulderedArmsGeometry(0.62, 0.71),
+};
+const M16_MUZZLE_Z = -0.77;
+const M16_MUZZLE_LOCAL_Z = -0.1 + M16_MUZZLE_Z;
+const M16_MUZZLE_LOCAL_Y = 0.012;
 
 function SoldierModel({
   member,
@@ -367,7 +527,7 @@ function SoldierModel({
     <group
       ref={node => { soldierRefs.current[index] = node; }}
       position={member.position}
-      scale={0.96}
+      scale={SOLDIER_SCALE}
     >
       <group ref={node => { bodyRefs.current[index] = node; }}>
         {member.kneeling ? (
@@ -411,25 +571,24 @@ function SoldierModel({
           <mesh geometry={SOLDIER_GEOMETRY.helmetBand} material={SOLDIER_MATERIAL.helmetBand} position={[0, -0.007, 0]} />
         </group>
 
-        {/* Both arms are visibly planted on the rifle. */}
-        <mesh geometry={SOLDIER_GEOMETRY.arm} material={uniform} position={[-0.19, rifleY + 0.01, -0.09]} rotation={[1.15, 0, -0.23]} scale={[1, 0.34, 1]} />
-        <mesh geometry={SOLDIER_GEOMETRY.arm} material={uniform} position={[0.18, rifleY + 0.01, -0.08]} rotation={[1.08, 0, 0.24]} scale={[1, 0.32, 1]} />
-        {[-0.105, 0.105].map(handX => (
-          <mesh key={handX} geometry={SOLDIER_GEOMETRY.hand} material={SOLDIER_MATERIAL.skin} position={[handX, rifleY - 0.01, -0.25]} scale={0.052} />
-        ))}
+        {/* Bent arms terminate at the actual trigger and handguard grips. */}
+        <mesh
+          geometry={member.kneeling
+            ? SHOULDERED_ARM_GEOMETRY.kneeling
+            : SHOULDERED_ARM_GEOMETRY.standing}
+          material={uniform}
+        />
+        <mesh geometry={SOLDIER_GEOMETRY.hand} material={SOLDIER_MATERIAL.skin} position={[-0.035, rifleY, -0.41]} scale={0.052} />
+        <mesh geometry={SOLDIER_GEOMETRY.hand} material={SOLDIER_MATERIAL.skin} position={[0.04, rifleY - 0.012, -0.15]} scale={0.052} />
 
-        {/* Early M16 silhouette: stock, carry handle, triangular fore-end and long barrel. */}
-        <group position={[0, rifleY, -0.11]}>
-          <mesh geometry={SOLDIER_GEOMETRY.box} material={SOLDIER_MATERIAL.gunStock} position={[0, 0, 0.1]} scale={[0.09, 0.105, 0.26]} />
-          <mesh geometry={SOLDIER_GEOMETRY.box} material={SOLDIER_MATERIAL.gunMetal} position={[0, 0, -0.09]} scale={[0.085, 0.1, 0.18]} />
-          <mesh geometry={SOLDIER_GEOMETRY.box} material={SOLDIER_MATERIAL.gunDetail} position={[0, 0.09, -0.075]} scale={[0.045, 0.07, 0.15]} />
-          <mesh geometry={SOLDIER_GEOMETRY.foreEnd} material={SOLDIER_MATERIAL.foreEnd} position={[0, 0.015, -0.28]} rotation={[Math.PI / 2, 0, 0]} scale={[0.07, 0.085, 0.24]} />
-          <mesh geometry={SOLDIER_GEOMETRY.barrel} material={SOLDIER_MATERIAL.barrel} position={[0, 0.015, -0.5]} rotation={[Math.PI / 2, 0, 0]} scale={[1, 0.45, 1]} />
+        {/* One shared early-M16 mesh: fixed stock, carry handle, magazine, sights, and barrel. */}
+        <group position={[0, rifleY, -0.1]}>
+          <mesh geometry={M16_GEOMETRY} material={M16_MATERIAL} />
           <mesh
             ref={node => { flashRefs.current[index] = node; }}
             geometry={SOLDIER_GEOMETRY.flash}
             material={SOLDIER_MATERIAL.flash}
-            position={[0, 0.015, -0.76]}
+            position={[0, 0.012, M16_MUZZLE_Z]}
             rotation={[-Math.PI / 2, 0, 0]}
             visible={false}
             renderOrder={87}
@@ -511,6 +670,7 @@ export function USInfantrySquad({
     }))
   ), []);
   const muzzlePosition = useMemo(() => new THREE.Vector3(), []);
+  const candidateMuzzlePosition = useMemo(() => new THREE.Vector3(), []);
   const targetPosition = useMemo(() => new THREE.Vector3(), []);
   const shotDirection = useMemo(() => new THREE.Vector3(), []);
   const impactPosition = useMemo(() => new THREE.Vector3(), []);
@@ -605,11 +765,11 @@ export function USInfantrySquad({
         continue;
       }
 
-      // Select a stable target without allocating and sorting five temporary
-      // arrays every frame. The small index bias distributes fire across the
-      // first three contacts while distance remains the dominant factor.
-      let aimTarget: EnemyCombatant | null = null;
-      let aimTargetIndex = -1;
+      // Pick a stable preferred contact without allocating or sorting temporary
+      // arrays. On firing frames this is only a distribution bias: the clear-
+      // lane pass below chooses the final target before the rifle is rotated.
+      let preferredTarget: EnemyCombatant | null = null;
+      let preferredTargetIndex = -1;
       let aimScore = Number.POSITIVE_INFINITY;
       for (let enemyIndex = 0; enemyIndex < enemies.length; enemyIndex += 1) {
         const candidate = enemies[enemyIndex];
@@ -620,33 +780,34 @@ export function USInfantrySquad({
         const score = dx * dx + dz * dz + assignmentPenalty;
         if (score >= aimScore) continue;
         aimScore = score;
-        aimTarget = candidate;
-        aimTargetIndex = enemyIndex;
+        preferredTarget = candidate;
+        preferredTargetIndex = enemyIndex;
       }
-      if (!aimTarget) continue;
+      if (!preferredTarget) continue;
 
-      if (soldier) {
-        soldier.rotation.y = Math.atan2(
-          -(aimTarget.position[0] - member.position[0]),
-          -(aimTarget.position[2] - member.position[2]),
-        );
-      }
-      if (now < runtime.nextShotAt) continue;
-
-      // Read the actual rendered rifle muzzle after aim/stance animation. This
-      // keeps every flash and tracer attached to the barrel instead of appearing
-      // beside the soldier when the fire team turns toward an off-axis target.
-      if (soldier && flash) {
-        soldier.updateWorldMatrix(true, true);
-        flash.getWorldPosition(muzzlePosition);
-      } else {
-        muzzlePosition.set(
-          member.position[0],
-          member.position[1] + (member.kneeling ? 0.57 : 0.71),
-          member.position[2],
-        );
+      if (now < runtime.nextShotAt) {
+        if (soldier) {
+          soldier.rotation.y = Math.atan2(
+            -(preferredTarget.position[0] - soldier.position.x),
+            -(preferredTarget.position[2] - soldier.position.z),
+          );
+        }
+        continue;
       }
 
+      // Estimate the candidate-specific muzzle location for cover tests. The
+      // forward offset mirrors the rendered M16 but does not mutate scene
+      // matrices, so the final clear/suppression target can be chosen first.
+      const soldierX = soldier?.position.x ?? member.position[0];
+      const soldierY = soldier?.position.y ?? member.position[1];
+      const soldierZ = soldier?.position.z ?? member.position[2];
+      const rifleY = member.kneeling ? 0.57 : 0.71;
+      const candidateMuzzleY = soldierY + (
+        (body?.position.y ?? 0) + rifleY + M16_MUZZLE_LOCAL_Y
+      ) * SOLDIER_SCALE;
+      const muzzleForwardOffset = -(
+        M16_MUZZLE_LOCAL_Z + (body?.position.z ?? 0)
+      ) * SOLDIER_SCALE;
       let selectedTarget: EnemyCombatant | null = null;
       let suppressionTarget: EnemyCombatant | null = null;
       let selectedScore = Number.POSITIVE_INFINITY;
@@ -659,18 +820,31 @@ export function USInfantrySquad({
           candidate.position[1] + (candidate.stance === 'kneeling' ? 0.52 : 0.68),
           candidate.position[2],
         );
-        const distanceSq = muzzlePosition.distanceToSquared(targetPosition);
+        const targetDx = targetPosition.x - soldierX;
+        const targetDz = targetPosition.z - soldierZ;
+        const horizontalDistance = Math.sqrt(targetDx * targetDx + targetDz * targetDz);
+        const muzzleOffsetScale = horizontalDistance > 0.0001
+          ? muzzleForwardOffset / horizontalDistance
+          : 0;
+        candidateMuzzlePosition.set(
+          soldierX + targetDx * muzzleOffsetScale,
+          candidateMuzzleY,
+          soldierZ + targetDz * muzzleOffsetScale,
+        );
+        const distanceSq = candidateMuzzlePosition.distanceToSquared(targetPosition);
         if (distanceSq > FRIENDLY_MAX_RANGE * FRIENDLY_MAX_RANGE) continue;
         const assignmentPenalty = ((enemyIndex + 3 - (memberIndex % 3)) % 3) * 12;
-        const score = distanceSq + assignmentPenalty + (enemyIndex === aimTargetIndex ? -8 : 0);
+        const score = distanceSq
+          + assignmentPenalty
+          + (enemyIndex === preferredTargetIndex ? -8 : 0);
         if (score < suppressionScore) {
           suppressionScore = score;
           suppressionTarget = candidate;
         }
         if (score >= selectedScore) continue;
-        const obstacleT = findNearestObstacleHit(muzzlePosition, targetPosition, obstacles);
+        const obstacleT = findNearestObstacleHit(candidateMuzzlePosition, targetPosition, obstacles);
         if (obstacleT !== null && obstacleT < 0.9) continue;
-        if (terrainBlocksCombatSegment(muzzlePosition, targetPosition)) continue;
+        if (terrainBlocksCombatSegment(candidateMuzzlePosition, targetPosition)) continue;
         selectedTarget = candidate;
         selectedScore = score;
       }
@@ -680,6 +854,12 @@ export function USInfantrySquad({
       // projectile at that cover, so this improves feedback without wall-hacking.
       selectedTarget ??= suppressionTarget;
       if (!selectedTarget) {
+        if (soldier) {
+          soldier.rotation.y = Math.atan2(
+            -(preferredTarget.position[0] - soldier.position.x),
+            -(preferredTarget.position[2] - soldier.position.z),
+          );
+        }
         runtime.nextShotAt = now + 0.45;
         continue;
       }
@@ -689,6 +869,32 @@ export function USInfantrySquad({
         selectedTarget.position[1] + (selectedTarget.stance === 'kneeling' ? 0.52 : 0.68),
         selectedTarget.position[2],
       );
+
+      // Rotate to the final selected contact, update the complete model hierarchy,
+      // and only then sample the rendered flash socket. This keeps rifle, flash,
+      // tracer, and damage ray on the same target even when a nearer lane is blocked.
+      if (soldier) {
+        soldier.rotation.y = Math.atan2(
+          -(targetPosition.x - soldier.position.x),
+          -(targetPosition.z - soldier.position.z),
+        );
+      }
+      if (soldier && flash) {
+        soldier.updateWorldMatrix(true, true);
+        flash.getWorldPosition(muzzlePosition);
+      } else {
+        const targetDx = targetPosition.x - soldierX;
+        const targetDz = targetPosition.z - soldierZ;
+        const horizontalDistance = Math.sqrt(targetDx * targetDx + targetDz * targetDz);
+        const muzzleOffsetScale = horizontalDistance > 0.0001
+          ? muzzleForwardOffset / horizontalDistance
+          : 0;
+        muzzlePosition.set(
+          soldierX + targetDx * muzzleOffsetScale,
+          candidateMuzzleY,
+          soldierZ + targetDz * muzzleOffsetScale,
+        );
+      }
       shotDirection.copy(targetPosition).sub(muzzlePosition).normalize();
       const shotIndex = runtime.shotIndex++;
       shotDirection.x += (deterministicNoise(member.id, shotIndex, 1) - 0.5) * member.accuracy * 2;

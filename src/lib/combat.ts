@@ -66,15 +66,31 @@ export const ENEMY_RIFLE_SPEED = 18;
 export const ENEMY_RIFLE_LIFETIME = 3.2;
 
 const DEFAULT_SPAWN_ANCHORS: ReadonlyArray<readonly [number, number]> = [
-  [-11, 5],
-  [11, 5],
-  [-17, 13],
-  [17, 13],
-  [-11, 22],
-  [11, 22],
-  [-23, 29],
-  [23, 29],
+  [-10.5, 7.5],
+  [10.5, 7.5],
+  [-17.5, 15],
+  [17.5, 15],
+  [-9.5, 22.5],
+  [9.5, 22.5],
+  [-20.5, 29],
+  [20.5, 29],
+  [-3.5, 31.5],
+  [5, 34.5],
+  [-16.5, 38],
+  [17, 39],
 ];
+
+const MIN_ENEMY_COUNT = 6;
+const MAX_ENEMY_COUNT = DEFAULT_SPAWN_ANCHORS.length;
+const MIN_SPAWN_SPACING = 4.8;
+// Keep this encounter in the established central combat lane. The western edge
+// remains clear for large environmental features such as the river corridor.
+const SPAWN_BOUNDS = { minX: -24, maxX: 24, minZ: 5.5, maxZ: 43 } as const;
+const VC_LOW_COVER_LIPS = [
+  [0, 0.43, 0.27],
+  [-0.38, 0.28, 0.24],
+  [0.38, 0.28, 0.24],
+] as const;
 
 function seeded(seed: number, index: number, salt = 0) {
   const value = Math.sin(seed * 13.731 + index * 91.719 + salt * 17.173) * 43758.5453;
@@ -92,42 +108,96 @@ export function hashCombatSession(value: string | number) {
   return hash >>> 0;
 }
 
-function resolveSpawnPoint(seed: number, index: number, anchorX: number, anchorZ: number) {
-  let x = anchorX + (seeded(seed, index, 1) - 0.5) * 1.8;
-  let z = anchorZ + (seeded(seed, index, 2) - 0.5) * 1.8;
+function resolveSpawnPoint(
+  seed: number,
+  index: number,
+  anchorX: number,
+  anchorZ: number,
+  occupied: readonly [number, number, number][],
+) {
+  const jitterX = (seeded(seed, index, 1) - 0.5) * 1.8;
+  const jitterZ = (seeded(seed, index, 2) - 0.5) * 1.8;
+  const phase = seeded(seed, index, 3) * Math.PI * 2;
+  let terrainSafeFallback: [number, number, number] | null = null;
 
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    if (!intersectsTerrainMound(x, z, 0.45)) return [x, 0.02, z] as [number, number, number];
-    const angle = seeded(seed, index, 20 + attempt) * Math.PI * 2;
-    const distance = 1.4 + attempt * 0.48;
-    x = anchorX + Math.cos(angle) * distance;
-    z = anchorZ + Math.sin(angle) * distance;
+  // A deterministic sunflower search acts as a small Poisson-disc resolver:
+  // every candidate is repeatable, mound-safe, and separated from prior troops.
+  for (let attempt = 0; attempt < 48; attempt += 1) {
+    const radius = attempt === 0 ? 0 : 0.8 + Math.sqrt(attempt) * 0.72;
+    const angle = phase + attempt * 2.399963229728653;
+    const x = THREE.MathUtils.clamp(
+      anchorX + jitterX + Math.cos(angle) * radius,
+      SPAWN_BOUNDS.minX,
+      SPAWN_BOUNDS.maxX,
+    );
+    const z = THREE.MathUtils.clamp(
+      anchorZ + jitterZ + Math.sin(angle) * radius,
+      SPAWN_BOUNDS.minZ,
+      SPAWN_BOUNDS.maxZ,
+    );
+    if (intersectsTerrainMound(x, z, 0.45)) continue;
+    terrainSafeFallback ??= [x, 0.02, z];
+    if (occupied.some(([otherX, , otherZ]) => (
+      Math.hypot(x - otherX, z - otherZ) < MIN_SPAWN_SPACING
+    ))) continue;
+    return [x, 0.02, z] as [number, number, number];
   }
 
-  return [anchorX, 0.02, anchorZ] as [number, number, number];
+  // The authored anchors are already widely spaced, so this deterministic grid
+  // is only a defensive fallback for an unlucky seed near a terrain mound.
+  for (let offsetZ = -6; offsetZ <= 6; offsetZ += 1) {
+    for (let offsetX = -6; offsetX <= 6; offsetX += 1) {
+      const x = THREE.MathUtils.clamp(anchorX + offsetX, SPAWN_BOUNDS.minX, SPAWN_BOUNDS.maxX);
+      const z = THREE.MathUtils.clamp(anchorZ + offsetZ, SPAWN_BOUNDS.minZ, SPAWN_BOUNDS.maxZ);
+      if (intersectsTerrainMound(x, z, 0.45)) continue;
+      terrainSafeFallback ??= [x, 0.02, z];
+      if (occupied.some(([otherX, , otherZ]) => (
+        Math.hypot(x - otherX, z - otherZ) < MIN_SPAWN_SPACING
+      ))) continue;
+      return [x, 0.02, z] as [number, number, number];
+    }
+  }
+
+  return terrainSafeFallback ?? [
+    THREE.MathUtils.clamp(anchorX, SPAWN_BOUNDS.minX, SPAWN_BOUNDS.maxX),
+    0.02,
+    THREE.MathUtils.clamp(anchorZ, SPAWN_BOUNDS.minZ, SPAWN_BOUNDS.maxZ),
+  ] as [number, number, number];
 }
 
 /**
- * Produces a stable six-to-eight-soldier patrol. Stable placement matters because
- * combat/HUD state changes must not cause enemies to jump around the battlefield.
+ * Produces a stable six-to-twelve-soldier formation. Stable placement matters
+ * because combat/HUD state changes must not cause enemies to jump around the
+ * battlefield. The last four contacts are a deliberately slower reserve line:
+ * they deepen the scene without multiplying the original encounter's fire rate.
  */
-export function createVietCongCombatants(seed = 1968, requestedCount = 8): EnemyCombatant[] {
-  const count = THREE.MathUtils.clamp(Math.round(requestedCount), 6, 8);
+export function createVietCongCombatants(seed = 1968, requestedCount = 12): EnemyCombatant[] {
+  const count = THREE.MathUtils.clamp(Math.round(requestedCount), MIN_ENEMY_COUNT, MAX_ENEMY_COUNT);
+  const occupied: [number, number, number][] = [];
 
   return Array.from({ length: count }, (_, index) => {
     const [anchorX, anchorZ] = DEFAULT_SPAWN_ANCHORS[index];
+    const position = resolveSpawnPoint(seed, index, anchorX, anchorZ, occupied);
+    occupied.push(position);
+    const reserveLine = index >= 8;
     return {
       id: `vc-${seed}-${index}`,
-      position: resolveSpawnPoint(seed, index, anchorX, anchorZ),
+      position,
       health: ENEMY_MAX_HEALTH,
       maxHealth: ENEMY_MAX_HEALTH,
       alive: true,
       stance: index % 3 === 1 ? 'standing' : 'kneeling',
       headwear: index % 4 === 0 ? 'pith' : 'boonie',
       uniformVariant: index % 3,
-      fireInterval: 2.15 + seeded(seed, index, 4) * 1.55,
-      initialFireDelay: 1.6 + index * 0.34 + seeded(seed, index, 5),
-      accuracy: 0.035 + seeded(seed, index, 6) * 0.045,
+      fireInterval: reserveLine
+        ? 4.4 + seeded(seed, index, 4) * 2.3
+        : 3.1 + seeded(seed, index, 4) * 2.15,
+      initialFireDelay: reserveLine
+        ? 6.2 + (index - 8) * 1.15 + seeded(seed, index, 5) * 1.8
+        : 1.8 + index * 0.38 + seeded(seed, index, 5) * 1.15,
+      accuracy: reserveLine
+        ? 0.09 + seeded(seed, index, 6) * 0.06
+        : 0.04 + seeded(seed, index, 6) * 0.055,
     };
   });
 }
@@ -177,6 +247,40 @@ export function segmentSphereIntersection(
 }
 
 /**
+ * Tests the low frontal lip of a Viet Cong fighting position. This mirrors the
+ * visual horseshoe berm without treating foliage as an impenetrable wall: only
+ * shots below roughly chest height are stopped, while upper-body hits and fire
+ * from a flanking/rear angle remain clear.
+ */
+export function findVietCongLowCoverHit(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  enemy: EnemyCombatant,
+) {
+  const approachX = -enemy.position[0];
+  const approachZ = -12 - enemy.position[2];
+  const approachLength = Math.hypot(approachX, approachZ) || 1;
+  const forwardX = approachX / approachLength;
+  const forwardZ = approachZ / approachLength;
+  const sideX = -forwardZ;
+  const sideZ = forwardX;
+  let nearestT: number | null = null;
+
+  for (const [sideOffset, forwardOffset, radius] of VC_LOW_COVER_LIPS) {
+    const hitT = segmentSphereIntersectionXYZ(
+      start,
+      end,
+      enemy.position[0] + forwardX * forwardOffset + sideX * sideOffset,
+      enemy.position[1] + 0.19,
+      enemy.position[2] + forwardZ * forwardOffset + sideZ * sideOffset,
+      radius,
+    );
+    if (hitT !== null && (nearestT === null || hitT < nearestT)) nearestT = hitT;
+  }
+  return nearestT;
+}
+
+/**
  * Player-projectile helper. It selects the first living infantry target crossed
  * during the frame, avoiding tunnelling by fast cannon and machine-gun rounds.
  */
@@ -191,6 +295,8 @@ export function findNearestLivingEnemyHit(
 
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
+
+    const lowCoverHitT = findVietCongLowCoverHit(start, end, enemy);
 
     // Three overlapping volumes form an inexpensive vertical capsule. The upper
     // volume deliberately follows the weapon line rather than only the rendered
@@ -209,7 +315,9 @@ export function findNearestLivingEnemyHit(
         enemy.position[2],
         radius * radiusScale,
       );
-      if (hitT !== null && hitT < nearestT) {
+      if (hitT !== null
+        && (lowCoverHitT === null || hitT < lowCoverHitT)
+        && hitT < nearestT) {
         nearestT = hitT;
         nearestEnemy = enemy;
       }

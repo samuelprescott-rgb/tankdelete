@@ -7,10 +7,10 @@ import {
 } from '../lib/combat';
 
 export interface UseEnemyCombatOptions {
-  /** Change this whenever a directory/world session changes to rebuild the patrol. */
+  /** Change this whenever a directory/world session changes to rebuild the formation. */
   sessionKey?: string | number;
   seed?: number;
-  /** Clamped to the designed encounter size of six through eight fighters. */
+  /** Clamped to the designed encounter size of six through twelve fighters. */
   count?: number;
 }
 
@@ -38,7 +38,7 @@ export interface EnemyCombatState {
 export function useEnemyCombat({
   sessionKey = 'default',
   seed = 1968,
-  count = 8,
+  count = 12,
 }: UseEnemyCombatOptions = {}): EnemyCombatState {
   const encounterSeed = useMemo(
     () => (hashCombatSession(sessionKey) ^ Math.trunc(seed)) >>> 0,

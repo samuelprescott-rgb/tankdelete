@@ -160,9 +160,103 @@ function createGrassClumpGeometry() {
   return geometry;
 }
 
+interface RiverStation {
+  centerX: number;
+  mudHalfWidth: number;
+  waterHalfWidth: number;
+  z: number;
+}
+
+// Keep this compact watercourse on the west side of the playable space. The
+// shortened, bounded route is deliberately clear of every fixed terrain mound;
+// all scenery filters below consume these same stations.
+const RIVER_STATION_COUNT = 29;
+const RIVER_MIN_Z = -38;
+const RIVER_MAX_Z = 44;
+const RIVER_CROSSING_Z = -8;
+
+function createRiverStations(seed: number): RiverStation[] {
+  return Array.from({ length: RIVER_STATION_COUNT }, (_, index) => {
+    const progress = index / (RIVER_STATION_COUNT - 1);
+    const z = THREE.MathUtils.lerp(RIVER_MIN_Z, RIVER_MAX_Z, progress);
+    const broadBend = Math.sin(progress * Math.PI * 2.05 + 0.48) * 0.46;
+    const secondaryBend = Math.sin(progress * Math.PI * 4.8 - 0.72) * 0.18;
+    const seededBend = (coordinateNoise(index, 0, seed, 810) - 0.5) * 0.28;
+    // The westward bow at z≈11 steers the entire bank around the lone mound
+    // on this corridor; the short endpoints stop before the next north/south
+    // mound footprints.
+    const moundAvoidance = -3.45 * Math.exp(-Math.pow((z - 10.8) / 8.4, 2));
+    const waterHalfWidth = 1.16
+      + coordinateNoise(index, 0, seed, 811) * 0.32
+      + Math.sin(progress * Math.PI * 3.2) * 0.1;
+    return {
+      centerX: -33.55 + broadBend + secondaryBend + seededBend + moundAvoidance,
+      mudHalfWidth: waterHalfWidth + 0.62 + coordinateNoise(index, 0, seed, 812) * 0.2,
+      waterHalfWidth,
+      z,
+    };
+  });
+}
+
+/** Exact horizontal corridor test for the piecewise-linear river shapes. */
+function isInsideRiverCorridor(
+  x: number,
+  z: number,
+  stations: RiverStation[],
+  padding = 0,
+) {
+  if (z < RIVER_MIN_Z - padding || z > RIVER_MAX_Z + padding) return false;
+
+  const progress = THREE.MathUtils.clamp(
+    (z - RIVER_MIN_Z) / (RIVER_MAX_Z - RIVER_MIN_Z),
+    0,
+    1,
+  );
+  const scaledIndex = progress * (stations.length - 1);
+  const lowerIndex = Math.min(stations.length - 2, Math.floor(scaledIndex));
+  const mix = scaledIndex - lowerIndex;
+  const lower = stations[lowerIndex];
+  const upper = stations[lowerIndex + 1];
+  const centerX = THREE.MathUtils.lerp(lower.centerX, upper.centerX, mix);
+  const halfWidth = THREE.MathUtils.lerp(lower.mudHalfWidth, upper.mudHalfWidth, mix);
+  return Math.abs(x - centerX) <= halfWidth + padding;
+}
+
+function riverTerrainClearance(stations: RiverStation[]) {
+  const sampleCount = Math.ceil((RIVER_MAX_Z - RIVER_MIN_Z) / 0.2);
+  for (let sample = 0; sample <= sampleCount; sample += 1) {
+    const z = THREE.MathUtils.lerp(RIVER_MIN_Z, RIVER_MAX_Z, sample / sampleCount);
+    const progress = (z - RIVER_MIN_Z) / (RIVER_MAX_Z - RIVER_MIN_Z);
+    const scaledIndex = progress * (stations.length - 1);
+    const lowerIndex = Math.min(stations.length - 2, Math.floor(scaledIndex));
+    const mix = scaledIndex - lowerIndex;
+    const lower = stations[lowerIndex];
+    const upper = stations[lowerIndex + 1];
+    const centerX = THREE.MathUtils.lerp(lower.centerX, upper.centerX, mix);
+    const halfWidth = THREE.MathUtils.lerp(lower.mudHalfWidth, upper.mudHalfWidth, mix);
+
+    for (const mound of TERRAIN_MOUNDS) {
+      const dx = centerX - mound.x;
+      const dz = z - mound.z;
+      const cosine = Math.cos(mound.rotation);
+      const sine = Math.sin(mound.rotation);
+      const localX = cosine * dx + sine * dz;
+      const localZ = -sine * dx + cosine * dz;
+      // Expanding both radii by the entire bank width is intentionally
+      // conservative and guarantees neither water nor mud reaches the hill.
+      const radiusX = mound.sx + halfWidth + 0.45;
+      const radiusZ = mound.sz + halfWidth + 0.45;
+      if ((localX * localX) / (radiusX * radiusX)
+        + (localZ * localZ) / (radiusZ * radiusZ) < 1) return false;
+    }
+  }
+  return true;
+}
+
 function ElephantGrass({ seed }: { seed: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const grass = useMemo(() => {
     const points = createDeterministicScatter({
       width: 150,
@@ -176,6 +270,7 @@ function ElephantGrass({ seed }: { seed: number }) {
         && distanceToRoad(z) >= 2.4
         && !(Math.abs(x) < 7 && z > -18 && z < 8)
         && !isInsidePaddy(x, z, 0.7)
+        && !isInsideRiverCorridor(x, z, riverStations, 1.05)
       ),
     });
 
@@ -192,7 +287,7 @@ function ElephantGrass({ seed }: { seed: number }) {
         lean: (coordinateNoise(point.cellX, point.cellZ, seed, 15) - 0.5) * 0.055,
       };
     });
-  }, [seed]);
+  }, [riverStations, seed]);
   const grassGeometry = useMemo(() => createGrassClumpGeometry(), []);
 
   useLayoutEffect(() => {
@@ -276,6 +371,7 @@ function TerrainRelief() {
 function GroundPatches({ seed }: { seed: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const colors = useMemo(() => [
     new THREE.Color('#53603b'),
     new THREE.Color('#353d27'),
@@ -296,7 +392,12 @@ function GroundPatches({ seed }: { seed: number }) {
     sz: 1.4 + coordinateNoise(point.cellX, point.cellZ, seed, 93) * 4.3,
     rotation: coordinateNoise(point.cellX, point.cellZ, seed, 94) * Math.PI,
     color: Math.floor(coordinateNoise(point.cellX, point.cellZ, seed, 95) * colors.length),
-  })), [colors.length, seed]);
+  })).filter(patch => !isInsideRiverCorridor(
+    patch.x,
+    patch.z,
+    riverStations,
+    Math.max(patch.sx, patch.sz) + 0.35,
+  )), [colors.length, riverStations, seed]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
@@ -317,6 +418,186 @@ function GroundPatches({ seed }: { seed: number }) {
       <circleGeometry args={[1, 7]} />
       <meshBasicMaterial vertexColors transparent opacity={0.26} depthWrite={false} />
     </instancedMesh>
+  );
+}
+
+function createRiverShape(
+  stations: RiverStation[],
+  widthAt: (station: RiverStation) => number,
+) {
+  const shape = new THREE.Shape();
+  stations.forEach((station, index) => {
+    const x = station.centerX - widthAt(station);
+    // ShapeGeometry is authored in XY, then rotated -90 degrees onto XZ.
+    // Negating here keeps its world-space Z aligned with reeds and crossing.
+    if (index === 0) shape.moveTo(x, -station.z);
+    else shape.lineTo(x, -station.z);
+  });
+  for (let index = stations.length - 1; index >= 0; index -= 1) {
+    const station = stations[index];
+    shape.lineTo(station.centerX + widthAt(station), -station.z);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function SmallRiver({ seed }: { seed: number }) {
+  const reedsRef = useRef<THREE.InstancedMesh>(null);
+  const bridgeRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const reedGeometry = useMemo(() => createGrassClumpGeometry(), []);
+  const stations = useMemo(() => createRiverStations(seed), [seed]);
+  const clearsTerrain = useMemo(() => riverTerrainClearance(stations), [stations]);
+  const mudShape = useMemo(() => createRiverShape(stations, station => station.mudHalfWidth), [stations]);
+  const waterShape = useMemo(() => createRiverShape(stations, station => station.waterHalfWidth), [stations]);
+  const crossing = useMemo(() => {
+    const stationIndex = stations.reduce((closest, station, index) => (
+      Math.abs(station.z - RIVER_CROSSING_Z) < Math.abs(stations[closest].z - RIVER_CROSSING_Z)
+        ? index
+        : closest
+    ), 0);
+    const station = stations[stationIndex];
+    const previous = stations[Math.max(0, stationIndex - 1)];
+    const next = stations[Math.min(stations.length - 1, stationIndex + 1)];
+    const tangentX = next.centerX - previous.centerX;
+    const tangentZ = next.z - previous.z;
+    const tangentLength = Math.hypot(tangentX, tangentZ) || 1;
+    const normalX = tangentZ / tangentLength;
+    const normalZ = -tangentX / tangentLength;
+    return {
+      centerX: station.centerX,
+      length: station.mudHalfWidth * 2 + 0.88,
+      rotation: Math.atan2(-normalZ, normalX),
+      z: station.z,
+    };
+  }, [stations]);
+  const reeds = useMemo(() => {
+    const placements: Array<{
+      x: number;
+      z: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+      scaleZ: number;
+    }> = [];
+
+    for (let stationIndex = 1; stationIndex < stations.length - 1; stationIndex += 1) {
+      const station = stations[stationIndex];
+      if (Math.abs(station.z - crossing.z) < 2.8) continue;
+      const previous = stations[stationIndex - 1];
+      const next = stations[stationIndex + 1];
+      const tangentX = next.centerX - previous.centerX;
+      const tangentZ = next.z - previous.z;
+      const tangentLength = Math.hypot(tangentX, tangentZ) || 1;
+      const normalX = tangentZ / tangentLength;
+      const normalZ = -tangentX / tangentLength;
+
+      for (const side of [-1, 1]) {
+        const clumpCount = coordinateNoise(stationIndex, side, seed, 820) > 0.42 ? 2 : 1;
+        for (let clumpIndex = 0; clumpIndex < clumpCount; clumpIndex += 1) {
+          const noiseKey = stationIndex * 3 + clumpIndex;
+          const bankOffset = station.waterHalfWidth + 0.38
+            + coordinateNoise(noiseKey, side, seed, 821) * 0.62;
+          const alongBank = (coordinateNoise(noiseKey, side, seed, 822) - 0.5) * 3.8;
+          const scale = 0.46 + coordinateNoise(noiseKey, side, seed, 823) * 0.38;
+          placements.push({
+            x: station.centerX + normalX * side * bankOffset
+              + tangentX / tangentLength * alongBank,
+            z: station.z + normalZ * side * bankOffset
+              + tangentZ / tangentLength * alongBank,
+            rotation: coordinateNoise(noiseKey, side, seed, 824) * Math.PI,
+            scaleX: scale * (0.82 + coordinateNoise(noiseKey, side, seed, 825) * 0.36),
+            scaleY: 0.88 + coordinateNoise(noiseKey, side, seed, 826) * 0.86,
+            scaleZ: scale,
+          });
+        }
+      }
+    }
+    return placements;
+  }, [crossing.z, seed, stations]);
+  const bridgePlanks = useMemo(() => {
+    const plankCount = Math.max(7, Math.ceil(crossing.length / 0.58));
+    const plankSpacing = crossing.length / plankCount;
+    const planks = Array.from({ length: plankCount }, (_, index) => ({
+      x: -crossing.length * 0.5 + (index + 0.5) * plankSpacing,
+      y: coordinateNoise(index, 0, seed, 830) * 0.025,
+      z: (coordinateNoise(index, 0, seed, 831) - 0.5) * 0.08,
+      rotation: (coordinateNoise(index, 0, seed, 832) - 0.5) * 0.045,
+      scaleX: plankSpacing * 0.52,
+      scaleY: 0.07 + coordinateNoise(index, 0, seed, 833) * 0.018,
+      scaleZ: 0.66 + coordinateNoise(index, 0, seed, 834) * 0.08,
+    }));
+    planks.push(
+      { x: 0, y: -0.105, z: -0.43, rotation: 0, scaleX: crossing.length * 0.5, scaleY: 0.06, scaleZ: 0.075 },
+      { x: 0, y: -0.105, z: 0.43, rotation: 0, scaleX: crossing.length * 0.5, scaleY: 0.06, scaleZ: 0.075 },
+    );
+    return planks;
+  }, [crossing.length, seed]);
+
+  useLayoutEffect(() => {
+    if (!reedsRef.current || !bridgeRef.current) return;
+    reeds.forEach((reed, index) => {
+      dummy.position.set(reed.x, -0.015, reed.z);
+      dummy.rotation.set(0, reed.rotation, 0);
+      dummy.scale.set(reed.scaleX, reed.scaleY, reed.scaleZ);
+      dummy.updateMatrix();
+      reedsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(reedsRef.current);
+
+    bridgePlanks.forEach((plank, index) => {
+      dummy.position.set(plank.x, plank.y, plank.z);
+      dummy.rotation.set(0, plank.rotation, 0);
+      dummy.scale.set(plank.scaleX, plank.scaleY, plank.scaleZ);
+      dummy.updateMatrix();
+      bridgeRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(bridgeRef.current);
+  }, [bridgePlanks, dummy, reeds]);
+
+  // Never lay a flat water sheet across a terrain mound if the route is
+  // changed later without updating its west-side safety envelope.
+  if (!clearsTerrain) return null;
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.036, 0]} receiveShadow>
+        <shapeGeometry args={[mudShape]} />
+        <meshStandardMaterial color="#42321f" emissive="#171009" emissiveIntensity={0.08} roughness={1} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.012, 0]} renderOrder={3}>
+        <shapeGeometry args={[waterShape]} />
+        <meshPhysicalMaterial
+          color="#315a53"
+          emissive="#122923"
+          emissiveIntensity={0.12}
+          metalness={0.28}
+          roughness={0.2}
+          clearcoat={0.84}
+          clearcoatRoughness={0.16}
+          transparent
+          opacity={0.82}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <instancedMesh ref={reedsRef} args={[reedGeometry, undefined, reeds.length]}>
+        <meshStandardMaterial
+          color="#6c8046"
+          emissive="#26391d"
+          emissiveIntensity={0.15}
+          side={THREE.DoubleSide}
+          roughness={1}
+          vertexColors
+        />
+      </instancedMesh>
+      <group position={[crossing.centerX, 0.12, crossing.z]} rotation={[0, crossing.rotation, 0]}>
+        <instancedMesh ref={bridgeRef} args={[undefined, undefined, bridgePlanks.length]} receiveShadow>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#6b4d2e" emissive="#21140a" emissiveIntensity={0.06} roughness={0.96} />
+        </instancedMesh>
+      </group>
+    </>
   );
 }
 
@@ -357,6 +638,18 @@ function createPalmCrownGeometry() {
   return geometry;
 }
 
+function createHangingVineGeometry() {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.5, 0),
+    new THREE.Vector3(0.06, 0.19, 0.015),
+    new THREE.Vector3(-0.045, -0.14, 0.055),
+    new THREE.Vector3(0.035, -0.5, 0.11),
+  ]);
+  const geometry = new THREE.TubeGeometry(curve, 6, 0.022, 4, false);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function LayeredJungle({ seed }: { seed: number }) {
   const broadTrunksRef = useRef<THREE.InstancedMesh>(null);
   const broadCanopyRef = useRef<THREE.InstancedMesh>(null);
@@ -369,6 +662,8 @@ function LayeredJungle({ seed }: { seed: number }) {
   const lastWindUpdateRef = useRef(-1);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const palmGeometry = useMemo(() => createPalmCrownGeometry(), []);
+  const vineGeometry = useMemo(() => createHangingVineGeometry(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const trees = useMemo(() => {
     const placements: Array<{
       x: number;
@@ -387,9 +682,12 @@ function LayeredJungle({ seed }: { seed: number }) {
       const angle = (index / perimeterCount) * Math.PI * 2
         + (coordinateNoise(index, 0, seed, 10) - 0.5) * 0.12;
       const radius = 55 + coordinateNoise(index, 0, seed, 11) * 31;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (isInsideRiverCorridor(x, z, riverStations, 1.4)) continue;
       placements.push({
-        x: Math.cos(angle) * radius,
-        z: Math.sin(angle) * radius,
+        x,
+        z,
         height: 5.8 + coordinateNoise(index, 0, seed, 12) * 8.8,
         crown: 1.05 + coordinateNoise(index, 0, seed, 13) * 0.7,
         lean: (coordinateNoise(index, 0, seed, 14) - 0.5) * 0.12,
@@ -411,6 +709,7 @@ function LayeredJungle({ seed }: { seed: number }) {
         && !(Math.abs(x) < 12 && z > -22 && z < 18)
         && !(Math.abs(x) < 22 && z > 7 && z < 26)
         && !isInsidePaddy(x, z, 1.35)
+        && !isInsideRiverCorridor(x, z, riverStations, 1.4)
       ),
     });
     innerTrees.forEach(point => {
@@ -426,12 +725,38 @@ function LayeredJungle({ seed }: { seed: number }) {
     });
 
     return placements;
-  }, [seed]);
+  }, [riverStations, seed]);
   const broadleafTrees = useMemo(() => trees.filter(tree => !tree.palm), [trees]);
   const palmTrees = useMemo(() => trees.filter(tree => tree.palm), [trees]);
   const windPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 === 0), [palmTrees]);
   const staticPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 !== 0), [palmTrees]);
-  const vineTrees = useMemo(() => broadleafTrees.filter((_, index) => index % 3 === 0), [broadleafTrees]);
+  const hangingVines = useMemo(() => broadleafTrees.flatMap((tree, treeIndex) => {
+    const keyX = Math.round(tree.x * 4);
+    const keyZ = Math.round(tree.z * 4);
+    if (coordinateNoise(keyX, keyZ, seed, 31) < 0.27) return [];
+    const strandCount = 2 + (coordinateNoise(keyX, keyZ, seed, 32) > 0.68 ? 1 : 0);
+    return Array.from({ length: strandCount }, (_, strandIndex) => {
+      const angle = coordinateNoise(keyX + strandIndex, keyZ, seed, 33) * Math.PI * 2;
+      const anchorRadius = tree.crown
+        * (0.48 + coordinateNoise(keyX, keyZ + strandIndex, seed, 34) * 0.92);
+      const length = Math.min(
+        5.2,
+        1.65 + coordinateNoise(keyX + strandIndex, keyZ - strandIndex, seed, 35) * 3.55,
+      );
+      const anchorHeight = tree.height
+        + tree.crown * (0.12 + coordinateNoise(keyX, keyZ, seed, 36 + strandIndex) * 0.42);
+      return {
+        x: tree.x + Math.cos(angle) * anchorRadius,
+        y: Math.max(0.65 + length * 0.5, anchorHeight - length * 0.5),
+        z: tree.z + Math.sin(angle) * anchorRadius,
+        length,
+        rotation: coordinateNoise(treeIndex, strandIndex, seed, 40) * Math.PI * 2,
+        radiusScale: 0.78 + coordinateNoise(keyX, keyZ, seed, 43 + strandIndex) * 0.55,
+        tiltX: (coordinateNoise(keyX, strandIndex, seed, 47) - 0.5) * 0.08,
+        tiltZ: (coordinateNoise(keyZ, strandIndex, seed, 48) - 0.5) * 0.08,
+      };
+    });
+  }), [broadleafTrees, seed]);
   const understory = useMemo(() => {
     return createDeterministicScatter({
       width: 122,
@@ -446,6 +771,7 @@ function LayeredJungle({ seed }: { seed: number }) {
         && !(Math.abs(x) < 8 && z > -20 && z < 12)
         && !(Math.abs(x) < 22 && z > 7 && z < 26)
         && !isInsidePaddy(x, z, 0.85)
+        && !isInsideRiverCorridor(x, z, riverStations, 0.9)
       ),
     }).map(point => ({
       x: point.x,
@@ -454,7 +780,7 @@ function LayeredJungle({ seed }: { seed: number }) {
       scale: 0.34 + coordinateNoise(point.cellX, point.cellZ, seed, 204) * 0.28,
       rotation: coordinateNoise(point.cellX, point.cellZ, seed, 205) * Math.PI,
     }));
-  }, [seed]);
+  }, [riverStations, seed]);
 
   useLayoutEffect(() => {
     if (
@@ -514,15 +840,10 @@ function LayeredJungle({ seed }: { seed: number }) {
       windPalmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
     });
 
-    vineTrees.forEach((tree, index) => {
-      const vineLength = 1.4 + seeded(index, 33) * 2.8;
-      dummy.position.set(
-        tree.x + (seeded(index, 34) - 0.5) * tree.crown * 1.7,
-        tree.height - vineLength * 0.22,
-        tree.z + (seeded(index, 35) - 0.5) * tree.crown * 1.7,
-      );
-      dummy.rotation.set(tree.lean * 0.45, seeded(index, 36) * Math.PI, tree.lean * 0.55);
-      dummy.scale.set(0.028, vineLength, 0.028);
+    hangingVines.forEach((vine, index) => {
+      dummy.position.set(vine.x, vine.y, vine.z);
+      dummy.rotation.set(vine.tiltX, vine.rotation, vine.tiltZ);
+      dummy.scale.set(vine.radiusScale, vine.length, vine.radiusScale);
       dummy.updateMatrix();
       vinesRef.current!.setMatrixAt(index, dummy.matrix);
     });
@@ -549,7 +870,7 @@ function LayeredJungle({ seed }: { seed: number }) {
     finalizeInstanceMatrices(vinesRef.current);
     finalizeInstanceMatrices(understoryStemsRef.current);
     finalizeInstanceMatrices(understoryLeavesRef.current);
-  }, [broadleafTrees, dummy, palmTrees, staticPalmTrees, understory, vineTrees, windPalmTrees]);
+  }, [broadleafTrees, dummy, hangingVines, palmTrees, staticPalmTrees, understory, windPalmTrees]);
 
   useFrame(({ clock }) => {
     if (!windPalmCrownsRef.current) return;
@@ -589,9 +910,8 @@ function LayeredJungle({ seed }: { seed: number }) {
       <instancedMesh ref={windPalmCrownsRef} args={[palmGeometry, undefined, windPalmTrees.length]}>
         <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.96} />
       </instancedMesh>
-      <instancedMesh ref={vinesRef} args={[undefined, undefined, vineTrees.length]}>
-        <cylinderGeometry args={[1, 1.25, 1, 5]} />
-        <meshStandardMaterial color="#38552c" roughness={1} />
+      <instancedMesh ref={vinesRef} args={[vineGeometry, undefined, hangingVines.length]}>
+        <meshStandardMaterial color="#49683a" emissive="#172b15" emissiveIntensity={0.12} roughness={1} />
       </instancedMesh>
       <instancedMesh ref={understoryStemsRef} args={[undefined, undefined, understory.length]}>
         <cylinderGeometry args={[0.6, 1, 1, 6]} />
@@ -1058,7 +1378,10 @@ function CrashedHuey() {
   }, [bushColors, debris, dummy]);
 
   return (
-    <group position={[13.2, 0, 33.4]} rotation={[0, -0.5, 0]}>
+    // Centered behind the left/forward US fighting positions. Its conservative
+    // 6.2m wreck footprint clears every mound's conservative bounding circle
+    // by at least 2.4m and sits over 10m from the tank spawn.
+    <group position={[-9, 0, -17]} rotation={[0, 0.18, 0]}>
       <mesh position={[0.2, -0.045, 0.1]} rotation={[-Math.PI / 2, 0, 0]} scale={[4.7, 2.15, 1]} receiveShadow>
         <circleGeometry args={[1, 12]} />
         <meshBasicMaterial color="#15130e" transparent opacity={0.52} depthWrite={false} />
@@ -1571,6 +1894,7 @@ function RicePaddies({ seed }: { seed: number }) {
 function MudAndPuddles({ seed }: { seed: number }) {
   const puddlesRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const puddles = useMemo(() => createDeterministicScatter({
     width: 148,
     depth: 148,
@@ -1585,7 +1909,12 @@ function MudAndPuddles({ seed }: { seed: number }) {
     scaleX: 0.45 + coordinateNoise(point.cellX, point.cellZ, seed, 44) * 1.35,
     scaleZ: 0.22 + coordinateNoise(point.cellX, point.cellZ, seed, 45) * 0.65,
     rotation: coordinateNoise(point.cellX, point.cellZ, seed, 46) * Math.PI,
-  })), [seed]);
+  })).filter(puddle => !isInsideRiverCorridor(
+    puddle.x,
+    puddle.z,
+    riverStations,
+    Math.max(puddle.scaleX, puddle.scaleZ) + 0.18,
+  )), [riverStations, seed]);
 
   useLayoutEffect(() => {
     if (!puddlesRef.current) return;
@@ -1624,6 +1953,7 @@ export function VietnamEnvironment({ seed = DEFAULT_ENVIRONMENT_SEED }: VietnamE
     <>
       <MudAndPuddles seed={environmentSeed} />
       <GroundPatches seed={environmentSeed} />
+      <SmallRiver seed={environmentSeed} />
       <RicePaddies seed={environmentSeed} />
       <TerrainRelief />
       <ElephantGrass seed={environmentSeed} />

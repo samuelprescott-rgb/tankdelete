@@ -21,6 +21,7 @@ const HOSTILE_PROJECTILE_CAPACITY = 48;
 const TANK_HIT_RADIUS = 0.95;
 const TRACER_LENGTH = 0.72;
 const MAX_ENGAGEMENT_RANGE = 48;
+const VC_RIFLE_MUZZLE_Z = -0.76;
 
 const UNIFORM_PALETTES = [
   { shirt: '#151b28', trousers: '#101522', webbing: '#646251' },
@@ -36,10 +37,11 @@ const FIGHTER_MATERIAL = new THREE.MeshStandardMaterial({
   flatShading: true,
 });
 
-const CONCEALMENT_MATERIAL = new THREE.MeshStandardMaterial({
+const FIELD_COVER_MATERIAL = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   vertexColors: true,
   roughness: 1,
+  metalness: 0,
   flatShading: true,
 });
 
@@ -159,6 +161,51 @@ function mergeColoredParts(parts: THREE.BufferGeometry[]) {
   return merged;
 }
 
+function buildVietCongRifleParts(rifleY: number, sksPattern: boolean) {
+  const x = 0.018;
+  const wood = sksPattern ? '#80522d' : '#714425';
+  const woodHighlight = sksPattern ? '#9a6938' : '#87582c';
+  const gunmetal = '#171c19';
+  const metalEdge = '#343a31';
+  const parts: THREE.BufferGeometry[] = [];
+
+  if (sksPattern) {
+    // SKS: a continuous wood furniture line, compact fixed magazine, and long barrel.
+    parts.push(
+      transformedPart(new THREE.BoxGeometry(0.115, 0.125, 0.31), wood, [x, rifleY + 0.005, 0.075], [-0.025, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.13, 0.145, 0.025), woodHighlight, [x, rifleY, 0.237], [-0.025, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.086, 0.09, 0.16), gunmetal, [x, rifleY + 0.012, -0.15]),
+      transformedPart(new THREE.BoxGeometry(0.094, 0.105, 0.285), woodHighlight, [x, rifleY + 0.002, -0.338]),
+      transformedPart(new THREE.BoxGeometry(0.065, 0.09, 0.075), gunmetal, [x, rifleY - 0.077, -0.145], [0.08, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.052, 0.042, 0.058), metalEdge, [x, rifleY - 0.132, -0.12], [0.12, 0, 0]),
+    );
+  } else {
+    // AK: broad wood stock and handguard with a strongly readable curved magazine.
+    parts.push(
+      transformedPart(new THREE.BoxGeometry(0.118, 0.13, 0.28), wood, [x, rifleY + 0.004, 0.075], [-0.055, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.135, 0.155, 0.026), woodHighlight, [x, rifleY - 0.004, 0.222], [-0.055, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.09, 0.105, 0.19), gunmetal, [x, rifleY + 0.006, -0.14]),
+      transformedPart(new THREE.BoxGeometry(0.09, 0.105, 0.21), woodHighlight, [x, rifleY + 0.002, -0.338]),
+      transformedPart(new THREE.BoxGeometry(0.058, 0.12, 0.06), wood, [x, rifleY - 0.1, -0.035], [-0.28, 0, 0]),
+      // Three overlapping facets read as the familiar rear-curving AK magazine.
+      transformedPart(new THREE.BoxGeometry(0.07, 0.105, 0.07), '#272820', [x, rifleY - 0.092, -0.135], [-0.16, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.068, 0.095, 0.068), '#343126', [x, rifleY - 0.178, -0.106], [-0.4, 0, 0]),
+      transformedPart(new THREE.BoxGeometry(0.064, 0.078, 0.064), '#493922', [x, rifleY - 0.242, -0.05], [-0.57, 0, 0]),
+      transformedPart(new THREE.CylinderGeometry(0.013, 0.016, 0.255, 6), metalEdge, [x, rifleY + 0.062, -0.37], [Math.PI / 2, 0, 0]),
+    );
+  }
+
+  // Both patterns share a long blued barrel, rear sight, front sight, and muzzle crown.
+  parts.push(
+    transformedPart(new THREE.CylinderGeometry(0.013, 0.017, 0.295, 7), gunmetal, [x, rifleY + 0.012, -0.577], [Math.PI / 2, 0, 0]),
+    transformedPart(new THREE.CylinderGeometry(0.018, 0.022, 0.052, 6), metalEdge, [x, rifleY + 0.012, -0.742], [Math.PI / 2, 0, 0]),
+    transformedPart(new THREE.BoxGeometry(0.06, 0.025, 0.035), gunmetal, [x, rifleY + 0.048, -0.658]),
+    transformedPart(new THREE.BoxGeometry(0.017, 0.075, 0.018), gunmetal, [x, rifleY + 0.092, -0.658]),
+    transformedPart(new THREE.BoxGeometry(0.055, 0.02, 0.04), metalEdge, [x, rifleY + 0.07, -0.205], [-0.12, 0, 0]),
+  );
+  return parts;
+}
+
 function buildFighterGeometry(
   kneeling: boolean,
   headwear: EnemyCombatant['headwear'],
@@ -201,14 +248,15 @@ function buildFighterGeometry(
     ));
   }
 
-  // The arms remain visibly shouldered: trigger hand aft and support hand on the foregrip.
+  // Bent elbows place the trigger hand on the receiver and the support hand on
+  // the wood fore-end, keeping both stances visibly shouldered at tank distance.
   parts.push(
-    cylinderPart([-0.145, torsoY + 0.105, -0.015], [-0.13, rifleY + 0.045, -0.18], 0.05, palette.shirt),
-    cylinderPart([-0.13, rifleY + 0.045, -0.18], [-0.035, rifleY, -0.41], 0.044, palette.shirt),
-    cylinderPart([0.15, torsoY + 0.1, -0.012], [0.13, rifleY + 0.035, -0.12], 0.05, palette.shirt),
-    cylinderPart([0.13, rifleY + 0.035, -0.12], [0.055, rifleY - 0.002, -0.2], 0.044, palette.shirt),
-    transformedPart(new THREE.SphereGeometry(0.052, 7, 5), '#805d3f', [-0.035, rifleY, -0.41]),
-    transformedPart(new THREE.SphereGeometry(0.052, 7, 5), '#805d3f', [0.055, rifleY - 0.002, -0.2]),
+    cylinderPart([-0.15, torsoY + 0.105, -0.012], [-0.195, rifleY - 0.005, -0.17], 0.05, palette.shirt),
+    cylinderPart([-0.195, rifleY - 0.005, -0.17], [-0.035, rifleY, -0.36], 0.044, palette.shirt),
+    cylinderPart([0.15, torsoY + 0.1, -0.01], [0.19, rifleY - 0.04, -0.07], 0.05, palette.shirt),
+    cylinderPart([0.19, rifleY - 0.04, -0.07], [0.045, rifleY - 0.005, -0.13], 0.044, palette.shirt),
+    transformedPart(new THREE.SphereGeometry(0.052, 7, 5), '#805d3f', [-0.035, rifleY, -0.36]),
+    transformedPart(new THREE.SphereGeometry(0.052, 7, 5), '#805d3f', [0.045, rifleY - 0.005, -0.13]),
     transformedPart(new THREE.CylinderGeometry(0.055, 0.065, 0.1, 7), '#76543a', [0, headY - 0.095, 0]),
     transformedPart(new THREE.SphereGeometry(0.11, 8, 6), '#876044', [0, headY, -0.012]),
   );
@@ -239,69 +287,123 @@ function buildFighterGeometry(
     );
   }
 
-  // Wood-stocked AK-pattern rifle. All parts merge into the same fighter draw object.
-  parts.push(
-    transformedPart(new THREE.BoxGeometry(0.105, 0.105, 0.31), '#6a4228', [0.05, rifleY + 0.012, 0.03], [0.03, 0, -0.04]),
-    transformedPart(new THREE.BoxGeometry(0.09, 0.095, 0.2), '#252821', [0.025, rifleY, -0.205]),
-    transformedPart(new THREE.BoxGeometry(0.072, 0.15, 0.095), '#3a3022', [0.025, rifleY - 0.095, -0.187], [0.12, 0, 0]),
-    transformedPart(new THREE.BoxGeometry(0.07, 0.1, 0.08), '#4b3726', [0.025, rifleY - 0.165, -0.15], [0.22, 0, 0]),
-    transformedPart(new THREE.CylinderGeometry(0.018, 0.022, 0.38, 6), '#20231e', [0.025, rifleY + 0.018, -0.445], [Math.PI / 2, 0, 0]),
-    transformedPart(new THREE.CylinderGeometry(0.014, 0.016, 0.25, 6), '#30352b', [0.025, rifleY + 0.052, -0.39], [Math.PI / 2, 0, 0]),
-    transformedPart(new THREE.CylinderGeometry(0.025, 0.018, 0.075, 6), '#1d201c', [0.025, rifleY + 0.018, -0.65], [Math.PI / 2, 0, 0]),
-  );
+  // AK/SKS variants remain inside the merged fighter geometry: more readable
+  // period detail with no added scene objects or draw calls.
+  parts.push(...buildVietCongRifleParts(rifleY, uniformVariant % 3 === 0));
 
   return mergeColoredParts(parts);
 }
 
-function buildConcealmentGeometry(kneeling: boolean, variant: number) {
-  const coverHeight = kneeling ? 0.31 : 0.26;
-  const paletteVariants = [
-    ['#263f20', '#365526', '#4b6a2d'],
-    ['#1f381d', '#315126', '#526b2c'],
-    ['#29441f', '#3e5b28', '#5c7132'],
-  ];
-  const leafPalette = paletteVariants[variant % paletteVariants.length];
+function buildFightingPositionGeometry() {
   const parts: THREE.BufferGeometry[] = [];
-  const baseSeed = 7331 + variant * 971 + (kneeling ? 101 : 0);
 
-  // Stable seeded scatter: open centre preserves hit readability and minimum spacing avoids overlap.
-  const clusterAnchors: Array<[number, number]> = [
-    [-0.48, 0.05],
-    [0.47, 0.09],
-    [-0.24, 0.28],
-    [0.25, 0.3],
+  // A dark, shallow scrape under an irregular horseshoe of freshly packed earth.
+  // The open rear and low front lip keep the fighter's chest and head readable.
+  parts.push(
+    transformedPart(
+      new THREE.CylinderGeometry(0.5, 0.55, 0.028, 12),
+      '#211b12',
+      [0, 0.018, 0.06],
+      [0, 0, 0],
+      [1, 1, 0.72],
+    ),
+  );
+
+  const bermMounds: Array<[number, number, number, number, number]> = [
+    [-0.43, 0.15, -0.38, 1.38, -0.08],
+    [0, 0.18, -0.47, 1.62, 0.04],
+    [0.43, 0.15, -0.38, 1.35, 0.1],
+    [-0.58, 0.13, -0.03, 1.24, -0.18],
+    [0.58, 0.13, -0.03, 1.22, 0.2],
   ];
-  clusterAnchors.forEach(([anchorX, anchorZ], clusterIndex) => {
-    const jitterX = (deterministicUnit(baseSeed, clusterIndex * 3 + 1) - 0.5) * 0.1;
-    const jitterZ = (deterministicUnit(baseSeed, clusterIndex * 3 + 2) - 0.5) * 0.08;
-    const scale = 0.82 + deterministicUnit(baseSeed, clusterIndex * 3 + 3) * 0.28;
-    const x = anchorX + jitterX;
-    const z = anchorZ + jitterZ;
-    const height = coverHeight * scale;
+  bermMounds.forEach(([x, y, z, lengthScale, yaw], index) => {
     parts.push(
-      transformedPart(new THREE.CylinderGeometry(0.008, 0.014, height, 5), '#3c3f25', [x, height * 0.5, z]),
       transformedPart(
-        new THREE.IcosahedronGeometry(0.135 * scale, 0),
-        leafPalette[clusterIndex % leafPalette.length],
-        [x + (clusterIndex % 2 ? 0.025 : -0.02), height * 0.84, z - 0.012],
-        [0.18, deterministicUnit(baseSeed, clusterIndex + 30) * Math.PI, 0.12],
-        [1.25, 0.8, 1],
+        new THREE.IcosahedronGeometry(0.25, 1),
+        index % 2 === 0 ? '#60472b' : '#715334',
+        [x, y, z],
+        [0.08, yaw, index % 2 ? -0.04 : 0.06],
+        [lengthScale, 0.56, 0.76],
       ),
     );
   });
 
-  for (let frondIndex = 0; frondIndex < 4; frondIndex += 1) {
-    const side = frondIndex < 2 ? -1 : 1;
-    const localIndex = frondIndex % 2;
-    const x = side * (0.55 + localIndex * 0.09);
-    const z = 0.12 + localIndex * 0.08;
-    const tilt = side * (0.28 + deterministicUnit(baseSeed, frondIndex + 50) * 0.2);
+  // Clods and roots break up the otherwise too-clean procedural rim.
+  for (let index = 0; index < 7; index += 1) {
+    const angle = -2.55 + index * 0.42;
     parts.push(transformedPart(
-      new THREE.BoxGeometry(0.055, 0.28 - localIndex * 0.035, 0.018),
-      leafPalette[(frondIndex + 1) % leafPalette.length],
-      [x, 0.16, z],
-      [0.18, tilt, -tilt * 0.85],
+      new THREE.DodecahedronGeometry(0.055 + (index % 3) * 0.009, 0),
+      index % 2 ? '#4d3925' : '#81613b',
+      [Math.sin(angle) * 0.6, 0.26 - Math.abs(index - 3) * 0.018, -0.2 - Math.cos(angle) * 0.28],
+      [index * 0.21, index * 0.38, 0],
+      [1.25, 0.8, 1],
     ));
+  }
+
+  return mergeColoredParts(parts);
+}
+
+function buildCutLogGeometry() {
+  const parts: THREE.BufferGeometry[] = [];
+  const addLog = (y: number, z: number, length: number, angle: number, radius: number) => {
+    const halfX = Math.cos(angle) * length * 0.5;
+    const halfZ = Math.sin(angle) * length * 0.5;
+    parts.push(
+      cylinderPart([-halfX, y, z - halfZ], [halfX, y, z + halfZ], radius, '#4b3420', 8),
+      cylinderPart([-halfX * 1.01, y, z - halfZ * 1.01], [halfX * 1.01, y, z + halfZ * 1.01], radius * 0.72, '#765331', 8),
+    );
+  };
+  addLog(0.21, -0.48, 1.18, 0.04, 0.085);
+  addLog(0.33, -0.45, 1.02, -0.08, 0.072);
+
+  // Short broken branch stubs make the silhouette read as field-cut timber.
+  parts.push(
+    cylinderPart([-0.35, 0.27, -0.46], [-0.28, 0.39, -0.43], 0.026, '#3b2a1c', 6),
+    cylinderPart([0.31, 0.34, -0.46], [0.4, 0.43, -0.42], 0.022, '#3b2a1c', 6),
+  );
+  return mergeColoredParts(parts);
+}
+
+function buildBambooScreenGeometry() {
+  const parts: THREE.BufferGeometry[] = [];
+  const bambooColors = ['#7f7842', '#666936', '#99905a'];
+  for (let index = 0; index < 6; index += 1) {
+    const x = -0.61 + index * 0.245;
+    const height = 0.35 + (index % 3) * 0.055;
+    const lean = (index % 2 ? 1 : -1) * 0.055;
+    parts.push(cylinderPart(
+      [x - lean, 0.06, -0.46 + (index % 2) * 0.035],
+      [x + lean, height, -0.46 - (index % 2) * 0.025],
+      0.018,
+      bambooColors[index % bambooColors.length],
+      6,
+    ));
+  }
+  parts.push(
+    cylinderPart([-0.67, 0.16, -0.47], [0.67, 0.2, -0.46], 0.017, '#5a5630', 6),
+    cylinderPart([-0.66, 0.3, -0.46], [0.66, 0.27, -0.47], 0.016, '#817845', 6),
+  );
+  return mergeColoredParts(parts);
+}
+
+function buildBrushScreenGeometry() {
+  const parts: THREE.BufferGeometry[] = [];
+  const leafPalette = ['#203c1c', '#315323', '#4d682b', '#62763a'];
+  for (let index = 0; index < 5; index += 1) {
+    const angle = index * 2.399963229728653;
+    const x = Math.cos(angle) * (0.1 + (index % 2) * 0.08);
+    const z = Math.sin(angle) * (0.08 + ((index + 1) % 2) * 0.07);
+    const height = 0.25 + (index % 3) * 0.075;
+    parts.push(
+      transformedPart(new THREE.CylinderGeometry(0.008, 0.014, height, 5), '#3c3f25', [x, height * 0.5, z]),
+      transformedPart(
+        new THREE.IcosahedronGeometry(0.13 + (index % 2) * 0.025, 0),
+        leafPalette[index % leafPalette.length],
+        [x, height * 0.78, z],
+        [0.14, angle, -0.08],
+        [1.24, 0.78, 0.92],
+      ),
+    );
   }
 
   return mergeColoredParts(parts);
@@ -332,9 +434,10 @@ const FIGHTER_GEOMETRIES = Array.from({ length: 2 }, (_, stanceIndex) => (
   ))
 ));
 
-const CONCEALMENT_GEOMETRIES = Array.from({ length: 2 }, (_, stanceIndex) => (
-  Array.from({ length: 6 }, (_, variant) => buildConcealmentGeometry(stanceIndex === 1, variant))
-));
+const FIGHTING_POSITION_GEOMETRY = buildFightingPositionGeometry();
+const CUT_LOG_GEOMETRY = buildCutLogGeometry();
+const BAMBOO_SCREEN_GEOMETRY = buildBambooScreenGeometry();
+const BRUSH_SCREEN_GEOMETRY = buildBrushScreenGeometry();
 
 const TRACER_GEOMETRY = buildTracerGeometry();
 const TRACER_MATERIAL = new THREE.MeshBasicMaterial({
@@ -360,6 +463,154 @@ interface FighterProps {
   muzzleFlashRefs: React.MutableRefObject<Array<THREE.Mesh | null>>;
 }
 
+interface CoverPlacement {
+  position: VectorTuple;
+  rotation: number;
+  scale: VectorTuple;
+}
+
+interface StaticCoverBatchProps {
+  geometry: THREE.BufferGeometry;
+  placements: readonly CoverPlacement[];
+  castShadow?: boolean;
+}
+
+function StaticCoverBatch({ geometry, placements, castShadow = false }: StaticCoverBatchProps) {
+  const meshRef = useRef<THREE.InstancedMesh | null>(null);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+  const quaternion = useMemo(() => new THREE.Quaternion(), []);
+  const position = useMemo(() => new THREE.Vector3(), []);
+  const scale = useMemo(() => new THREE.Vector3(), []);
+  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    placements.forEach((placement, index) => {
+      position.set(...placement.position);
+      quaternion.setFromAxisAngle(up, placement.rotation);
+      scale.set(...placement.scale);
+      matrix.compose(position, quaternion, scale);
+      mesh.setMatrixAt(index, matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  }, [matrix, placements, position, quaternion, scale, up]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, FIELD_COVER_MATERIAL, placements.length]}
+      castShadow={castShadow}
+      receiveShadow
+      dispose={null}
+    />
+  );
+}
+
+function rotateCoverOffset(
+  position: EnemyCombatant['position'],
+  localX: number,
+  localZ: number,
+  rotation: number,
+): VectorTuple {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return [
+    position[0] + cos * localX + sin * localZ,
+    position[1],
+    position[2] - sin * localX + cos * localZ,
+  ];
+}
+
+const VietCongFieldCover = memo(function VietCongFieldCover({
+  enemies,
+}: Pick<VietCongCombatantsProps, 'enemies'>) {
+  const placements = useMemo(() => {
+    const fightingPositions: CoverPlacement[] = [];
+    const logs: CoverPlacement[] = [];
+    const bamboo: CoverPlacement[] = [];
+    const brush: CoverPlacement[] = [];
+
+    enemies.forEach((enemy, index) => {
+      const seed = hashCombatSession(enemy.id);
+      // Static fighting positions face the original southern approach. Players
+      // who circle around the flank can bypass the low frontal protection.
+      const baseRotation = Math.atan2(enemy.position[0], enemy.position[2] + 12);
+      // Keep the earth lip aligned exactly with the inexpensive collision model.
+      const rotation = baseRotation;
+      fightingPositions.push({
+        position: enemy.position,
+        rotation,
+        scale: [
+          0.92 + deterministicUnit(seed, 81) * 0.15,
+          0.9 + deterministicUnit(seed, 82) * 0.16,
+          0.92 + deterministicUnit(seed, 83) * 0.14,
+        ],
+      });
+
+      // Alternating timber and bamboo reinforce select cells without producing
+      // an implausible identical fortification around every combatant.
+      if (index % 3 !== 1) {
+        logs.push({
+          position: enemy.position,
+          rotation: rotation + (deterministicUnit(seed, 84) - 0.5) * 0.08,
+          scale: [0.9 + deterministicUnit(seed, 85) * 0.18, 0.92, 1],
+        });
+      }
+      if (Math.abs(enemy.position[0]) > 14 || index < 3 || index >= 10) {
+        bamboo.push({
+          position: enemy.position,
+          rotation: rotation + (deterministicUnit(seed, 86) - 0.5) * 0.12,
+          scale: [0.9 + deterministicUnit(seed, 87) * 0.18, 0.88 + deterministicUnit(seed, 88) * 0.18, 1],
+        });
+      }
+
+      // Two offset brush clumps leave a clean shot window through the middle.
+      // Forward and outer-flank cells get a third clump for denser concealment.
+      const brushCount = index < 4 || Math.abs(enemy.position[0]) > 14 ? 3 : 2;
+      for (let brushIndex = 0; brushIndex < brushCount; brushIndex += 1) {
+        const side = brushIndex === 0 ? -1 : brushIndex === 1 ? 1 : (index % 2 ? -1 : 1);
+        const localX = side * (0.66 + deterministicUnit(seed, 90 + brushIndex) * 0.24);
+        const localZ = brushIndex < 2
+          ? 0.02 + deterministicUnit(seed, 94 + brushIndex) * 0.25
+          : -0.4 + deterministicUnit(seed, 96) * 0.18;
+        brush.push({
+          position: rotateCoverOffset(enemy.position, localX, localZ, rotation),
+          rotation: rotation + deterministicUnit(seed, 100 + brushIndex) * Math.PI,
+          scale: [
+            0.84 + deterministicUnit(seed, 104 + brushIndex) * 0.34,
+            0.9 + deterministicUnit(seed, 108 + brushIndex) * 0.28,
+            0.84 + deterministicUnit(seed, 112 + brushIndex) * 0.3,
+          ],
+        });
+      }
+    });
+
+    return { fightingPositions, logs, bamboo, brush };
+  }, [enemies]);
+
+  return (
+    <group dispose={null}>
+      <StaticCoverBatch geometry={FIGHTING_POSITION_GEOMETRY} placements={placements.fightingPositions} castShadow />
+      <StaticCoverBatch geometry={CUT_LOG_GEOMETRY} placements={placements.logs} castShadow />
+      <StaticCoverBatch geometry={BAMBOO_SCREEN_GEOMETRY} placements={placements.bamboo} />
+      <StaticCoverBatch geometry={BRUSH_SCREEN_GEOMETRY} placements={placements.brush} />
+    </group>
+  );
+}, (previous, next) => (
+  previous.enemies.length === next.enemies.length
+  && previous.enemies.every((enemy, index) => {
+    const nextEnemy = next.enemies[index];
+    return enemy.id === nextEnemy?.id
+      && enemy.position[0] === nextEnemy.position[0]
+      && enemy.position[1] === nextEnemy.position[1]
+      && enemy.position[2] === nextEnemy.position[2];
+  })
+));
+
 const VietCongFighter = memo(function VietCongFighter({
   enemy,
   index,
@@ -373,22 +624,12 @@ const VietCongFighter = memo(function VietCongFighter({
     enemy.uniformVariant % UNIFORM_PALETTES.length
   ];
   const seed = hashCombatSession(enemy.id);
-  const concealmentVariant = Math.abs(seed) % CONCEALMENT_GEOMETRIES[stanceIndex].length;
-  const concealmentRotation = Math.atan2(enemy.position[0], enemy.position[2])
-    + (deterministicUnit(seed, 17) - 0.5) * 0.28;
   const bodyWidth = 0.94 + deterministicUnit(seed, 21) * 0.07;
   const bodyHeight = 0.94 + deterministicUnit(seed, 22) * 0.07;
   const rifleY = kneeling ? 0.53 : 0.67;
 
   return (
     <group position={enemy.position} dispose={null}>
-      <mesh
-        geometry={CONCEALMENT_GEOMETRIES[stanceIndex][concealmentVariant]}
-        material={CONCEALMENT_MATERIAL}
-        rotation={[0, concealmentRotation, 0]}
-        receiveShadow
-      />
-
       <group
         ref={node => { fighterRefs.current[index] = node; }}
         visible={enemy.alive}
@@ -404,7 +645,7 @@ const VietCongFighter = memo(function VietCongFighter({
           ref={node => { muzzleFlashRefs.current[index] = node; }}
           geometry={MUZZLE_FLASH_GEOMETRY}
           material={MUZZLE_FLASH_MATERIAL}
-          position={[0.025, rifleY + 0.018, -0.72]}
+          position={[0.018, rifleY + 0.012, VC_RIFLE_MUZZLE_Z]}
           rotation={[-Math.PI / 2, 0, 0]}
           visible={false}
           renderOrder={85}
@@ -555,11 +796,18 @@ export function VietCongCombatants({
 
       if (!tank || now < runtime.nextShotAt) continue;
 
-      muzzlePosition.set(
-        enemy.position[0],
-        enemy.position[1] + (enemy.stance === 'kneeling' ? 0.53 : 0.67),
-        enemy.position[2],
-      );
+      // Read the rendered muzzle after stance scaling, idle motion, and yaw.
+      // This keeps the flash, tracer origin, and rifle crown on one transform.
+      if (fighter && flash) {
+        fighter.updateWorldMatrix(true, true);
+        flash.getWorldPosition(muzzlePosition);
+      } else {
+        muzzlePosition.set(
+          enemy.position[0],
+          enemy.position[1] + (enemy.stance === 'kneeling' ? 0.53 : 0.67),
+          enemy.position[2],
+        );
+      }
       aimDirection.copy(tankCenter).sub(muzzlePosition);
       const distance = aimDirection.length();
       if (distance > maxEngagementRange || distance < 3.2) {
@@ -582,8 +830,6 @@ export function VietCongCombatants({
       aimDirection.z += (shotNoise(enemy.id, shotIndex, 3) - 0.5) * enemy.accuracy * 2;
       aimDirection.normalize();
 
-      // Move the logical muzzle to the visible rifle tip along the aimed heading.
-      muzzlePosition.addScaledVector(aimDirection, 0.62);
       if (spawnHostileRound(muzzlePosition, aimDirection, enemy.id)) {
         runtime.flashUntil = now + 0.07;
         onEnemyFire?.({
@@ -647,6 +893,8 @@ export function VietCongCombatants({
 
   return (
     <group dispose={null}>
+      <VietCongFieldCover enemies={enemies} />
+
       {enemies.map((enemy, index) => (
         <VietCongFighter
           key={enemy.id}
