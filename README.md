@@ -1,54 +1,91 @@
-# TankDelete expansion
+# TankDelete
 
-This workspace starts from [`zacblev1/tankdelete` v0.1.0](https://github.com/zacblev1/tankdelete/releases/tag/v0.1.0) and turns its neon tank-based filesystem explorer into a Vietnam-era-inspired field-operations game.
+Disclosure / Caution: This game was entirely created by Claude. This game is intended to be an entertaining way to delete files on your system. With that being said you are deleting files on your system so use with caution.
 
-## Current game loop
+Drive a tank through your filesystem in a Vietnam-era-inspired field-operations arena. Navigate tactical road grids, drive through tunnel portals to enter folders, and use the cannon, flamethrower attachment, or napalm support to clear files and free disk space.
 
-- Drive with **W/S** and steer with **A/D**.
-- Aim with the mouse and click to fire.
-- Press **1**, **2**, or **3** to switch between the cannon, flamethrower attachment, and napalm support.
-- The flamethrower sweeps a short cone; napalm affects a larger ground radius and has an eight-second cooldown.
-- The first hit marks a file; the second moves it to the operating system Trash.
-- Press **X** or **Delete** to trash every marked file.
-- Press **Escape** to disarm all marked files.
-- Press **Cmd/Ctrl+Z** to restore the last trashed file.
-- Drive through folder tunnels to navigate the filesystem.
-- Press **M** to play or mute the field radio. Its two polyphonic tracks are original procedural compositions generated with the Web Audio API.
-- Choose **Boot Camp** on the start screen to practice against virtual files. Training mode never touches the filesystem.
+![Arena view — files as glowing blocks on the road grid](screenshots/arena.png)
 
-Start with a disposable test directory until you are comfortable with the controls. TankDelete performs real filesystem operations.
+![Tunnel portals — drive through to navigate folders](screenshots/tunnels.png)
+
+## Controls
+
+| Input | Action |
+|-------|--------|
+| W / S | Drive forward / backward |
+| A / D | Rotate tank left / right |
+| Mouse | Aim turret |
+| Left Click | Fire selected weapon |
+| 1 / 2 / 3 | Select cannon / flamethrower / napalm |
+| X / Delete | Trash every armed target |
+| Escape | Disarm all targets |
+| M | Play or mute the field radio |
+| Cmd/Ctrl + Z | Undo the last trash action |
+| Right Click + Drag | Orbit camera to look around |
+
+## Gameplay
+
+- **Pick a directory** to load it as a 3D arena
+- **Boot Camp** uses virtual files so every weapon and undo flow can be practiced without touching the filesystem
+- **Files** appear as colored blocks lining the tactical road grid
+- **Folders** are tunnel portals — drive into them to navigate deeper
+- **Back portal** takes you up one directory level
+- **First hit** arms a file; a later confirmed hit moves it to the operating system trash
+- **Cannon** fires a single long-range projectile
+- **Flamethrower attachment** sweeps up to six nearby files in a short cone
+- **Napalm support** affects a larger ground radius and has an eight-second cooldown
+- **Score** tracks total megabytes freed (1 point per MB)
+- **Achievements** unlock at 100MB, 1GB, and 10GB milestones
+
+## Features
+
+- `FIELD OPS // 1968` olive, amber, and canvas visual system
+- Animated flamethrower cone and napalm burn-zone effects
+- Two original polyphonic field-radio tracks generated with the Web Audio API
+- Tactical tunnel portals for folder navigation
+- Voxel shatter explosions with category-colored particles
+- Scoring system and achievement toasts
+- Radar minimap showing nearby files and portals
+- Files are sent to your system trash (recoverable)
+- Cross-platform: macOS, Windows, Linux
 
 Commercial recordings and song melodies are intentionally not bundled. Licensed audio can be added later through a dedicated media pipeline without changing the gameplay code.
 
-## Development
+## Download
 
-Prerequisites: Node.js, npm, the Rust toolchain, and the platform requirements for [Tauri 2](https://v2.tauri.app/start/prerequisites/).
+Grab the latest installer for your platform from the [Releases](https://github.com/zacblev1/tankdelete/releases) page:
 
-```sh
-npm install
-npm run tauri dev
+- **macOS**: `.dmg` (Apple Silicon and Intel)
+- **Windows**: `.msi` or `.exe`
+- **Linux**: `.deb` or `.AppImage`
+
+## Build from Source
+
+Requires [Rust](https://rustup.rs/), [Bun](https://bun.sh/), and platform dependencies for [Tauri v2](https://v2.tauri.app/start/prerequisites/).
+
+```bash
+# Install dependencies
+bun install
+
+# Run in development
+bun run tauri dev
+
+# Build release installer
+bun run tauri build
 ```
 
-Build the web frontend with:
+## Safety
 
-```sh
-npm run build
-```
+- Every weapon preserves the two-stage mark/confirm deletion rule
+- `Escape` disarms the target queue and Cmd/Ctrl+Z restores the last trash action
+- Files are moved to your system trash, not permanently deleted
+- System directories (`/System`, `C:\Windows`, `/usr`, etc.) are blocked
+- Marked and deleting state is cleared when changing directories
+- Pending napalm impacts are canceled when leaving an arena
+- Failed batch deletions remain armed so they are never hidden from the player
 
-Build the desktop application with:
+Start with Boot Camp or a disposable test directory until you are comfortable with the controls.
 
-```sh
-npm run tauri build
-```
+## License
 
-## Expansion directions
-
-The cleanest next milestones are:
-
-1. Missions and score multipliers based on cleanup goals.
-2. A protected-file rules engine for live directories.
-3. Better large-directory scanning with cancellation and cached sizes.
-4. Gamepad support, settings, and accessibility controls.
-5. A licensed-audio import pipeline with volume and playlist controls.
-
-The repository did not include a license at the `v0.1.0` tag. Confirm permission with the original author before redistributing a derivative build.
+MIT
