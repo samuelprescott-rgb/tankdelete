@@ -116,6 +116,70 @@
   padding-top: 10px;
 }
 
+.armor-status {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(135, 155, 99, 0.32);
+  padding: 8px 9px;
+  background: rgba(31, 42, 25, 0.48);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.armor-status-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.armor-status-copy strong {
+  color: #d9c16f;
+  font-size: 12px;
+}
+
+.armor-status small {
+  color: #8d9174;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.armor-meter {
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.42);
+  background: rgba(7, 10, 6, 0.86);
+}
+
+.armor-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #a64026, #d7a23f 46%, #91aa64 82%);
+  box-shadow: 0 0 9px rgba(190, 150, 57, 0.45);
+  transition: width 180ms ease-out;
+}
+
+.armor-status.is-hit {
+  border-color: #ec6835;
+  background: rgba(119, 34, 19, 0.28);
+  box-shadow: inset 0 0 20px rgba(239, 76, 34, 0.18), 0 0 12px rgba(239, 76, 34, 0.18);
+}
+
+.damage-vignette {
+  position: fixed;
+  z-index: 85;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 46%, rgba(139, 21, 10, 0.54) 100%);
+  mix-blend-mode: screen;
+  transition: opacity 220ms ease-out;
+}
+
+.damage-vignette.is-visible {
+  opacity: 1;
+  transition-duration: 45ms;
+}
+
 .weapon-selector {
   display: grid;
   grid-template-columns: 1fr;

@@ -4,6 +4,12 @@ import * as THREE from 'three';
 import { Projectile } from '../../hooks/useProjectilePool';
 import { PROJECTILE_MAX_LIFETIME, PROJECTILE_SPEED } from '../../lib/constants';
 import { BlockData } from '../../hooks/useFileBlocks';
+import {
+  EnemyCombatant,
+  ENEMY_HIT_RADIUS,
+  findNearestLivingEnemyHit,
+  segmentSphereIntersection,
+} from '../../lib/combat';
 
 const MAX_PROJECTILES = 48;
 const HIT_RADIUS = 1.5;
@@ -13,14 +19,18 @@ interface ProjectileManagerProps {
   pool: React.RefObject<Projectile[]>;
   despawn: (index: number) => void;
   onHit: (filePath: string, projectile: Projectile) => void;
+  onEnemyHit: (enemyId: string, projectile: Projectile) => void;
   allBlocks: BlockData[];
+  enemies: readonly EnemyCombatant[];
 }
 
 export function ProjectileManager({
   pool,
   despawn,
   onHit,
+  onEnemyHit,
   allBlocks,
+  enemies,
 }: ProjectileManagerProps) {
   const tracerRefs = useRef<Array<THREE.Group | null>>([]);
   const coreRefs = useRef<Array<THREE.Mesh | null>>([]);
@@ -28,6 +38,7 @@ export function ProjectileManager({
   const headRefs = useRef<Array<THREE.Mesh | null>>([]);
 
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
+  const previousPosition = useMemo(() => new THREE.Vector3(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tracerForward = useMemo(() => new THREE.Vector3(0, 0, 1), []);
   const cannonColor = useMemo(() => new THREE.Color('#ffb52e'), []);
@@ -45,6 +56,7 @@ export function ProjectileManager({
       if (!projectile.active) continue;
 
       const speed = projectile.kind === 'machinegun' ? MACHINE_GUN_SPEED : PROJECTILE_SPEED;
+      previousPosition.copy(projectile.position);
       projectile.position.addScaledVector(projectile.direction, speed * delta);
       projectile.lifetime += delta;
 
@@ -54,14 +66,40 @@ export function ProjectileManager({
       }
 
       let hitBlock: BlockData | null = null;
-      let minDist = Infinity;
+      let hitEnemyId: string | null = null;
+      let nearestHitT = Infinity;
 
       for (const block of allBlocks) {
-        const dist = tempPosition.set(...block.position).distanceTo(projectile.position);
-        if (dist < minDist && dist < HIT_RADIUS) {
-          minDist = dist;
+        tempPosition.set(...block.position);
+        const hitT = segmentSphereIntersection(
+          previousPosition,
+          projectile.position,
+          tempPosition,
+          HIT_RADIUS,
+        );
+        if (hitT !== null && hitT < nearestHitT) {
+          nearestHitT = hitT;
           hitBlock = block;
+          hitEnemyId = null;
         }
+      }
+
+      const enemyHit = findNearestLivingEnemyHit(
+        previousPosition,
+        projectile.position,
+        enemies,
+        projectile.kind === 'machinegun' ? ENEMY_HIT_RADIUS * 1.18 : ENEMY_HIT_RADIUS,
+      );
+      if (enemyHit && enemyHit.t < nearestHitT) {
+        nearestHitT = enemyHit.t;
+        hitEnemyId = enemyHit.enemy.id;
+        hitBlock = null;
+      }
+
+      if (hitEnemyId) {
+        onEnemyHit(hitEnemyId, projectile);
+        despawn(i);
+        continue;
       }
 
       if (hitBlock) {

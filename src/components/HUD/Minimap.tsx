@@ -5,6 +5,8 @@ interface MinimapProps {
   fileBlocks: Array<{ position: [number, number, number]; color: string; isMarked?: boolean }>;
   folderPortals: Array<{ position: [number, number, number] }>;
   backPortalPosition: [number, number, number] | null;
+  enemies: Array<{ position: [number, number, number] }>;
+  friendlies?: ReadonlyArray<{ position: [number, number, number] }>;
 }
 
 export function Minimap({
@@ -12,6 +14,8 @@ export function Minimap({
   fileBlocks,
   folderPortals,
   backPortalPosition,
+  enemies,
+  friendlies = [],
 }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -128,6 +132,36 @@ export function Minimap({
         }
       }
 
+      // Hostile contacts show as sharp red diamonds, distinct from file targets.
+      for (const enemy of enemies) {
+        const pos = rotateAndScale(enemy.position[0], enemy.position[2]);
+        if (!pos) continue;
+
+        ctx.fillStyle = '#ee5734';
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y - 4);
+        ctx.lineTo(pos.x + 4, pos.y);
+        ctx.lineTo(pos.x, pos.y + 4);
+        ctx.lineTo(pos.x - 4, pos.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Friendly infantry use open blue-green chevrons so the two firing lines
+      // remain readable without competing with file dots or hostile diamonds.
+      for (const friendly of friendlies) {
+        const pos = rotateAndScale(friendly.position[0], friendly.position[2]);
+        if (!pos) continue;
+
+        ctx.strokeStyle = '#8fc9b0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(pos.x - 3, pos.y - 2);
+        ctx.lineTo(pos.x, pos.y + 2);
+        ctx.lineTo(pos.x + 3, pos.y - 2);
+        ctx.stroke();
+      }
+
       // Draw player at center as bright cyan triangle pointing up
       ctx.fillStyle = '#e3b341';
       ctx.beginPath();
@@ -160,7 +194,7 @@ export function Minimap({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition]);
+  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition, enemies, friendlies]);
 
   return (
     <canvas

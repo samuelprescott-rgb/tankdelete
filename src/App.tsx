@@ -33,12 +33,17 @@ import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
 import { useGameAudio } from './hooks/useGameAudio';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
+import { VietCongCombatants } from './components/Scene/VietCongCombatants';
+import {
+  USInfantrySquad,
+  US_INFANTRY_MINIMAP_CONTACTS,
+} from './components/Scene/USInfantrySquad';
+import { useEnemyCombat } from './hooks/useEnemyCombat';
 import {
   FLAMETHROWER_CONE_DOT,
   FLAMETHROWER_RANGE,
   NapalmStrike,
   NAPALM_COOLDOWN_SECONDS,
-  NAPALM_IMPACT_DELAY_MS,
   NAPALM_STRIKE_LENGTH,
   NAPALM_STRIKE_WIDTH,
   WeaponMode,
@@ -70,11 +75,21 @@ function App() {
   const [flameFuel, setFlameFuel] = useState(1);
   const [napalmStrikes, setNapalmStrikes] = useState<NapalmStrike[]>([]);
   const [napalmCooldown, setNapalmCooldown] = useState(0);
+  const [combatSessionKey, setCombatSessionKey] = useState(0);
+  const [tankIntegrity, setTankIntegrity] = useState(100);
+  const [damageFlash, setDamageFlash] = useState(false);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
   const worldSessionRef = useRef(0);
   const automaticHitTriggerByPathRef = useRef(new Map<string, number>());
+  const napalmPayloadsRef = useRef(new Map<number, {
+    session: number;
+    filePaths: string[];
+    enemyIds: string[];
+  }>());
+  const tankHitCooldownRef = useRef(0);
+  const damageFlashTimeoutRef = useRef<number | null>(null);
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -105,11 +120,43 @@ function App() {
   const { explosions, spawn: spawnExplosion, despawn: despawnExplosion } = useExplosionPool();
   const fieldRadio = useFieldRadio();
   const gameAudio = useGameAudio();
+  const {
+    enemies,
+    livingEnemies,
+    aliveCount: hostileCount,
+    damageEnemy,
+    killEnemy,
+  } = useEnemyCombat({ sessionKey: combatSessionKey, count: 8 });
 
   useEffect(() => {
     if (state === 'ready') gameAudio.setBattlefieldActive(true);
     else gameAudio.stopAllLoops();
   }, [state, gameAudio.setBattlefieldActive, gameAudio.stopAllLoops]);
+
+  useEffect(() => {
+    setTankIntegrity(100);
+    setDamageFlash(false);
+    setNapalmStrikes([]);
+    setNapalmCooldown(0);
+    napalmReadyAtRef.current = 0;
+    napalmPayloadsRef.current.clear();
+    tankHitCooldownRef.current = 0;
+    if (damageFlashTimeoutRef.current !== null) {
+      window.clearTimeout(damageFlashTimeoutRef.current);
+      damageFlashTimeoutRef.current = null;
+    }
+  }, [combatSessionKey]);
+
+  useEffect(() => {
+    if (tankIntegrity > 0 || state !== 'ready') return;
+    toast.error('Tank disabled · recovery crew inbound', { duration: 2400 });
+    const recoveryTimer = window.setTimeout(() => {
+      setTankIntegrity(100);
+      setTankStartPosition([0, 0, -12]);
+      toast.success('Armor restored · back in the fight', { duration: 2200 });
+    }, 2200);
+    return () => window.clearTimeout(recoveryTimer);
+  }, [state, tankIntegrity]);
 
   // File block mesh refs for hit detection (populated by FileBlocks component)
   const fileBlockRefsRef = useRef<React.RefObject<THREE.InstancedMesh | null>[]>([]);
@@ -194,6 +241,7 @@ function App() {
 
   async function pickDirectory() {
     worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setIsTraining(false);
@@ -223,6 +271,7 @@ function App() {
   function startTraining() {
     gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     setIsTraining(true);
     setCurrentDirectory(TRAINING_DIRECTORY);
@@ -266,6 +315,7 @@ function App() {
     if (!lastDirectory) return;
 
     worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setCurrentDirectory(lastDirectory);
@@ -276,6 +326,7 @@ function App() {
 
   function changeDirectory() {
     worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     fieldRadio.stop();
@@ -287,6 +338,7 @@ function App() {
 
   async function navigateToDirectory(dirPath: string) {
     worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setCurrentDirectory(dirPath);
@@ -348,6 +400,48 @@ function App() {
   }
 
   // Shoot handler for Tank component
+  function applyEnemyDamage(
+    enemyId: string,
+    amount: number,
+    source: 'cannon' | 'machinegun' | 'flamethrower' | 'napalm',
+  ) {
+    const result = damageEnemy(enemyId, amount, source);
+    if (!result?.killed) return;
+
+    const [x, y, z] = result.enemy.position;
+    spawnExplosion(new THREE.Vector3(x, y + 0.45, z), '#d75b32', 0.52);
+    toast.success('Hostile position neutralized', { duration: 1500 });
+  }
+
+  function handleEnemyProjectileHit(enemyId: string, projectile: Projectile) {
+    if (projectile.kind === 'machinegun') {
+      const enemy = enemies.find(candidate => candidate.id === enemyId && candidate.alive);
+      if (enemy) {
+        const [x, y, z] = enemy.position;
+        spawnExplosion(new THREE.Vector3(x, y + 0.58, z), '#ffc46b', 0.12);
+      }
+    }
+    applyEnemyDamage(
+      enemyId,
+      projectile.kind === 'cannon' ? 100 : 42,
+      projectile.kind,
+    );
+  }
+
+  function handleTankHit(damage: number) {
+    const now = performance.now();
+    if (now < tankHitCooldownRef.current || tankIntegrity <= 0) return;
+    tankHitCooldownRef.current = now + 260;
+
+    setTankIntegrity(current => Math.max(0, current - damage));
+    setDamageFlash(true);
+    if (damageFlashTimeoutRef.current !== null) window.clearTimeout(damageFlashTimeoutRef.current);
+    damageFlashTimeoutRef.current = window.setTimeout(() => {
+      setDamageFlash(false);
+      damageFlashTimeoutRef.current = null;
+    }, 180);
+  }
+
   function handleShoot(position: THREE.Vector3, direction: THREE.Vector3) {
     gameAudio.playCannon();
     spawn(position, direction, 'cannon');
@@ -387,10 +481,19 @@ function App() {
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 6);
 
-    if (targets.length === 0) return;
-
     for (const { block } of targets) {
       handleAutomaticHit(block.path, triggerId);
+    }
+
+    for (const enemy of livingEnemies) {
+      const enemyPosition = new THREE.Vector3(...enemy.position);
+      enemyPosition.y += enemy.stance === 'kneeling' ? 0.48 : 0.62;
+      const offset = enemyPosition.sub(position);
+      const distance = offset.length();
+      const alignment = distance > 0 ? offset.normalize().dot(normalizedDirection) : 1;
+      if (distance <= FLAMETHROWER_RANGE && alignment >= FLAMETHROWER_CONE_DOT) {
+        applyEnemyDamage(enemy.id, 28, 'flamethrower');
+      }
     }
   }
 
@@ -409,12 +512,6 @@ function App() {
     const flatAimDirection = new THREE.Vector2(runDirection.x, runDirection.z).normalize();
     const strikeDirection = new THREE.Vector2(flatAimDirection.y, -flatAimDirection.x).normalize();
     const strikeRotation = Math.atan2(-strikeDirection.y, strikeDirection.x);
-    setNapalmStrikes(prev => [...prev, {
-      id,
-      position: [target.x, 0.03, target.z],
-      rotation: strikeRotation,
-    }]);
-    gameAudio.playNapalmSequence();
 
     const targets = allBlocks
       .filter(block => !deletingFiles.has(block.path))
@@ -431,32 +528,88 @@ function App() {
       ))
       .sort((a, b) => Math.abs(a.alongRun) - Math.abs(b.alongRun));
 
+    const enemyTargets = livingEnemies
+      .map(enemy => {
+        const offsetX = enemy.position[0] - target.x;
+        const offsetZ = enemy.position[2] - target.z;
+        const alongRun = offsetX * strikeDirection.x + offsetZ * strikeDirection.y;
+        const acrossRun = -offsetX * strikeDirection.y + offsetZ * strikeDirection.x;
+        return { enemy, alongRun, acrossRun };
+      })
+      .filter(candidate => (
+        Math.abs(candidate.alongRun) <= NAPALM_STRIKE_LENGTH / 2
+        && Math.abs(candidate.acrossRun) <= NAPALM_STRIKE_WIDTH / 2
+      ));
+
+    napalmPayloadsRef.current.set(id, {
+      session: strikeSession,
+      filePaths: targets.map(({ block }) => block.path),
+      enemyIds: enemyTargets.map(({ enemy }) => enemy.id),
+    });
+
+    const beginSynchronizedStrike = () => {
+      if (worldSessionRef.current !== strikeSession) {
+        napalmPayloadsRef.current.delete(id);
+        return;
+      }
+
+      setNapalmStrikes(prev => [...prev, {
+        id,
+        position: [target.x, 0.03, target.z],
+        rotation: strikeRotation,
+      }]);
+      const targetCount = targets.length + enemyTargets.length;
+      toast(
+        targetCount > 0
+          ? `Phantom inbound · ${targetCount} targets in strike zone`
+          : 'Phantom inbound · strike zone is clear',
+        { duration: 2000 },
+      );
+    };
+
+    // Audio and ordnance clocks begin in the same input frame so the authored
+    // 8.45-second impact transient and the visible fireball stay aligned.
+    gameAudio.playNapalmSequence(beginSynchronizedStrike);
+  }
+
+  function handleNapalmImpact(id: number) {
+    const payload = napalmPayloadsRef.current.get(id);
+    if (!payload || payload.session !== worldSessionRef.current) return;
+    napalmPayloadsRef.current.delete(id);
+
+    const liveFilePaths = new Set(
+      allBlocks
+        .filter(block => !deletingFiles.has(block.path))
+        .map(block => block.path),
+    );
+    const filePathsAtImpact = payload.filePaths.filter(filePath => liveFilePaths.has(filePath));
+
+    let enemyCasualties = 0;
+    for (const enemyId of payload.enemyIds) {
+      const result = killEnemy(enemyId, 'napalm');
+      if (!result?.killed) continue;
+      enemyCasualties += 1;
+      const [x, y, z] = result.enemy.position;
+      spawnExplosion(new THREE.Vector3(x, y + 0.4, z), '#ff6a28', 0.65);
+    }
+
+    const totalTargets = filePathsAtImpact.length + enemyCasualties;
     toast(
-      targets.length > 0
-        ? `Jet inbound · ${targets.length} targets in strike zone`
-        : 'Jet inbound · strike zone is clear',
-      { duration: 1800 },
+      totalTargets > 0
+        ? `Napalm impact · ${totalTargets} targets caught in the burn`
+        : 'Napalm impact · strike zone clear',
+      { duration: 2500 },
     );
 
-    window.setTimeout(() => {
-      if (worldSessionRef.current !== strikeSession) return;
-
-      toast(
-        targets.length > 0
-          ? `Napalm impact · ${targets.length} targets in burn zone`
-          : 'Napalm impact · no targets in burn zone',
-        { duration: 2200 },
-      );
-
-      void (async () => {
-        for (const { block } of targets) {
-          await handleProjectileHit(block.path);
-        }
-      })();
-    }, NAPALM_IMPACT_DELAY_MS);
+    void (async () => {
+      for (const filePath of filePathsAtImpact) {
+        await handleProjectileHit(filePath);
+      }
+    })();
   }
 
   function handleNapalmComplete(id: number) {
+    napalmPayloadsRef.current.delete(id);
     setNapalmStrikes(prev => prev.filter(strike => strike.id !== id));
   }
 
@@ -616,6 +769,10 @@ function App() {
 
   // Prepare data for 3D scene (needs to be before early returns so handlers can reference allBlocks)
   const { blocksByCategory, folders, allBlocks } = useFileBlocks(entries);
+  const combatObstacles = allBlocks.map(block => ({
+    position: block.position,
+    radius: Math.max(0.62, block.scale * 0.74),
+  }));
 
   // Calculate folder positions (folders get front rows in grid layout)
   const folderPositions = new Map<string, [number, number, number]>();
@@ -753,6 +910,9 @@ function App() {
         onWeaponChange={setWeaponMode}
         flameFuel={flameFuel}
         napalmCooldown={napalmCooldown}
+        tankIntegrity={tankIntegrity}
+        hostileCount={hostileCount}
+        damageFlash={damageFlash}
         radioEnabled={fieldRadio.enabled}
         radioTrackName={fieldRadio.trackName}
         onToggleRadio={fieldRadio.toggle}
@@ -768,6 +928,8 @@ function App() {
         fileBlocks={minimapFileBlocks}
         folderPortals={minimapFolderPortals}
         backPortalPosition={backPortalPosition}
+        enemies={livingEnemies}
+        friendlies={US_INFANTRY_MINIMAP_CONTACTS}
       />
 
       <div className="header" data-game-ui>
@@ -803,7 +965,26 @@ function App() {
             onFlamethrowerAudioChange={gameAudio.setFlamethrowerActive}
             onMovementAudioChange={gameAudio.setMovementActive}
           />
-          <CameraRig tankRef={tankRef} />
+          <CameraRig
+            tankRef={tankRef}
+            napalmCinematic={napalmStrikes.length > 0 && napalmCooldown > 0.5}
+          />
+
+          <USInfantrySquad
+            enemies={livingEnemies}
+            obstacles={combatObstacles}
+            enabled={livingEnemies.length > 0}
+            onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'machinegun')}
+          />
+
+          <VietCongCombatants
+            enemies={enemies}
+            tankRef={tankRef}
+            obstacles={combatObstacles}
+            enabled={tankIntegrity > 0}
+            onTankHit={event => handleTankHit(event.damage)}
+            onEnemyFire={gameAudio.playEnemyRifle}
+          />
 
           <PortalCollision
             tankRef={tankRef}
@@ -817,7 +998,9 @@ function App() {
             pool={pool}
             despawn={despawn}
             onHit={handleProjectileCollision}
+            onEnemyHit={handleEnemyProjectileHit}
             allBlocks={allBlocks}
+            enemies={livingEnemies}
           />
 
           {explosions.length > 0 && (
@@ -827,6 +1010,7 @@ function App() {
           {napalmStrikes.length > 0 && (
             <OrdnanceEffects
               napalmStrikes={napalmStrikes}
+              onNapalmImpact={handleNapalmImpact}
               onNapalmComplete={handleNapalmComplete}
             />
           )}

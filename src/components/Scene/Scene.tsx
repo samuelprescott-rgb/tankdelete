@@ -19,12 +19,13 @@ export function Scene({ children }: SceneProps) {
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.12;
+          gl.toneMappingExposure = 1.16;
+          gl.outputColorSpace = THREE.SRGBColorSpace;
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
         }}
       >
-        <color attach="background" args={['#10160e']} />
-        <fog attach="fog" args={['#242819', 46, 125]} />
+        <color attach="background" args={['#263b2b']} />
+        <fog attach="fog" args={['#526047', 42, 132]} />
         <Lighting />
         <VietnamEnvironment />
         <TronGrid />

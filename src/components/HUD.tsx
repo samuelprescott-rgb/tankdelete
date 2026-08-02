@@ -16,6 +16,9 @@ interface HUDProps {
   onWeaponChange: (mode: WeaponMode) => void;
   flameFuel: number;
   napalmCooldown: number;
+  tankIntegrity: number;
+  hostileCount: number;
+  damageFlash: boolean;
   radioEnabled: boolean;
   radioTrackName: string;
   radioSourceLabel: string;
@@ -37,6 +40,9 @@ export function HUD({
   onWeaponChange,
   flameFuel,
   napalmCooldown,
+  tankIntegrity,
+  hostileCount,
+  damageFlash,
   radioEnabled,
   radioTrackName,
   radioSourceLabel,
@@ -88,6 +94,17 @@ export function HUD({
             <span><strong>{fileCount}</strong> files</span>
             <span><strong>{folderCount}</strong> portals</span>
           </div>
+        </div>
+
+        <div className={`armor-status ${damageFlash ? 'is-hit' : ''}`}>
+          <div className="armor-status-copy">
+            <span className="hud-kicker">Armor integrity</span>
+            <strong>{Math.round(tankIntegrity)}%</strong>
+          </div>
+          <div className="armor-meter" aria-label={`Tank armor integrity ${Math.round(tankIntegrity)} percent`}>
+            <span style={{ width: `${tankIntegrity}%` }} />
+          </div>
+          <small>{hostileCount} hostile{hostileCount === 1 ? '' : 's'} active</small>
         </div>
 
         <div className={`hud-targets ${markedCount > 0 ? 'is-armed' : ''}`}>
@@ -153,6 +170,7 @@ export function HUD({
         <span><kbd>M</kbd> Radio</span>
         <span><kbd>⌘/Ctrl Z</kbd> Undo</span>
       </div>
+      <div className={`damage-vignette ${damageFlash ? 'is-visible' : ''}`} aria-hidden="true" />
     </>
   );
 }

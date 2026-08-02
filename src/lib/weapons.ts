@@ -22,4 +22,15 @@ export const MACHINE_GUN_FIRE_INTERVAL = 0.1;
 export const NAPALM_STRIKE_LENGTH = 20;
 export const NAPALM_STRIKE_WIDTH = 5.5;
 export const NAPALM_COOLDOWN_SECONDS = 10;
-export const NAPALM_IMPACT_DELAY_MS = 8450;
+
+// One clock drives the aircraft, ordnance, gameplay impact, and lingering burn.
+// The impact point is matched to the first explosive transient in napalm_strike.wav.
+export const NAPALM_TIMELINE = {
+  jetIngressSeconds: 4.05,
+  bombReleaseSeconds: 7.3,
+  impactSeconds: 8.45,
+  ignitionSweepSeconds: 0.48,
+  rollingFireSeconds: 4.75,
+  jetExitSeconds: 13.2,
+  cleanupSeconds: 17.96,
+} as const;

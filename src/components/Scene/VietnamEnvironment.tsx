@@ -14,6 +14,96 @@ function distanceToRoad(value: number) {
   return Math.abs(((value + half) % ROAD_GRID_SPACING + ROAD_GRID_SPACING) % ROAD_GRID_SPACING - half);
 }
 
+type PaddyDrainSide = 'north' | 'south' | 'east' | 'west';
+
+interface PaddyField {
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  rotation: number;
+  waterLevel: number;
+  drainSide: PaddyDrainSide;
+  drainOffset: number;
+}
+
+// These cells form three readable terrace groups while preserving the road grid
+// and all existing gameplay collision data.
+const PADDY_FIELDS: PaddyField[] = [
+  { x: -6.35, z: -12.15, width: 10.05, depth: 5.55, rotation: -0.036, waterLevel: -0.058, drainSide: 'east', drainOffset: -0.62 },
+  { x: 6.2, z: -12.2, width: 9.72, depth: 5.92, rotation: 0.042, waterLevel: -0.052, drainSide: 'west', drainOffset: 0.58 },
+  { x: -6.15, z: -4.25, width: 9.42, depth: 5.82, rotation: 0.031, waterLevel: -0.048, drainSide: 'south', drainOffset: 1.05 },
+  { x: 6.3, z: -4.1, width: 9.68, depth: 6.08, rotation: -0.04, waterLevel: -0.042, drainSide: 'north', drainOffset: -0.92 },
+  { x: -6.1, z: 3.92, width: 9.85, depth: 5.42, rotation: -0.025, waterLevel: -0.037, drainSide: 'east', drainOffset: -0.74 },
+  { x: 6.15, z: 4.08, width: 10.02, depth: 5.7, rotation: 0.028, waterLevel: -0.032, drainSide: 'west', drainOffset: 0.82 },
+  { x: -20.1, z: 4.25, width: 8.4, depth: 6.32, rotation: 0.075, waterLevel: -0.03, drainSide: 'south', drainOffset: -1.1 },
+  { x: 20.05, z: 4.15, width: 8.75, depth: 6.05, rotation: -0.068, waterLevel: -0.026, drainSide: 'north', drainOffset: 1.18 },
+];
+
+function paddyLocalToWorld(field: PaddyField, localX: number, localZ: number) {
+  const cosine = Math.cos(field.rotation);
+  const sine = Math.sin(field.rotation);
+  return {
+    x: field.x + cosine * localX + sine * localZ,
+    z: field.z - sine * localX + cosine * localZ,
+  };
+}
+
+function isInsidePaddy(x: number, z: number, padding = 0) {
+  return PADDY_FIELDS.some(field => {
+    const dx = x - field.x;
+    const dz = z - field.z;
+    const cosine = Math.cos(field.rotation);
+    const sine = Math.sin(field.rotation);
+    const localX = cosine * dx - sine * dz;
+    const localZ = sine * dx + cosine * dz;
+    return Math.abs(localX) <= field.width * 0.5 + padding
+      && Math.abs(localZ) <= field.depth * 0.5 + padding;
+  });
+}
+
+function createPaddyOutline(field: PaddyField, index: number): Array<[number, number]> {
+  const halfWidth = field.width * 0.5;
+  const halfDepth = field.depth * 0.5;
+  return [
+    [-halfWidth * (0.68 + seeded(index, 301) * 0.12), -halfDepth],
+    [halfWidth * 0.04, -halfDepth * (0.92 + seeded(index, 302) * 0.08)],
+    [halfWidth * (0.7 + seeded(index, 303) * 0.13), -halfDepth * 0.94],
+    [halfWidth, -halfDepth * (0.38 + seeded(index, 304) * 0.12)],
+    [halfWidth * (0.88 + seeded(index, 305) * 0.1), halfDepth * 0.16],
+    [halfWidth, halfDepth * (0.55 + seeded(index, 306) * 0.14)],
+    [halfWidth * (0.58 + seeded(index, 307) * 0.16), halfDepth],
+    [-halfWidth * 0.1, halfDepth * (0.88 + seeded(index, 308) * 0.1)],
+    [-halfWidth * (0.7 + seeded(index, 309) * 0.14), halfDepth],
+    [-halfWidth, halfDepth * (0.42 + seeded(index, 310) * 0.15)],
+    [-halfWidth * (0.9 + seeded(index, 311) * 0.08), -halfDepth * 0.08],
+    [-halfWidth, -halfDepth * (0.62 + seeded(index, 312) * 0.12)],
+  ];
+}
+
+function createPaddyShape(field: PaddyField, index: number) {
+  const points = createPaddyOutline(field, index);
+  const shape = new THREE.Shape();
+  points.forEach(([x, z], pointIndex) => {
+    if (pointIndex === 0) shape.moveTo(x, z);
+    else shape.lineTo(x, z);
+  });
+  shape.closePath();
+  return shape;
+}
+
+function isInsideOutline(x: number, z: number, outline: Array<[number, number]>) {
+  let inside = false;
+  for (let current = 0, previous = outline.length - 1; current < outline.length; previous = current, current += 1) {
+    const [currentX, currentZ] = outline[current];
+    const [previousX, previousZ] = outline[previous];
+    const crosses = (currentZ > z) !== (previousZ > z)
+      && x < (previousX - currentX) * (z - currentZ) / (previousZ - currentZ) + currentX;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
 function createGrassClumpGeometry() {
   const positions: number[] = [];
   const colors: number[] = [];
@@ -73,6 +163,7 @@ function ElephantGrass() {
       candidate += 1;
       if (distanceToRoad(x) < 2.4 || distanceToRoad(z) < 2.4) continue;
       if (Math.abs(x) < 7 && z > -18 && z < 8) continue;
+      if (isInsidePaddy(x, z, 0.7)) continue;
 
       const height = 0.9 + seeded(candidate, 3) * 1.3;
       placements.push({
@@ -285,6 +376,7 @@ function LayeredJungle() {
       if (distanceToRoad(x) < 2.45 || distanceToRoad(z) < 2.45) continue;
       if (Math.abs(x) < 12 && z > -22 && z < 18) continue;
       if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
+      if (isInsidePaddy(x, z, 1.35)) continue;
 
       placements.push({
         x,
@@ -312,7 +404,7 @@ function LayeredJungle() {
       if (distanceToRoad(x) < 2.05 || distanceToRoad(z) < 2.05) continue;
       if (Math.abs(x) < 8 && z > -20 && z < 12) continue;
       if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
-      if (PADDY_POSITIONS.some(([paddyX, paddyZ]) => Math.abs(x - paddyX) < 2.75 && Math.abs(z - paddyZ) < 2.75)) continue;
+      if (isInsidePaddy(x, z, 0.85)) continue;
       placements.push({
         x,
         z,
@@ -576,84 +668,447 @@ function DistantHelicopter() {
   );
 }
 
-const PADDY_POSITIONS: Array<[number, number]> = [
-  [-4, -4],
-  [4, -4],
-  [-4, 4],
-  [4, 4],
-  [-12, -12],
-  [12, -12],
-  [-20, 4],
-  [20, 4],
-];
+function createRiceShootGeometry() {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const rootColor = new THREE.Color('#29451f');
+  const leafColor = new THREE.Color('#7f9b4d');
+
+  const push = (x: number, y: number, z: number, color: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(color.r, color.g, color.b);
+  };
+
+  for (let blade = 0; blade < 6; blade += 1) {
+    const angle = blade / 6 * Math.PI * 2;
+    const sideX = Math.cos(angle + Math.PI * 0.5);
+    const sideZ = Math.sin(angle + Math.PI * 0.5);
+    const baseX = Math.cos(angle) * 0.08;
+    const baseZ = Math.sin(angle) * 0.08;
+    const tipX = baseX + Math.cos(angle) * (0.2 + seeded(blade, 401) * 0.18);
+    const tipZ = baseZ + Math.sin(angle) * (0.2 + seeded(blade, 402) * 0.18);
+    const height = 0.72 + seeded(blade, 403) * 0.28;
+    const width = 0.045;
+
+    push(baseX - sideX * width, 0, baseZ - sideZ * width, rootColor);
+    push(baseX + sideX * width, 0, baseZ + sideZ * width, rootColor);
+    push(tipX + sideX * width * 0.12, height, tipZ + sideZ * width * 0.12, leafColor);
+    push(baseX - sideX * width, 0, baseZ - sideZ * width, rootColor);
+    push(tipX + sideX * width * 0.12, height, tipZ + sideZ * width * 0.12, leafColor);
+    push(tipX - sideX * width * 0.12, height, tipZ - sideZ * width * 0.12, leafColor);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createBananaPlantGeometry() {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const heartColor = new THREE.Color('#738e45');
+  const edgeColor = new THREE.Color('#2d552c');
+
+  const push = (x: number, y: number, z: number, color: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(color.r, color.g, color.b);
+  };
+
+  for (let leaf = 0; leaf < 7; leaf += 1) {
+    const angle = leaf / 7 * Math.PI * 2 + 0.2;
+    const sideX = Math.cos(angle + Math.PI * 0.5);
+    const sideZ = Math.sin(angle + Math.PI * 0.5);
+    const midX = Math.cos(angle) * 0.58;
+    const midZ = Math.sin(angle) * 0.58;
+    const tipX = Math.cos(angle) * (1.08 + (leaf % 2) * 0.14);
+    const tipZ = Math.sin(angle) * (1.08 + (leaf % 2) * 0.14);
+    const width = 0.25;
+
+    push(0, 0.38, 0, heartColor);
+    push(midX + sideX * width, 0.98, midZ + sideZ * width, heartColor);
+    push(tipX, 0.68 - (leaf % 3) * 0.08, tipZ, edgeColor);
+    push(0, 0.38, 0, heartColor);
+    push(tipX, 0.68 - (leaf % 3) * 0.08, tipZ, edgeColor);
+    push(midX - sideX * width, 0.98, midZ - sideZ * width, heartColor);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
 
 function RicePaddies() {
   const riceRef = useRef<THREE.InstancedMesh>(null);
+  const bermRef = useRef<THREE.InstancedMesh>(null);
+  const channelRef = useRef<THREE.InstancedMesh>(null);
+  const rippleRef = useRef<THREE.InstancedMesh>(null);
+  const bananaStemsRef = useRef<THREE.InstancedMesh>(null);
+  const bananaLeavesRef = useRef<THREE.InstancedMesh>(null);
+  const waterMaterialsRef = useRef<Array<THREE.MeshPhysicalMaterial | null>>([]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const riceGeometry = useMemo(() => createGrassClumpGeometry(), []);
-  const seedlings = useMemo(() => PADDY_POSITIONS.flatMap(([paddyX, paddyZ], paddyIndex) => (
-    Array.from({ length: 36 }, (_, seedlingIndex) => {
-      const row = Math.floor(seedlingIndex / 6);
-      const column = seedlingIndex % 6;
-      return {
-        x: paddyX - 1.75 + column * 0.7 + (seeded(seedlingIndex, 150 + paddyIndex) - 0.5) * 0.1,
-        z: paddyZ - 1.75 + row * 0.7 + (seeded(seedlingIndex, 160 + paddyIndex) - 0.5) * 0.1,
-        rotation: seeded(seedlingIndex, 170 + paddyIndex) * Math.PI,
-        scale: 0.19 + seeded(seedlingIndex, 180 + paddyIndex) * 0.05,
+  const riceGeometry = useMemo(() => createRiceShootGeometry(), []);
+  const bananaGeometry = useMemo(() => createBananaPlantGeometry(), []);
+  const waterShapes = useMemo(() => PADDY_FIELDS.map(createPaddyShape), []);
+  const bermColors = useMemo(() => [
+    new THREE.Color('#604a2d'),
+    new THREE.Color('#705a35'),
+    new THREE.Color('#4f422a'),
+    new THREE.Color('#7b6339'),
+  ], []);
+
+  const paddyDetails = useMemo(() => {
+    const seedlings: Array<{ x: number; y: number; z: number; rotation: number; scale: number }> = [];
+    const berms: Array<{
+      x: number;
+      y: number;
+      z: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+      scaleZ: number;
+      color: number;
+    }> = [];
+    const channels: Array<{
+      x: number;
+      y: number;
+      z: number;
+      rotation: number;
+      scaleX: number;
+      scaleZ: number;
+    }> = [];
+    const ripples: Array<{ x: number; y: number; z: number; rotation: number; phase: number; size: number }> = [];
+    const fringe: Array<{ x: number; y: number; z: number; rotation: number; scale: number }> = [];
+
+    PADDY_FIELDS.forEach((field, fieldIndex) => {
+      const outline = createPaddyOutline(field, fieldIndex);
+      const columns = Math.max(7, Math.floor(field.width / 0.62));
+      const rows = Math.max(7, Math.floor(field.depth / 0.62));
+      const usableWidth = field.width - 0.9;
+      const usableDepth = field.depth - 0.9;
+
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          const seedlingIndex = row * columns + column;
+          if ((seedlingIndex + fieldIndex * 5) % 23 === 0) continue;
+          const localX = -usableWidth * 0.5
+            + column * (usableWidth / Math.max(columns - 1, 1))
+            + (row % 2) * 0.045
+            + (seeded(seedlingIndex, 430 + fieldIndex) - 0.5) * 0.08;
+          const localZ = -usableDepth * 0.5
+            + row * (usableDepth / Math.max(rows - 1, 1))
+            + (seeded(seedlingIndex, 440 + fieldIndex) - 0.5) * 0.07;
+          if (!isInsideOutline(localX, localZ, outline)) continue;
+          const world = paddyLocalToWorld(field, localX, localZ);
+          seedlings.push({
+            x: world.x,
+            y: field.waterLevel + 0.012,
+            z: world.z,
+            rotation: field.rotation + (seeded(seedlingIndex, 450 + fieldIndex) - 0.5) * 0.34,
+            scale: 0.27 + seeded(seedlingIndex, 460 + fieldIndex) * 0.08,
+          });
+        }
+      }
+
+      const addBerm = (
+        localX: number,
+        localZ: number,
+        scaleX: number,
+        scaleZ: number,
+        segmentIndex: number,
+        baseRotation = field.rotation,
+      ) => {
+        const world = paddyLocalToWorld(field, localX, localZ);
+        berms.push({
+          x: world.x,
+          y: field.waterLevel + 0.055 + seeded(segmentIndex, 470 + fieldIndex) * 0.025,
+          z: world.z,
+          rotation: baseRotation + (seeded(segmentIndex, 480 + fieldIndex) - 0.5) * 0.035,
+          scaleX,
+          scaleY: 0.075 + seeded(segmentIndex, 490 + fieldIndex) * 0.035,
+          scaleZ,
+          color: Math.floor(seeded(segmentIndex, 500 + fieldIndex) * bermColors.length),
+        });
       };
-    })
-  )), []);
+
+      outline.forEach((start, edgeIndex) => {
+        const end = outline[(edgeIndex + 1) % outline.length];
+        const edgeX = end[0] - start[0];
+        const edgeZ = end[1] - start[1];
+        const edgeLength = Math.hypot(edgeX, edgeZ);
+        const segmentCount = Math.max(1, Math.ceil(edgeLength / 1.22));
+        const segmentLength = edgeLength / segmentCount;
+        const edgeMidX = (start[0] + end[0]) * 0.5;
+        const edgeMidZ = (start[1] + end[1]) * 0.5;
+        const drainEdge = (
+          (field.drainSide === 'east' && edgeMidX > field.width * 0.38)
+          || (field.drainSide === 'west' && edgeMidX < -field.width * 0.38)
+          || (field.drainSide === 'north' && edgeMidZ > field.depth * 0.38)
+          || (field.drainSide === 'south' && edgeMidZ < -field.depth * 0.38)
+        );
+        const edgeRotation = field.rotation + Math.atan2(-edgeZ, edgeX);
+
+        for (let segment = 0; segment < segmentCount; segment += 1) {
+          const progress = (segment + 0.5) / segmentCount;
+          const localX = THREE.MathUtils.lerp(start[0], end[0], progress);
+          const localZ = THREE.MathUtils.lerp(start[1], end[1], progress);
+          const alongDrain = field.drainSide === 'east' || field.drainSide === 'west' ? localZ : localX;
+          const isSluiceGap = drainEdge && Math.abs(alongDrain - field.drainOffset) < segmentLength * 0.82;
+          const isNaturalBreak = seeded(segment + edgeIndex * 17, 710 + fieldIndex) < 0.115;
+          if (isSluiceGap || isNaturalBreak) continue;
+
+          const segmentSeed = segment + edgeIndex * 23 + fieldIndex * 149;
+          addBerm(
+            localX,
+            localZ,
+            segmentLength * (0.46 + seeded(segmentSeed, 720) * 0.045),
+            0.19 + seeded(segmentSeed, 721) * 0.045,
+            segmentSeed,
+            edgeRotation,
+          );
+        }
+      });
+
+      const channelLength = 1.65 + seeded(fieldIndex, 550) * 0.45;
+      const channelWidth = 0.38 + seeded(fieldIndex, 551) * 0.08;
+      const eastWest = field.drainSide === 'east' || field.drainSide === 'west';
+      const direction = field.drainSide === 'east' || field.drainSide === 'north' ? 1 : -1;
+      const channelLocalX = eastWest
+        ? direction * (field.width * 0.5 + channelLength * 0.5 - 0.08)
+        : field.drainOffset;
+      const channelLocalZ = eastWest
+        ? field.drainOffset
+        : direction * (field.depth * 0.5 + channelLength * 0.5 - 0.08);
+      const channelWorld = paddyLocalToWorld(field, channelLocalX, channelLocalZ);
+      channels.push({
+        x: channelWorld.x,
+        y: field.waterLevel - 0.004,
+        z: channelWorld.z,
+        rotation: field.rotation,
+        scaleX: eastWest ? channelLength : channelWidth,
+        scaleZ: eastWest ? channelWidth : channelLength,
+      });
+
+      for (const bankDirection of [-1, 1]) {
+        const bankOffset = channelWidth * 0.5 + 0.2;
+        addBerm(
+          channelLocalX + (eastWest ? 0 : bankDirection * bankOffset),
+          channelLocalZ + (eastWest ? bankDirection * bankOffset : 0),
+          eastWest ? channelLength * 0.53 : 0.16,
+          eastWest ? 0.16 : channelLength * 0.53,
+          80 + bankDirection + fieldIndex * 3,
+          field.rotation,
+        );
+      }
+
+      for (let rippleIndex = 0; rippleIndex < 2; rippleIndex += 1) {
+        const localX = (seeded(rippleIndex, 560 + fieldIndex) - 0.5) * field.width * 0.48;
+        const localZ = (seeded(rippleIndex, 570 + fieldIndex) - 0.5) * field.depth * 0.45;
+        const world = paddyLocalToWorld(field, localX, localZ);
+        ripples.push({
+          x: world.x,
+          y: field.waterLevel + 0.018,
+          z: world.z,
+          rotation: field.rotation,
+          phase: seeded(rippleIndex, 580 + fieldIndex),
+          size: 0.42 + seeded(rippleIndex, 590 + fieldIndex) * 0.35,
+        });
+      }
+
+      for (let plantIndex = 0; plantIndex < 2; plantIndex += 1) {
+        const sideX = (fieldIndex + plantIndex) % 2 === 0 ? 1 : -1;
+        const sideZ = (fieldIndex * 2 + plantIndex) % 3 === 0 ? 1 : -1;
+        const world = paddyLocalToWorld(
+          field,
+          sideX * (field.width * 0.5 - 0.34),
+          sideZ * (field.depth * 0.5 - 0.48),
+        );
+        fringe.push({
+          x: world.x,
+          y: field.waterLevel + 0.12,
+          z: world.z,
+          rotation: field.rotation + seeded(plantIndex, 600 + fieldIndex) * Math.PI,
+          scale: 0.48 + seeded(plantIndex, 610 + fieldIndex) * 0.24,
+        });
+      }
+    });
+
+    return { seedlings, berms, channels, ripples, fringe };
+  }, [bermColors.length]);
 
   useEffect(() => {
-    if (!riceRef.current) return;
-    seedlings.forEach((seedling, index) => {
-      dummy.position.set(seedling.x, 0.015, seedling.z);
+    if (!riceRef.current || !bermRef.current || !channelRef.current || !bananaStemsRef.current) return;
+
+    paddyDetails.seedlings.forEach((seedling, index) => {
+      dummy.position.set(seedling.x, seedling.y, seedling.z);
       dummy.rotation.set(0, seedling.rotation, 0);
-      dummy.scale.set(seedling.scale, seedling.scale * 1.25, seedling.scale);
+      dummy.scale.set(seedling.scale, seedling.scale, seedling.scale);
       dummy.updateMatrix();
       riceRef.current!.setMatrixAt(index, dummy.matrix);
     });
     riceRef.current.instanceMatrix.needsUpdate = true;
-  }, [dummy, seedlings]);
+
+    paddyDetails.berms.forEach((berm, index) => {
+      dummy.position.set(berm.x, berm.y, berm.z);
+      dummy.rotation.set(0, berm.rotation, 0);
+      dummy.scale.set(berm.scaleX, berm.scaleY, berm.scaleZ);
+      dummy.updateMatrix();
+      bermRef.current!.setMatrixAt(index, dummy.matrix);
+      bermRef.current!.setColorAt(index, bermColors[berm.color]);
+    });
+    bermRef.current.instanceMatrix.needsUpdate = true;
+    if (bermRef.current.instanceColor) bermRef.current.instanceColor.needsUpdate = true;
+
+    paddyDetails.channels.forEach((channel, index) => {
+      dummy.position.set(channel.x, channel.y, channel.z);
+      dummy.rotation.set(0, channel.rotation, 0);
+      dummy.scale.set(channel.scaleX, 0.025, channel.scaleZ);
+      dummy.updateMatrix();
+      channelRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    channelRef.current.instanceMatrix.needsUpdate = true;
+
+    paddyDetails.fringe.forEach((plant, index) => {
+      dummy.position.set(plant.x, plant.y + plant.scale * 0.38, plant.z);
+      dummy.rotation.set(0, plant.rotation, 0);
+      dummy.scale.set(0.075 * plant.scale, plant.scale * 0.76, 0.075 * plant.scale);
+      dummy.updateMatrix();
+      bananaStemsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    bananaStemsRef.current.instanceMatrix.needsUpdate = true;
+  }, [bermColors, dummy, paddyDetails]);
+
+  useFrame(({ clock }) => {
+    const time = clock.elapsedTime;
+    waterMaterialsRef.current.forEach((material, index) => {
+      if (!material) return;
+      material.roughness = 0.11 + (Math.sin(time * 0.42 + index * 1.7) * 0.5 + 0.5) * 0.055;
+      material.clearcoatRoughness = 0.08 + (Math.sin(time * 0.31 + index) * 0.5 + 0.5) * 0.08;
+    });
+
+    if (rippleRef.current) {
+      paddyDetails.ripples.forEach((ripple, index) => {
+        const life = (time * 0.12 + ripple.phase) % 1;
+        const fadeScale = Math.sin(life * Math.PI);
+        const scale = ripple.size * (0.3 + life * 1.5) * fadeScale;
+        dummy.position.set(ripple.x, ripple.y, ripple.z);
+        dummy.rotation.set(-Math.PI / 2, 0, ripple.rotation);
+        dummy.scale.set(scale * 1.45, scale, 1);
+        dummy.updateMatrix();
+        rippleRef.current!.setMatrixAt(index, dummy.matrix);
+      });
+      rippleRef.current.instanceMatrix.needsUpdate = true;
+    }
+
+    if (bananaLeavesRef.current) {
+      const sway = Math.sin(time * 0.55) * 0.035;
+      paddyDetails.fringe.forEach((plant, index) => {
+        dummy.position.set(plant.x, plant.y, plant.z);
+        dummy.rotation.set(sway * (0.65 + seeded(index, 620)), plant.rotation + sway, -sway * 0.6);
+        dummy.scale.setScalar(plant.scale);
+        dummy.updateMatrix();
+        bananaLeavesRef.current!.setMatrixAt(index, dummy.matrix);
+      });
+      bananaLeavesRef.current.instanceMatrix.needsUpdate = true;
+    }
+  });
 
   return (
     <>
-      {PADDY_POSITIONS.map(([x, z], paddyIndex) => (
-        <group key={`${x}-${z}`} position={[x, 0, z]} rotation={[0, (paddyIndex % 3 - 1) * 0.018, 0]}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.018, 0]} receiveShadow>
-            <planeGeometry args={[4.55, 4.55, 1, 1]} />
-            <meshPhysicalMaterial
-              color="#4f6658"
-              emissive="#1b2821"
-              emissiveIntensity={0.12}
-              metalness={0.34}
-              roughness={0.18}
-              clearcoat={0.62}
-              clearcoatRoughness={0.18}
-              transparent
-              opacity={0.82}
-            />
+      {PADDY_FIELDS.map((field, fieldIndex) => (
+        <group key={`${field.x}-${field.z}`} position={[field.x, 0, field.z]} rotation={[0, field.rotation, 0]}>
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, Math.max(field.waterLevel - 0.022, -0.082), 0]}
+            scale={[1.025, 1.025, 1]}
+            receiveShadow
+          >
+            <shapeGeometry args={[waterShapes[fieldIndex]]} />
+            <meshStandardMaterial color="#493b28" roughness={0.92} metalness={0.02} />
           </mesh>
-          {[-2.42, 2.42].map((edgeX) => (
-            <mesh key={`x-${edgeX}`} position={[edgeX, 0.07, 0]} castShadow receiveShadow>
-              <boxGeometry args={[0.32, 0.22, 5.18]} />
-              <meshStandardMaterial color="#665633" roughness={1} />
-            </mesh>
-          ))}
-          {[-2.42, 2.42].map((edgeZ) => (
-            <mesh key={`z-${edgeZ}`} position={[0, 0.07, edgeZ]} castShadow receiveShadow>
-              <boxGeometry args={[5.18, 0.22, 0.32]} />
-              <meshStandardMaterial color="#71613b" roughness={1} />
-            </mesh>
-          ))}
-          <mesh position={[0, 0.09, 0]} castShadow receiveShadow>
-            <boxGeometry args={[0.16, 0.15, 4.72]} />
-            <meshStandardMaterial color="#5f5132" roughness={1} />
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, field.waterLevel, 0]}
+            receiveShadow
+            renderOrder={2}
+          >
+            <shapeGeometry args={[waterShapes[fieldIndex]]} />
+            <meshPhysicalMaterial
+              ref={(node) => { waterMaterialsRef.current[fieldIndex] = node; }}
+              color={fieldIndex % 3 === 0 ? '#6f8674' : '#657e6d'}
+              emissive="#18251e"
+              emissiveIntensity={0.1}
+              metalness={0.31}
+              roughness={0.13}
+              clearcoat={0.92}
+              clearcoatRoughness={0.12}
+              transparent
+              opacity={0.72}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
           </mesh>
         </group>
       ))}
-      <instancedMesh ref={riceRef} args={[riceGeometry, undefined, seedlings.length]} castShadow={false} receiveShadow={false}>
-        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.92} emissive="#263c1d" emissiveIntensity={0.12} />
+
+      <instancedMesh ref={channelRef} args={[undefined, undefined, paddyDetails.channels.length]} renderOrder={2}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshPhysicalMaterial
+          color="#334b42"
+          metalness={0.38}
+          roughness={0.16}
+          clearcoat={0.8}
+          transparent
+          opacity={0.78}
+          depthWrite={false}
+        />
+      </instancedMesh>
+
+      <instancedMesh ref={bermRef} args={[undefined, undefined, paddyDetails.berms.length]} castShadow receiveShadow>
+        <sphereGeometry args={[1, 8, 5]} />
+        <meshStandardMaterial
+          vertexColors
+          color="#ffffff"
+          emissive="#21170d"
+          emissiveIntensity={0.08}
+          roughness={1}
+          flatShading
+        />
+      </instancedMesh>
+
+      <instancedMesh ref={riceRef} args={[riceGeometry, undefined, paddyDetails.seedlings.length]} castShadow={false} receiveShadow={false}>
+        <meshStandardMaterial
+          vertexColors
+          side={THREE.DoubleSide}
+          roughness={0.92}
+          emissive="#29401e"
+          emissiveIntensity={0.14}
+        />
+      </instancedMesh>
+
+      <instancedMesh ref={rippleRef} args={[undefined, undefined, paddyDetails.ripples.length]} renderOrder={3}>
+        <ringGeometry args={[0.78, 1, 24]} />
+        <meshBasicMaterial
+          color="#c3d4bd"
+          transparent
+          opacity={0.2}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      <instancedMesh ref={bananaStemsRef} args={[undefined, undefined, paddyDetails.fringe.length]} castShadow>
+        <cylinderGeometry args={[1, 1.35, 1, 6]} />
+        <meshStandardMaterial color="#62713b" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={bananaLeavesRef} args={[bananaGeometry, undefined, paddyDetails.fringe.length]} castShadow>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.94} />
       </instancedMesh>
     </>
   );
