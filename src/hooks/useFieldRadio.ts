@@ -23,6 +23,9 @@ const TRACKS: RadioTrack[] = [
 ];
 
 const STEP_MS = 250;
+const BUNDLED_TRACK_URL = '/audio/voodoo-child-srv.mp3';
+const BUNDLED_TRACK_NAME = 'Voodoo Child (Slight Return)';
+const BUNDLED_TRACK_ARTIST = 'Stevie Ray Vaughan and Double Trouble';
 
 function playTone(
   context: AudioContext,
@@ -53,6 +56,8 @@ export function useFieldRadio() {
   const [enabled, setEnabled] = useState(false);
   const [trackIndex, setTrackIndex] = useState(0);
   const [localTrackName, setLocalTrackName] = useState<string | null>(null);
+  const [bundledTrackAvailable, setBundledTrackAvailable] = useState(false);
+  const [preferBundledTrack, setPreferBundledTrack] = useState(true);
   const contextRef = useRef<AudioContext | null>(null);
   const masterRef = useRef<GainNode | null>(null);
   const staticSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -81,17 +86,7 @@ export function useFieldRadio() {
     setEnabled(false);
   }, [stopProcedural]);
 
-  const start = useCallback(async () => {
-    if (localAudioRef.current) {
-      try {
-        await localAudioRef.current.play();
-        setEnabled(true);
-      } catch {
-        setEnabled(false);
-      }
-      return;
-    }
-
+  const startProcedural = useCallback(async () => {
     if (contextRef.current) return;
 
     const AudioContextClass = window.AudioContext
@@ -154,6 +149,38 @@ export function useFieldRadio() {
     setEnabled(true);
   }, []);
 
+  const start = useCallback(async () => {
+    if (localAudioRef.current) {
+      try {
+        await localAudioRef.current.play();
+        setEnabled(true);
+      } catch {
+        setEnabled(false);
+      }
+      return;
+    }
+
+    if (preferBundledTrack && bundledTrackAvailable) {
+      const audio = new Audio(BUNDLED_TRACK_URL);
+      audio.loop = true;
+      audio.volume = 0.38;
+      localAudioRef.current = audio;
+      setLocalTrackName(BUNDLED_TRACK_NAME);
+      try {
+        await audio.play();
+        setEnabled(true);
+      } catch {
+        localAudioRef.current = null;
+        setLocalTrackName(null);
+        setBundledTrackAvailable(false);
+        await startProcedural();
+      }
+      return;
+    }
+
+    await startProcedural();
+  }, [bundledTrackAvailable, preferBundledTrack, startProcedural]);
+
   const toggle = useCallback(() => {
     if (enabled) {
       stop();
@@ -173,6 +200,7 @@ export function useFieldRadio() {
     audio.volume = 0.38;
     localObjectUrlRef.current = objectUrl;
     localAudioRef.current = audio;
+    setPreferBundledTrack(false);
     setLocalTrackName(file.name.replace(/\.[^.]+$/, ''));
     setEnabled(true);
     void audio.play().catch(() => setEnabled(false));
@@ -180,6 +208,8 @@ export function useFieldRadio() {
 
   const nextTrack = useCallback(() => {
     const resumeAfterSwitch = enabled;
+    const leavingBundledOrUploadedTrack = Boolean(localAudioRef.current)
+      || (preferBundledTrack && bundledTrackAvailable);
     if (localAudioRef.current) {
       localAudioRef.current.pause();
       localAudioRef.current = null;
@@ -188,14 +218,39 @@ export function useFieldRadio() {
       setLocalTrackName(null);
     }
 
+    if (leavingBundledOrUploadedTrack) {
+      setPreferBundledTrack(false);
+      stepRef.current = 0;
+      if (resumeAfterSwitch) void startProcedural();
+      return;
+    }
+
     setTrackIndex(prev => {
       const next = (prev + 1) % TRACKS.length;
       trackIndexRef.current = next;
       stepRef.current = 0;
       return next;
     });
-    if (resumeAfterSwitch) void start();
-  }, [enabled, start]);
+  }, [bundledTrackAvailable, enabled, preferBundledTrack, startProcedural]);
+
+  useEffect(() => {
+    const probe = new Audio();
+    probe.preload = 'metadata';
+    const handleLoaded = () => setBundledTrackAvailable(true);
+    const handleError = () => setBundledTrackAvailable(false);
+    probe.addEventListener('loadedmetadata', handleLoaded);
+    probe.addEventListener('error', handleError);
+    probe.src = BUNDLED_TRACK_URL;
+    probe.load();
+
+    return () => {
+      probe.pause();
+      probe.removeEventListener('loadedmetadata', handleLoaded);
+      probe.removeEventListener('error', handleError);
+      probe.removeAttribute('src');
+      probe.load();
+    };
+  }, []);
 
   useEffect(() => () => {
     stopProcedural();
@@ -205,8 +260,15 @@ export function useFieldRadio() {
 
   return {
     enabled,
-    trackName: localTrackName ?? TRACKS[trackIndex].name,
-    sourceLabel: localTrackName ? 'Local track · not bundled' : 'Original procedural transmission',
+    trackName: localTrackName
+      ?? (preferBundledTrack && bundledTrackAvailable ? BUNDLED_TRACK_NAME : TRACKS[trackIndex].name),
+    sourceLabel: localTrackName === BUNDLED_TRACK_NAME
+      || (preferBundledTrack && bundledTrackAvailable)
+      ? `${BUNDLED_TRACK_ARTIST} · local build`
+      : localTrackName
+        ? 'Local device track · not bundled'
+        : 'Original procedural transmission',
+    bundledTrackAvailable,
     toggle,
     nextTrack,
     loadLocalTrack,

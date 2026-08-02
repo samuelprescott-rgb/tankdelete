@@ -199,11 +199,6 @@
   font-size: 8px;
 }
 
-.field-radio .radio-request {
-  color: #a99b68;
-  letter-spacing: 0.015em;
-}
-
 .field-radio-actions {
   display: flex;
   gap: 4px;

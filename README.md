@@ -44,7 +44,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Mud road grid, reflective puddles, elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
 - Continuous flamethrower stream, fuel/recharge meter, machine-gun tracers, and napalm burn-zone effects
 - Two original polyphonic field-radio tracks generated with the Web Audio API
-- Local field-radio loader for legally obtained audio files; recordings never enter the repository
+- Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
 - Tactical tunnel portals for folder navigation
 - Voxel shatter explosions with category-colored particles
 - Scoring system and achievement toasts
@@ -52,7 +52,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Files are sent to your system trash (recoverable)
 - Cross-platform: macOS, Windows, Linux
 
-Commercial recordings and song melodies are intentionally not bundled. Use the field radio's **Load** button to play a legally obtained local copy of **“Voodoo Child (Slight Return)”** during a session; the selected file stays on the player's device and is not added to the game or repository.
+Commercial recordings are intentionally excluded from the public repository. A local build will automatically use `public/audio/voodoo-child-srv.mp3` as its default radio track when that file is present; this path is gitignored. The current local asset is the Stevie Ray Vaughan and Double Trouble cover of **“Voodoo Child (Slight Return)”**, not the Jimi Hendrix recording. The **Load** button can select another legally obtained audio file without adding it to the repository.
 
 ## Download
 

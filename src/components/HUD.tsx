@@ -118,7 +118,6 @@ export function HUD({
             <span className="hud-kicker">Field radio</span>
             <strong>{radioTrackName}</strong>
             <small>{radioSourceLabel}</small>
-            <small className="radio-request">Local slot · Voodoo Child (Slight Return)</small>
           </div>
           <div className="field-radio-actions">
             <button type="button" onClick={onToggleRadio}>
