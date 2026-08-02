@@ -82,7 +82,7 @@ export function ProjectileManager({
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, MAX_PROJECTILES]}>
       <sphereGeometry args={[0.12, 8, 8]} />
-      <meshBasicMaterial color="#00ffff" toneMapped={false} />
+      <meshBasicMaterial color="#e3b341" toneMapped={false} />
     </instancedMesh>
   );
 }

@@ -4,8 +4,8 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #e0e0e0;
-  background-color: #0a0a0a;
+  color: #e6e0bd;
+  background-color: #080d06;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -35,7 +35,9 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #0a0a0a;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(89, 103, 57, 0.14), transparent 45%),
+    #080d06;
   box-sizing: border-box;
 }
 
@@ -51,24 +53,81 @@ body {
 
 .directory-picker h1 {
   font-size: 3rem;
-  color: #00ffff;
-  text-shadow: 0 0 10px #00ffff;
+  color: #e3b341;
+  text-shadow: 0 0 14px rgba(227, 179, 65, 0.55);
   margin: 0;
+}
+
+.era-stamp {
+  border: 1px solid #879b63;
+  padding: 4px 9px;
+  color: #a8bf78;
+  background: rgba(74, 91, 48, 0.12);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
 }
 
 .directory-picker .subtitle {
   font-size: 1.2rem;
-  color: #e0e0e0;
+  color: #c5c09e;
   margin: 0;
 }
 
+.safety-brief {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(780px, 100%);
+  border: 1px solid rgba(135, 155, 99, 0.45);
+  background: rgba(68, 84, 43, 0.08);
+}
+
+.safety-brief div {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-right: 1px solid rgba(135, 155, 99, 0.22);
+}
+
+.safety-brief div:last-child {
+  border-right: 0;
+}
+
+.safety-brief strong {
+  color: #e3b341;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.safety-brief span {
+  color: #9d9b7d;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .safety-brief {
+    grid-template-columns: 1fr;
+  }
+
+  .safety-brief div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(135, 155, 99, 0.22);
+  }
+
+  .safety-brief div:last-child {
+    border-bottom: 0;
+  }
+}
+
 .error-message {
-  color: #ff3366;
-  background-color: rgba(255, 51, 102, 0.1);
-  border: 1px solid #ff3366;
+  color: #e8844f;
+  background-color: rgba(175, 61, 28, 0.12);
+  border: 1px solid #e36d32;
   padding: 1rem;
   border-radius: 4px;
-  text-shadow: 0 0 5px #ff3366;
+  text-shadow: 0 0 5px rgba(227, 109, 50, 0.45);
 }
 
 .last-directory {
@@ -79,7 +138,7 @@ body {
 }
 
 .directory-path {
-  color: #00ffff;
+  color: #d5c278;
   font-family: monospace;
   font-size: 0.9rem;
   margin: 0;
@@ -93,13 +152,13 @@ body {
 /* Buttons */
 button {
   cursor: pointer;
-  border: 2px solid #00ffff;
+  border: 2px solid #879b63;
   padding: 0.75rem 2rem;
   font-size: 1rem;
   font-weight: 600;
   font-family: 'Courier New', monospace;
-  color: #00ffff;
-  background-color: rgba(0, 255, 255, 0.1);
+  color: #c3ce94;
+  background-color: rgba(80, 99, 51, 0.14);
   transition: all 0.3s;
   outline: none;
   text-transform: uppercase;
@@ -107,17 +166,17 @@ button {
 }
 
 button:hover {
-  background-color: rgba(0, 255, 255, 0.2);
-  box-shadow: 0 0 15px #00ffff;
+  background-color: rgba(119, 101, 45, 0.24);
+  box-shadow: 0 0 15px rgba(227, 179, 65, 0.35);
 }
 
 button:active {
-  background-color: rgba(0, 255, 255, 0.3);
+  background-color: rgba(119, 101, 45, 0.32);
 }
 
 .btn-primary {
-  border-color: #00ffff;
-  color: #00ffff;
+  border-color: #e3b341;
+  color: #e3b341;
 }
 
 .btn-secondary {
@@ -132,6 +191,22 @@ button:active {
   box-shadow: 0 0 10px #666;
 }
 
+.btn-training-link {
+  border: 0;
+  padding: 4px 8px;
+  color: #777b61;
+  background: transparent;
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.btn-training-link:hover {
+  color: #e3b341;
+  background: transparent;
+  box-shadow: none;
+}
+
 /* Loading */
 .loading {
   display: flex;
@@ -140,12 +215,12 @@ button:active {
   justify-content: center;
   height: 100%;
   gap: 1rem;
-  color: #00ffff;
+  color: #e3b341;
 }
 
 .loading h2 {
   margin: 0;
-  text-shadow: 0 0 10px #00ffff;
+  text-shadow: 0 0 10px rgba(227, 179, 65, 0.45);
 }
 
 .scan-progress {
@@ -165,6 +240,17 @@ button:active {
   overflow: hidden;
 }
 
+.scene-container::after {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 240, 185, 0.018) 0, rgba(255, 240, 185, 0.018) 1px, transparent 1px, transparent 4px),
+    radial-gradient(circle at center, transparent 45%, rgba(5, 8, 3, 0.38) 100%);
+  content: '';
+  pointer-events: none;
+}
+
 /* File List */
 .header {
   position: fixed;
@@ -175,9 +261,9 @@ button:active {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
-  background-color: rgba(5, 5, 16, 0.8);
+  background-color: rgba(9, 14, 7, 0.9);
   backdrop-filter: blur(10px);
-  border-bottom: 2px solid #00ffff;
+  border-bottom: 2px solid #879b63;
   z-index: 100;
   flex-shrink: 0;
 }
@@ -192,19 +278,31 @@ button:active {
 
 .header h2 {
   margin: 0;
-  color: #00ffff;
+  color: #d8cf9b;
   font-size: 1.2rem;
-  text-shadow: 0 0 5px #00ffff;
+  text-shadow: 0 0 5px rgba(168, 191, 120, 0.4);
   font-family: monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.training-badge {
+  flex-shrink: 0;
+  border: 1px solid #e3b341;
+  padding: 2px 6px;
+  color: #e3b341;
+  background: rgba(227, 179, 65, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .btn-back {
   padding: 0.4rem 0.75rem;
   font-size: 1.2rem;
-  border: 1px solid #00ffff;
+  border: 1px solid #879b63;
   flex-shrink: 0;
 }
 
@@ -228,12 +326,12 @@ button:active {
 }
 
 .file-entry:hover {
-  background-color: rgba(0, 255, 255, 0.1);
-  border-color: #00ffff;
+  background-color: rgba(135, 155, 99, 0.12);
+  border-color: #879b63;
 }
 
 .file-entry.directory {
-  border-left: 3px solid #00ffff;
+  border-left: 3px solid #879b63;
 }
 
 .file-entry.file {
@@ -254,7 +352,7 @@ button:active {
 }
 
 .file-entry.directory .name {
-  color: #00ffff;
+  color: #e3b341;
   font-weight: 600;
 }
 
@@ -282,12 +380,12 @@ button:active {
 }
 
 .file-list::-webkit-scrollbar-thumb {
-  background: #00ffff;
+  background: #879b63;
   border-radius: 5px;
 }
 
 .file-list::-webkit-scrollbar-thumb:hover {
-  background: #00cccc;
+  background: #a8bf78;
 }
 
 /* Delete button */

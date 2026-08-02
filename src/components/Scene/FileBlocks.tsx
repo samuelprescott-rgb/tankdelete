@@ -253,6 +253,18 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
     }
   }, [onMeshRefsReady, blocks]);
 
+  useEffect(() => {
+    if (!hoveredBlock) return;
+
+    const stillExists = Array.from(blocks.values())
+      .some(categoryBlocks => categoryBlocks.some(block => block.path === hoveredBlock.path));
+
+    if (!stillExists) {
+      setHoveredBlock(null);
+      onHover(null);
+    }
+  }, [blocks, hoveredBlock, onHover]);
+
   const handleHover = (block: BlockData | null) => {
     setHoveredBlock(block);
     onHover(block);
@@ -297,7 +309,7 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
           <div
             style={{
               background: 'rgba(5, 5, 16, 0.95)',
-              border: '2px solid #00ffff',
+              border: '2px solid #879b63',
               borderRadius: '4px',
               padding: '8px 12px',
               color: '#ffffff',

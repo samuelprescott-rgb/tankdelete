@@ -2,6 +2,7 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
+import { GRID_COLOR } from '../../lib/colors';
 
 const vertexShader = /* glsl */ `
   varying vec2 vWorldPos;
@@ -65,7 +66,7 @@ export function TronGrid() {
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uGridSpacing: { value: ROAD_GRID_SPACING },
-    uColor: { value: new THREE.Color('#00ffff') },
+    uColor: { value: new THREE.Color(GRID_COLOR) },
   }), []);
 
   useFrame(({ clock }) => {

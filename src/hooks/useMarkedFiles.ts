@@ -17,6 +17,15 @@ export function useMarkedFiles() {
     });
   };
 
+  const clearMarked = () => {
+    setMarkedFiles(new Set());
+  };
+
+  const resetMarkedState = () => {
+    setMarkedFiles(new Set());
+    setDeletingFiles(new Set());
+  };
+
   const isMarked = (filePath: string): boolean => {
     return markedFiles.has(filePath);
   };
@@ -39,7 +48,9 @@ export function useMarkedFiles() {
     });
   };
 
-  const deleteAllMarked = async (): Promise<void> => {
+  const deleteAllMarked = async (
+    deleteFile: (filePath: string) => Promise<unknown> = commands.moveToTrash,
+  ): Promise<string[]> => {
     const filesToDelete = Array.from(markedFiles);
 
     // Move all marked files to deleting state
@@ -49,7 +60,7 @@ export function useMarkedFiles() {
     // Delete all files in parallel
     const deletePromises = filesToDelete.map(async (filePath) => {
       try {
-        await commands.moveToTrash(filePath);
+        await deleteFile(filePath);
         return { success: true, path: filePath };
       } catch (err) {
         console.error(`Failed to delete ${filePath}:`, err);
@@ -57,8 +68,21 @@ export function useMarkedFiles() {
       }
     });
 
-    await Promise.all(deletePromises);
+    const results = await Promise.all(deletePromises);
+    const successfulPaths = results.filter(result => result.success).map(result => result.path);
+    const failedPaths = results.filter(result => !result.success).map(result => result.path);
+
+    if (failedPaths.length > 0) {
+      setDeletingFiles(prev => {
+        const next = new Set(prev);
+        failedPaths.forEach(path => next.delete(path));
+        return next;
+      });
+      setMarkedFiles(prev => new Set([...prev, ...failedPaths]));
+    }
+
     // Note: finishDeletion will be called by FileBlocks after de-rez animation completes
+    return successfulPaths;
   };
 
   return {
@@ -66,6 +90,8 @@ export function useMarkedFiles() {
     deletingFiles,
     markFile,
     unmarkFile,
+    clearMarked,
+    resetMarkedState,
     isMarked,
     startDeletion,
     finishDeletion,

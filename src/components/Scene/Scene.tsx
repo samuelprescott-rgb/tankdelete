@@ -14,8 +14,8 @@ export function Scene({ children }: SceneProps) {
         camera={{ position: [0, 12, 20], fov: 60, near: 0.1, far: 500 }}
         gl={{ antialias: false, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={['#050510']} />
-        <fog attach="fog" args={['#050510', 50, 150]} />
+        <color attach="background" args={['#071007']} />
+        <fog attach="fog" args={['#0b1309', 44, 135]} />
         <Lighting />
         <TronGrid />
         {children}

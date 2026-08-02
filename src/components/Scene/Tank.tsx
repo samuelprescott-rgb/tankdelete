@@ -3,6 +3,10 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useKeyboardControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { TANK_SPEED, TANK_ROTATION_SPEED } from '../../lib/constants';
+import { WeaponMode } from '../../lib/weapons';
+
+const TANK_ARMOR_COLOR = '#a8bf78';
+const TANK_WEAPON_COLOR = '#e3b341';
 
 // Controls enum
 export enum Controls {
@@ -14,11 +18,14 @@ export enum Controls {
 
 interface TankProps {
   onShoot?: (position: THREE.Vector3, direction: THREE.Vector3) => void;
+  onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3) => void;
+  onNapalm?: (target: THREE.Vector3) => void;
+  weaponMode?: WeaponMode;
   initialPosition?: [number, number, number];
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
 }
 
-export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
+export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrower, onNapalm, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
   const { camera, pointer } = useThree();
 
@@ -46,8 +53,8 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
     function handlePointerDown(event: PointerEvent) {
       // Only fire on left click (button 0)
       if (event.button !== 0) return;
+      if ((event.target as HTMLElement | null)?.closest?.('[data-game-ui]')) return;
       if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
-      if (!onShoot) return;
 
       // Get turret world position and direction
       turretRef.current.getWorldPosition(tempWorldPos);
@@ -60,14 +67,22 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
       // Spawn position: slightly in front of barrel tip
       const spawnPosition = tempWorldPos.clone().addScaledVector(tempWorldDir, 0.8);
 
-      // Fire projectile in barrel direction
-      onShoot(spawnPosition, tempWorldDir.clone());
+      if (weaponMode === 'cannon') {
+        onShoot?.(spawnPosition, tempWorldDir.clone());
+      } else if (weaponMode === 'flamethrower') {
+        onFlamethrower?.(spawnPosition, tempWorldDir.clone());
+      } else if (weaponMode === 'napalm') {
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
+          onNapalm?.(intersection.clone());
+        }
+      }
     }
 
     // Use capture phase to ensure we receive the event before R3F Canvas
     document.addEventListener('pointerdown', handlePointerDown, true);
     return () => document.removeEventListener('pointerdown', handlePointerDown, true);
-  }, [tankRef, onShoot, tempWorldPos, tempWorldDir]);
+  }, [tankRef, onShoot, onFlamethrower, onNapalm, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
 
   useFrame((_state, delta) => {
     if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
@@ -129,15 +144,15 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
         {/* Main chassis - wireframe edges */}
         <lineSegments>
           <edgesGeometry args={[new THREE.BoxGeometry(1.2, 0.4, 1.8)]} />
-          <lineBasicMaterial color="#00ffff" toneMapped={false} />
+          <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
         </lineSegments>
 
         {/* Main chassis - transparent face fill */}
         <mesh>
           <boxGeometry args={[1.2, 0.4, 1.8]} />
           <meshStandardMaterial
-            color="#00ffff"
-            emissive="#00ffff"
+            color={TANK_ARMOR_COLOR}
+            emissive={TANK_ARMOR_COLOR}
             emissiveIntensity={0.5}
             transparent
             opacity={0.1}
@@ -148,13 +163,13 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
         <group position={[-0.6, 0, 0]}>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(0.15, 0.3, 1.6)]} />
-            <lineBasicMaterial color="#00ffff" toneMapped={false} />
+            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
           </lineSegments>
           <mesh>
             <boxGeometry args={[0.15, 0.3, 1.6]} />
             <meshStandardMaterial
-              color="#00ffff"
-              emissive="#00ffff"
+              color={TANK_ARMOR_COLOR}
+              emissive={TANK_ARMOR_COLOR}
               emissiveIntensity={0.5}
               transparent
               opacity={0.1}
@@ -166,13 +181,13 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
         <group position={[0.6, 0, 0]}>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(0.15, 0.3, 1.6)]} />
-            <lineBasicMaterial color="#00ffff" toneMapped={false} />
+            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
           </lineSegments>
           <mesh>
             <boxGeometry args={[0.15, 0.3, 1.6]} />
             <meshStandardMaterial
-              color="#00ffff"
-              emissive="#00ffff"
+              color={TANK_ARMOR_COLOR}
+              emissive={TANK_ARMOR_COLOR}
               emissiveIntensity={0.5}
               transparent
               opacity={0.1}
@@ -187,13 +202,13 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
         <group>
           <lineSegments>
             <edgesGeometry args={[new THREE.CylinderGeometry(0.35, 0.35, 0.25, 8)]} />
-            <lineBasicMaterial color="#00ffff" toneMapped={false} />
+            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
           </lineSegments>
           <mesh>
             <cylinderGeometry args={[0.35, 0.35, 0.25, 8]} />
             <meshStandardMaterial
-              color="#00ffff"
-              emissive="#00ffff"
+              color={TANK_ARMOR_COLOR}
+              emissive={TANK_ARMOR_COLOR}
               emissiveIntensity={0.5}
               transparent
               opacity={0.1}
@@ -205,19 +220,57 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, initialPositi
         <group position={[0, 0, -0.5]}>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(0.08, 0.08, 1.0)]} />
-            <lineBasicMaterial color="#00ffff" toneMapped={false} />
+            <lineBasicMaterial color={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR} toneMapped={false} />
           </lineSegments>
           <mesh>
             <boxGeometry args={[0.08, 0.08, 1.0]} />
             <meshStandardMaterial
-              color="#00ffff"
-              emissive="#00ffff"
+              color={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR}
+              emissive={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR}
               emissiveIntensity={0.5}
               transparent
               opacity={0.1}
             />
           </mesh>
         </group>
+
+        {weaponMode === 'flamethrower' && (
+          <>
+            <group position={[0, 0.15, -1.12]}>
+              <mesh rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.12, 0.08, 0.75, 8]} />
+                <meshStandardMaterial color="#d46a2c" emissive="#ff6a24" emissiveIntensity={1.4} toneMapped={false} />
+              </mesh>
+            </group>
+            <group position={[0.42, -0.05, 0.2]} rotation={[0, 0, Math.PI / 2]}>
+              <mesh>
+                <cylinderGeometry args={[0.18, 0.18, 0.72, 10]} />
+                <meshStandardMaterial color="#69734f" metalness={0.5} roughness={0.65} />
+              </mesh>
+              <lineSegments>
+                <edgesGeometry args={[new THREE.CylinderGeometry(0.18, 0.18, 0.72, 10)]} />
+                <lineBasicMaterial color={TANK_WEAPON_COLOR} toneMapped={false} />
+              </lineSegments>
+            </group>
+          </>
+        )}
+
+        {weaponMode === 'napalm' && (
+          <group position={[0, 0.32, 0.15]}>
+            {[-0.34, 0.34].map(x => (
+              <group key={x} position={[x, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                <mesh>
+                  <cylinderGeometry args={[0.11, 0.11, 0.8, 8]} />
+                  <meshStandardMaterial color="#6b713f" emissive="#e3b341" emissiveIntensity={0.35} />
+                </mesh>
+                <lineSegments>
+                  <edgesGeometry args={[new THREE.CylinderGeometry(0.11, 0.11, 0.8, 8)]} />
+                  <lineBasicMaterial color={TANK_WEAPON_COLOR} toneMapped={false} />
+                </lineSegments>
+              </group>
+            ))}
+          </group>
+        )}
       </group>
     </group>
   );

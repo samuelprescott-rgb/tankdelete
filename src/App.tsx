@@ -29,6 +29,18 @@ import { useScore } from './hooks/useScore';
 import { useAchievements } from './hooks/useAchievements';
 import { useExplosionPool } from './hooks/useExplosionPool';
 import { ExplosionParticles } from './components/Scene/ExplosionParticles';
+import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
+import { useFieldRadio } from './hooks/useFieldRadio';
+import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
+import {
+  FlameBurst,
+  FLAMETHROWER_CONE_DOT,
+  FLAMETHROWER_RANGE,
+  NapalmStrike,
+  NAPALM_COOLDOWN_SECONDS,
+  NAPALM_RADIUS,
+  WeaponMode,
+} from './lib/weapons';
 
 type AppState = 'checking' | 'picking' | 'scanning' | 'ready';
 
@@ -51,6 +63,15 @@ function App() {
   const [deletedCount, setDeletedCount] = useState<number>(0);
   const [deletedBytes, setDeletedBytes] = useState<number>(0);
   const [tankStartPosition, setTankStartPosition] = useState<[number, number, number]>([0, 0, -12]);
+  const [isTraining, setIsTraining] = useState(false);
+  const [weaponMode, setWeaponMode] = useState<WeaponMode>('cannon');
+  const [flameBursts, setFlameBursts] = useState<FlameBurst[]>([]);
+  const [napalmStrikes, setNapalmStrikes] = useState<NapalmStrike[]>([]);
+  const [napalmCooldown, setNapalmCooldown] = useState(0);
+  const trainingUndoStackRef = useRef<FileEntry[]>([]);
+  const ordnanceIdRef = useRef(0);
+  const napalmReadyAtRef = useRef(0);
+  const worldSessionRef = useRef(0);
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -66,6 +87,8 @@ function App() {
     markedFiles,
     deletingFiles,
     markFile,
+    clearMarked,
+    resetMarkedState,
     isMarked,
     startDeletion,
     finishDeletion,
@@ -74,15 +97,22 @@ function App() {
   } = useMarkedFiles();
 
   // Game polish hooks
-  const { score, totalBytesFreed, addPoints } = useScore();
+  const { score, totalBytesFreed, addPoints, removePoints } = useScore();
   useAchievements(totalBytesFreed);
   const { explosions, spawn: spawnExplosion, despawn: despawnExplosion } = useExplosionPool();
+  const fieldRadio = useFieldRadio();
 
   // File block mesh refs for hit detection (populated by FileBlocks component)
   const fileBlockRefsRef = useRef<React.RefObject<THREE.InstancedMesh | null>[]>([]);
 
   // Check for last directory on mount
   useEffect(() => {
+    const isTauriRuntime = '__TAURI_INTERNALS__' in window;
+    if (!isTauriRuntime) {
+      setState('picking');
+      return;
+    }
+
     async function checkLastDirectory() {
       try {
         const last = await commands.getLastDirectory();
@@ -92,14 +122,11 @@ function App() {
           // Show reopen prompt
           setState('picking');
         } else {
-          // Go straight to picking
           setState('picking');
-          pickDirectory();
         }
       } catch (err) {
         console.error('Failed to get last directory:', err);
         setState('picking');
-        pickDirectory();
       }
     }
 
@@ -108,11 +135,20 @@ function App() {
     // Listen for scan progress events
     const unlisten = listen<ScanProgress>('scan_progress', (event) => {
       setScanProgress(event.payload);
-    });
+    }).catch(() => () => {});
 
     return () => {
       unlisten.then((fn) => fn());
     };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const remaining = Math.max(0, (napalmReadyAtRef.current - Date.now()) / 1000);
+      setNapalmCooldown(remaining);
+    }, 100);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   // Keyboard listener for Ctrl+Z (Cmd+Z on macOS) and batch delete
@@ -129,13 +165,27 @@ function App() {
         e.preventDefault();
         handleBatchDelete();
       }
+
+      if (e.key === 'Escape' && markedCount > 0) {
+        e.preventDefault();
+        clearMarked();
+        toast('Targets disarmed', { duration: 1800 });
+      }
+
+      if (e.key === '1') setWeaponMode('cannon');
+      if (e.key === '2') setWeaponMode('flamethrower');
+      if (e.key === '3') setWeaponMode('napalm');
+      if (e.key === 'm' || e.key === 'M') fieldRadio.toggle();
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDirectory, markedCount]); // Re-attach when currentDirectory or markedCount changes
+  }, [currentDirectory, markedCount, fieldRadio.toggle]); // Re-attach when relevant controls change
 
   async function pickDirectory() {
+    worldSessionRef.current += 1;
+    resetMarkedState();
+    setIsTraining(false);
     setState('picking');
     setError(null);
 
@@ -143,10 +193,7 @@ function App() {
       const result = await commands.pickDirectory();
 
       if (result === null) {
-        // User cancelled - wait 500ms then re-show picker
-        setTimeout(() => {
-          pickDirectory();
-        }, 500);
+        // User cancelled - remain on the picker screen.
         return;
       }
 
@@ -159,12 +206,27 @@ function App() {
     } catch (err) {
       // System directory blocked or other error
       setError(err instanceof Error ? err.message : String(err));
-      // Wait briefly then re-show picker
-      setTimeout(() => {
-        setError(null);
-        pickDirectory();
-      }, 2000);
     }
+  }
+
+  function startTraining() {
+    worldSessionRef.current += 1;
+    setIsTraining(true);
+    setCurrentDirectory(TRAINING_DIRECTORY);
+    setLastDirectory(null);
+    setEntries(createTrainingEntries());
+    setDeletedCount(0);
+    setDeletedBytes(0);
+    setTankStartPosition([0, 0, -12]);
+    setWeaponMode('cannon');
+    setFlameBursts([]);
+    setNapalmStrikes([]);
+    napalmReadyAtRef.current = 0;
+    setNapalmCooldown(0);
+    trainingUndoStackRef.current = [];
+    resetMarkedState();
+    setError(null);
+    setState('ready');
   }
 
   async function scanDirectory(path: string) {
@@ -190,6 +252,8 @@ function App() {
   async function reopenLastDirectory() {
     if (!lastDirectory) return;
 
+    worldSessionRef.current += 1;
+    resetMarkedState();
     setCurrentDirectory(lastDirectory);
     setLastDirectory(null);
     setState('scanning');
@@ -197,11 +261,19 @@ function App() {
   }
 
   function changeDirectory() {
+    worldSessionRef.current += 1;
+    resetMarkedState();
+    fieldRadio.stop();
+    setIsTraining(false);
+    setFlameBursts([]);
+    setNapalmStrikes([]);
     setLastDirectory(null);
-    pickDirectory();
+    setState('picking');
   }
 
   async function navigateToDirectory(dirPath: string) {
+    worldSessionRef.current += 1;
+    resetMarkedState();
     setCurrentDirectory(dirPath);
     await commands.saveLastDirectory(dirPath);
     // Reset tank position to spawn near back portal when entering new directory
@@ -210,6 +282,11 @@ function App() {
   }
 
   async function navigateUp() {
+    if (isTraining) {
+      changeDirectory();
+      return;
+    }
+
     if (!currentDirectory) return;
     const parent = currentDirectory.replace(/\/[^/]+\/?$/, '') || '/';
     if (parent !== currentDirectory) {
@@ -218,10 +295,23 @@ function App() {
   }
 
   async function handleUndoLastTrash() {
+    if (isTraining) {
+      const restoredEntry = trainingUndoStackRef.current.pop();
+      if (!restoredEntry) return;
+
+      setEntries(prev => [...prev, restoredEntry]);
+      setDeletedCount(prev => Math.max(0, prev - 1));
+      setDeletedBytes(prev => Math.max(0, prev - restoredEntry.size));
+      removePoints(restoredEntry.size);
+      toast.success(`Restored ${restoredEntry.name} in training`, { duration: 2500 });
+      return;
+    }
+
     try {
       const action = await commands.undoLastTrash();
 
       if (action) {
+        removePoints(action.original_size);
         // Show success toast
         toast.success(`Restored ${action.file_name}`, { duration: 3000 });
 
@@ -247,12 +337,107 @@ function App() {
     spawn(position, direction);
   }
 
+  function handleFlamethrower(position: THREE.Vector3, direction: THREE.Vector3) {
+    const normalizedDirection = direction.clone().normalize();
+    const id = ordnanceIdRef.current++;
+    setFlameBursts(prev => [...prev, {
+      id,
+      origin: position.toArray(),
+      direction: normalizedDirection.toArray(),
+    }]);
+
+    const targets = allBlocks
+      .filter(block => !deletingFiles.has(block.path))
+      .map(block => {
+        const blockPosition = new THREE.Vector3(...block.position);
+        const offset = blockPosition.sub(position);
+        const distance = offset.length();
+        const alignment = distance > 0 ? offset.normalize().dot(normalizedDirection) : 1;
+        return { block, distance, alignment };
+      })
+      .filter(target => target.distance <= FLAMETHROWER_RANGE && target.alignment >= FLAMETHROWER_CONE_DOT)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 6);
+
+    if (targets.length === 0) return;
+
+    void (async () => {
+      for (const { block } of targets) {
+        await handleProjectileHit(block.path);
+      }
+    })();
+  }
+
+  function handleNapalm(target: THREE.Vector3) {
+    const remaining = (napalmReadyAtRef.current - Date.now()) / 1000;
+    if (remaining > 0) {
+      toast(`Napalm support reloading · ${remaining.toFixed(1)}s`, { duration: 1600 });
+      return;
+    }
+
+    napalmReadyAtRef.current = Date.now() + NAPALM_COOLDOWN_SECONDS * 1000;
+    setNapalmCooldown(NAPALM_COOLDOWN_SECONDS);
+
+    const id = ordnanceIdRef.current++;
+    const strikeSession = worldSessionRef.current;
+    setNapalmStrikes(prev => [...prev, {
+      id,
+      position: [target.x, 0.03, target.z],
+    }]);
+
+    const targets = allBlocks
+      .filter(block => !deletingFiles.has(block.path))
+      .map(block => ({
+        block,
+        distance: new THREE.Vector2(block.position[0] - target.x, block.position[2] - target.z).length(),
+      }))
+      .filter(candidate => candidate.distance <= NAPALM_RADIUS)
+      .sort((a, b) => a.distance - b.distance);
+
+    toast(
+      targets.length > 0
+        ? `Napalm impact · ${targets.length} targets in burn zone`
+        : 'Napalm impact · no targets in burn zone',
+      { duration: 2200 },
+    );
+
+    window.setTimeout(() => {
+      if (worldSessionRef.current !== strikeSession) return;
+
+      void (async () => {
+        for (const { block } of targets) {
+          await handleProjectileHit(block.path);
+        }
+      })();
+    }, 350);
+  }
+
+  function handleFlameComplete(id: number) {
+    setFlameBursts(prev => prev.filter(burst => burst.id !== id));
+  }
+
+  function handleNapalmComplete(id: number) {
+    setNapalmStrikes(prev => prev.filter(strike => strike.id !== id));
+  }
+
   // Projectile hit handler with two-shot deletion logic
   async function handleProjectileHit(filePath: string) {
     if (isMarked(filePath)) {
       // Second hit: delete the file
       try {
-        const action = await commands.moveToTrash(filePath);
+        const trainingEntry = isTraining ? entries.find(entry => entry.path === filePath) : undefined;
+        const action = isTraining
+          ? {
+              file_path: filePath,
+              file_name: trainingEntry?.name || filePath,
+              original_size: trainingEntry?.size || 0,
+              trash_timestamp: Date.now(),
+            }
+          : await commands.moveToTrash(filePath);
+
+        if (trainingEntry) {
+          trainingUndoStackRef.current.push(trainingEntry);
+        }
 
         // Add score points for the deletion
         const points = addPoints(action.original_size);
@@ -274,9 +459,14 @@ function App() {
         );
 
         // Update session stats
-        const [count, bytes] = await commands.getSessionStats();
-        setDeletedCount(count);
-        setDeletedBytes(bytes);
+        if (isTraining) {
+          setDeletedCount(prev => prev + 1);
+          setDeletedBytes(prev => prev + action.original_size);
+        } else {
+          const [count, bytes] = await commands.getSessionStats();
+          setDeletedCount(count);
+          setDeletedBytes(bytes);
+        }
 
         // Start de-rez animation
         startDeletion(filePath);
@@ -301,6 +491,36 @@ function App() {
     if (markedCount === 0) return;
 
     try {
+      if (isTraining) {
+        const filesToDelete = Array.from(markedFiles);
+        const fileBlocks = filesToDelete
+          .map(filePath => allBlocks.find(block => block.path === filePath))
+          .filter((block): block is NonNullable<typeof block> => block !== undefined);
+        const entriesToDelete = filesToDelete
+          .map(filePath => entries.find(entry => entry.path === filePath))
+          .filter((entry): entry is FileEntry => entry !== undefined);
+        const bytesFreed = entriesToDelete.reduce((total, entry) => total + entry.size, 0);
+
+        await deleteAllMarked(async () => {});
+        trainingUndoStackRef.current.push(...entriesToDelete);
+        setDeletedCount(prev => prev + entriesToDelete.length);
+        setDeletedBytes(prev => prev + bytesFreed);
+        addPoints(bytesFreed);
+
+        fileBlocks.forEach((block, index) => {
+          setTimeout(() => {
+            spawnExplosion(
+              new THREE.Vector3(block.position[0], block.position[1], block.position[2]),
+              block.color,
+              block.scale,
+            );
+          }, index * 80);
+        });
+
+        toast.success(`Purged ${entriesToDelete.length} training targets`, { duration: 3000 });
+        return;
+      }
+
       // Capture current session bytes for point calculation
       const [, prevBytes] = await commands.getSessionStats();
 
@@ -310,11 +530,14 @@ function App() {
         allBlocks.find(b => b.path === filePath)
       ).filter(block => block !== undefined);
 
-      // Delete all marked files
-      await deleteAllMarked();
+      // Delete all marked files and keep failed targets armed for another attempt.
+      const successfulPaths = await deleteAllMarked();
+      const successfulPathSet = new Set(successfulPaths);
+      const successfulBlocks = fileBlocks.filter(block => successfulPathSet.has(block.path));
+      const failedCount = filesToDelete.length - successfulPaths.length;
 
       // Stagger explosions for chain reaction feel (80ms apart)
-      fileBlocks.forEach((block, index) => {
+      successfulBlocks.forEach((block, index) => {
         setTimeout(() => {
           spawnExplosion(
             new THREE.Vector3(block.position[0], block.position[1], block.position[2]),
@@ -333,7 +556,12 @@ function App() {
       const bytesFreed = bytes - prevBytes;
       addPoints(bytesFreed);
 
-      toast.success(`Deleted ${markedCount} marked files`, { duration: 3000 });
+      if (successfulPaths.length > 0) {
+        toast.success(`Deleted ${successfulPaths.length} marked files`, { duration: 3000 });
+      }
+      if (failedCount > 0) {
+        toast.error(`${failedCount} targets could not be deleted and remain armed`, { duration: 4000 });
+      }
     } catch (err) {
       toast.error(`Failed to batch delete: ${err}`);
     }
@@ -374,18 +602,20 @@ function App() {
 
   // Parent path for back portal
   const parentPath = currentDirectory ? currentDirectory.replace(/\/[^/]+\/?$/, '') || '/' : '/';
-  const isAtRoot = currentDirectory === '/' || !currentDirectory;
+  const isAtRoot = isTraining || currentDirectory === '/' || !currentDirectory;
 
   // Prepare portal data for collision detection
-  const folderPortalData = folders.map((folder) => {
+  const folderPortalData = folders.flatMap((folder) => {
     const position = folderPositions.get(folder.path);
+    if (!position) return [];
+
     const childCount = folderChildCounts.get(folder.path) || 0;
-    return {
+    return [{
       path: folder.path,
-      position: position || [0, 0, 0] as [number, number, number],
+      position,
       scale: folderToScale(childCount, folder.size),
-    };
-  }).filter(p => p.position[0] !== 0 || p.position[1] !== 0 || p.position[2] !== 0);
+    }];
+  });
 
   const backPortalPosition: [number, number, number] | null = !isAtRoot ? [0, 0.5, -15] : null;
 
@@ -399,6 +629,11 @@ function App() {
   const minimapFolderPortals = folderPortalData.map(portal => ({
     position: portal.position,
   }));
+
+  const markedBytes = allBlocks.reduce(
+    (total, block) => total + (markedFiles.has(block.path) ? block.size : 0),
+    0,
+  );
 
   if (state === 'checking') {
     return (
@@ -415,6 +650,7 @@ function App() {
           onPick={pickDirectory}
           lastDirectory={lastDirectory}
           onReopenLast={lastDirectory ? reopenLastDirectory : undefined}
+          onStartTraining={startTraining}
           error={error}
         />
       </div>
@@ -444,29 +680,45 @@ function App() {
         position="top-right"
         toastOptions={{
           style: {
-            background: '#1a1a2e',
-            color: '#e0e0e0',
-            border: '1px solid #00ffff',
-            borderRadius: '4px',
+            background: '#12180e',
+            color: '#e6e0bd',
+            border: '1px solid #879b63',
+            borderRadius: '2px',
           },
           success: {
             iconTheme: {
-              primary: '#00ffff',
-              secondary: '#1a1a2e',
+              primary: '#a8bf78',
+              secondary: '#12180e',
             },
           },
           error: {
             iconTheme: {
-              primary: '#ff3366',
-              secondary: '#1a1a2e',
+              primary: '#e36d32',
+              secondary: '#12180e',
             },
           },
         }}
       />
 
-      <HUD deletedCount={deletedCount} deletedBytes={deletedBytes} score={score} />
+      <HUD
+        deletedCount={deletedCount}
+        deletedBytes={deletedBytes}
+        score={score}
+        fileCount={allBlocks.length}
+        folderCount={folders.length}
+        markedCount={markedCount}
+        markedBytes={markedBytes}
+        onClearMarked={clearMarked}
+        weaponMode={weaponMode}
+        onWeaponChange={setWeaponMode}
+        napalmCooldown={napalmCooldown}
+        radioEnabled={fieldRadio.enabled}
+        radioTrackName={fieldRadio.trackName}
+        onToggleRadio={fieldRadio.toggle}
+        onNextTrack={fieldRadio.nextTrack}
+      />
 
-      <Crosshair />
+      <Crosshair weaponMode={weaponMode} />
 
       <Minimap
         tankStateRef={tankStateRef}
@@ -475,21 +727,34 @@ function App() {
         backPortalPosition={backPortalPosition}
       />
 
-      <div className="header">
+      <div className="header" data-game-ui>
         <div className="header-left">
-          <button onClick={navigateUp} className="btn-back" title="Go up one directory">
+          <button
+            onClick={isTraining ? changeDirectory : navigateUp}
+            className="btn-back"
+            title={isTraining ? 'Exit training' : 'Go up one directory'}
+          >
             ◂
           </button>
           <h2>{currentDirectory}</h2>
+          {isTraining && <span className="training-badge">Simulation</span>}
         </div>
         <button onClick={changeDirectory} className="btn-secondary">
-          Change Directory
+          {isTraining ? 'Exit Training' : 'Change Directory'}
         </button>
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>
         <Scene>
-          <Tank ref={tankRef} initialPosition={tankStartPosition} tankStateRef={tankStateRef} onShoot={handleShoot} />
+          <Tank
+            ref={tankRef}
+            initialPosition={tankStartPosition}
+            tankStateRef={tankStateRef}
+            weaponMode={weaponMode}
+            onShoot={handleShoot}
+            onFlamethrower={handleFlamethrower}
+            onNapalm={handleNapalm}
+          />
           <CameraRig tankRef={tankRef} />
 
           <PortalCollision
@@ -509,6 +774,15 @@ function App() {
 
           {explosions.length > 0 && (
             <ExplosionParticles explosions={explosions} onExplosionComplete={despawnExplosion} />
+          )}
+
+          {(flameBursts.length > 0 || napalmStrikes.length > 0) && (
+            <OrdnanceEffects
+              flameBursts={flameBursts}
+              napalmStrikes={napalmStrikes}
+              onFlameComplete={handleFlameComplete}
+              onNapalmComplete={handleNapalmComplete}
+            />
           )}
 
           <FileBlocks

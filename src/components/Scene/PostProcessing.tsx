@@ -4,8 +4,8 @@ export function PostProcessing() {
   return (
     <EffectComposer>
       <Bloom
-        intensity={2.0}
-        luminanceThreshold={0.2}
+        intensity={1.45}
+        luminanceThreshold={0.25}
         luminanceSmoothing={0.9}
         mipmapBlur
       />

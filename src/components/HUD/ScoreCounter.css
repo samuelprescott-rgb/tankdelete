@@ -1,18 +1,17 @@
 .score-counter {
   position: fixed;
   top: 90px;
-  right: 20px;
+  right: 350px;
   z-index: 1000;
 
-  background: rgba(5, 5, 16, 0.85);
-  border: 2px solid #00ffff;
-  border-radius: 4px;
+  background: rgba(11, 16, 8, 0.9);
+  border: 1px solid #879b63;
+  border-radius: 2px;
   padding: 12px 20px;
 
   box-shadow:
-    0 0 10px rgba(0, 255, 255, 0.5),
-    0 0 20px rgba(0, 255, 255, 0.3),
-    0 0 30px rgba(0, 255, 255, 0.1);
+    0 0 10px rgba(135, 155, 99, 0.35),
+    0 0 20px rgba(65, 84, 44, 0.2);
 
   display: flex;
   flex-direction: column;
@@ -22,23 +21,28 @@
 
 .score-label {
   font-size: 11px;
-  color: #00ffff;
+  color: #879b63;
   letter-spacing: 2px;
   font-weight: 600;
   text-transform: uppercase;
   text-shadow:
-    0 0 5px rgba(0, 255, 255, 0.8),
-    0 0 10px rgba(0, 255, 255, 0.5);
+    0 0 5px rgba(135, 155, 99, 0.65);
 }
 
 .score-value {
   font-size: 28px;
-  color: white;
+  color: #e3b341;
   font-family: 'Courier New', monospace;
   font-weight: bold;
   font-variant-numeric: tabular-nums;
   text-shadow:
-    0 0 10px rgba(255, 255, 255, 0.8),
-    0 0 20px rgba(0, 255, 255, 0.6),
-    0 0 30px rgba(0, 255, 255, 0.4);
+    0 0 10px rgba(227, 179, 65, 0.65),
+    0 0 20px rgba(135, 155, 99, 0.3);
+}
+
+@media (max-width: 900px) {
+  .score-counter {
+    right: auto;
+    left: 20px;
+  }
 }

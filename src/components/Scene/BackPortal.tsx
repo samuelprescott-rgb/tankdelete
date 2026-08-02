@@ -155,7 +155,7 @@ export function BackPortal({ parentPath }: BackPortalProps) {
         position={[0, tunnelHeight + 0.2 * scale, 0]}
         rotation={[0, Math.PI, 0]}
         fontSize={0.15 * scale}
-        color="#00ffff"
+        color="#b8c68a"
         anchorX="center"
         anchorY="bottom"
         outlineWidth={0.01 * scale}
