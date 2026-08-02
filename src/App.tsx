@@ -414,6 +414,7 @@ function App() {
       position: [target.x, 0.03, target.z],
       rotation: strikeRotation,
     }]);
+    gameAudio.playNapalmSequence();
 
     const targets = allBlocks
       .filter(block => !deletingFiles.has(block.path))
@@ -439,8 +440,6 @@ function App() {
 
     window.setTimeout(() => {
       if (worldSessionRef.current !== strikeSession) return;
-
-      gameAudio.playNapalmImpact();
 
       toast(
         targets.length > 0

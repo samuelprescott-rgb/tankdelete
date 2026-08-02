@@ -97,7 +97,7 @@ export function useGameAudio() {
     playOneShot(cannonRef.current);
   }, [ensureBattlefieldAmbience, playOneShot]);
 
-  const playNapalmImpact = useCallback(() => {
+  const playNapalmSequence = useCallback(() => {
     ensureBattlefieldAmbience();
     playOneShot(napalmRef.current);
   }, [ensureBattlefieldAmbience, playOneShot]);
@@ -149,7 +149,7 @@ export function useGameAudio() {
 
   return {
     playCannon,
-    playNapalmImpact,
+    playNapalmSequence,
     setMachineGunActive,
     setFlamethrowerActive,
     setMovementActive,

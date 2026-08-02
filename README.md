@@ -34,7 +34,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - **Cannon** fires a single long-range projectile
 - **M37 machine gun** fires ten rounds per second while the trigger is held
 - **Flamethrower attachment** projects a continuous cone for four seconds, then recharges over five seconds
-- **Napalm support** burns a 20-by-5.5-unit rectangular strike corridor and has an eight-second cooldown
+- **Napalm support** calls in a timed F-4 approach, then burns a 20-by-5.5-unit rectangular strike corridor with a ten-second cooldown
 - **Score** tracks total megabytes freed (1 point per MB)
 - **Achievements** unlock at 100MB, 1GB, and 10GB milestones
 

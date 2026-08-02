@@ -8,9 +8,9 @@ import {
 } from '../../lib/weapons';
 
 const NAPALM_PARTICLES = 80;
-const JET_PASS_SECONDS = 4.2;
-const BOMB_RELEASE_SECONDS = 1.7;
-const NAPALM_IMPACT_SECONDS = 2.75;
+const JET_PASS_SECONDS = 11.5;
+const BOMB_RELEASE_SECONDS = 7.35;
+const NAPALM_IMPACT_SECONDS = 8.45;
 
 interface NapalmStrikeVisualProps {
   strike: NapalmStrike;
@@ -90,6 +90,7 @@ function NapalmStrikeVisual({ strike, onComplete }: NapalmStrikeVisualProps) {
     const jetProgress = Math.min(age / JET_PASS_SECONDS, 1);
 
     if (jetRef.current && strikeGroupRef.current) {
+      jetRef.current.visible = age < JET_PASS_SECONDS;
       cameraLocalPosition.set(THREE.MathUtils.lerp(-6.5, 6.5, jetProgress), 3.5, -10);
       flightWorldPosition.copy(cameraLocalPosition);
       camera.localToWorld(flightWorldPosition);
@@ -102,6 +103,8 @@ function NapalmStrikeVisual({ strike, onComplete }: NapalmStrikeVisualProps) {
       localFlightDirection.copy(cameraRight).applyQuaternion(parentWorldQuaternion).normalize();
       jetRef.current.quaternion.setFromUnitVectors(jetForward, localFlightDirection);
       jetRef.current.rotateX(Math.sin(jetProgress * Math.PI) * -0.06);
+      const approachScale = THREE.MathUtils.smoothstep(age, 0, BOMB_RELEASE_SECONDS);
+      jetRef.current.scale.setScalar(THREE.MathUtils.lerp(0.08, 0.22, approachScale));
 
       if (age >= BOMB_RELEASE_SECONDS && !bombReleasePositionRef.current) {
         bombReleasePositionRef.current = jetRef.current.position.clone();
@@ -183,7 +186,7 @@ function NapalmStrikeVisual({ strike, onComplete }: NapalmStrikeVisualProps) {
         <lineBasicMaterial color="#ffd05c" transparent opacity={0.86} toneMapped={false} />
       </lineSegments>
 
-      <group ref={jetRef} scale={0.22}>
+      <group ref={jetRef} scale={0.08}>
         <mesh rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.38, 0.52, 6.4, 12]} />
           <meshBasicMaterial color="#adb4aa" toneMapped={false} />
@@ -232,7 +235,7 @@ function NapalmStrikeVisual({ strike, onComplete }: NapalmStrikeVisualProps) {
         ))}
       </group>
 
-      <group ref={bombRef} visible={false}>
+      <group ref={bombRef} visible={false} scale={0.28}>
         <mesh rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.18, 0.22, 1.35, 8]} />
           <meshStandardMaterial color="#323a2b" emissive="#171d13" emissiveIntensity={0.5} metalness={0.55} roughness={0.5} />
