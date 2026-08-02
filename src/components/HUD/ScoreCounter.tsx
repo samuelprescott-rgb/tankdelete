@@ -61,7 +61,7 @@ export function ScoreCounter({ targetScore }: ScoreCounterProps) {
   }, [targetScore]);
 
   return (
-    <div className="score-counter">
+    <div className="score-counter" data-game-ui>
       <div className="score-label">SCORE</div>
       <div className="score-value">{displayScore.toLocaleString()}</div>
     </div>

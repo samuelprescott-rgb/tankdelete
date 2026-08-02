@@ -11,9 +11,17 @@ export function useScore() {
     return points;
   }, []);
 
+  const removePoints = useCallback((bytesRestored: number) => {
+    const points = Math.floor(bytesRestored / (1024 * 1024));
+    setScore((prev) => Math.max(0, prev - points));
+    setTotalBytesFreed((prev) => Math.max(0, prev - bytesRestored));
+    return points;
+  }, []);
+
   return {
     score,
     totalBytesFreed,
     addPoints,
+    removePoints,
   };
 }

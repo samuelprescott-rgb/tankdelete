@@ -1,7 +1,20 @@
 import { useEffect, useRef } from 'react';
+import { WeaponMode } from '../../lib/weapons';
 
-export function Crosshair() {
+interface CrosshairProps {
+  weaponMode?: WeaponMode;
+}
+
+const CROSSHAIR_COLORS: Record<WeaponMode, string> = {
+  cannon: '#a8bf78',
+  machinegun: '#ffe197',
+  flamethrower: '#ff7435',
+  napalm: '#e3b341',
+};
+
+export function Crosshair({ weaponMode = 'cannon' }: CrosshairProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const color = CROSSHAIR_COLORS[weaponMode];
 
   useEffect(() => {
     // Hide OS cursor globally while game is active
@@ -41,7 +54,7 @@ export function Crosshair() {
           position: 'absolute',
           width: '100%',
           height: '100%',
-          border: '2px solid #00ffff',
+          border: `2px solid ${color}`,
           borderRadius: '50%',
         }}
       />
@@ -54,7 +67,7 @@ export function Crosshair() {
           top: '-8px',
           width: 2,
           height: 36,
-          backgroundColor: '#00ffff',
+          backgroundColor: color,
           transform: 'translateX(-50%)',
         }}
       />
@@ -67,7 +80,7 @@ export function Crosshair() {
           left: '-8px',
           height: 2,
           width: 36,
-          backgroundColor: '#00ffff',
+          backgroundColor: color,
           transform: 'translateY(-50%)',
         }}
       />

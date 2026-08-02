@@ -6,15 +6,22 @@ export interface Projectile {
   position: THREE.Vector3;
   direction: THREE.Vector3;
   lifetime: number;
+  kind: 'cannon' | 'machinegun';
+  triggerId: number;
 }
 
-const MAX_POOL_SIZE = 20;
+const MAX_POOL_SIZE = 48;
 
 export function useProjectilePool() {
   // Use ref for pool — mutations happen every frame, don't trigger React re-renders
   const poolRef = useRef<Projectile[]>([]);
 
-  const spawn = (position: THREE.Vector3, direction: THREE.Vector3) => {
+  const spawn = (
+    position: THREE.Vector3,
+    direction: THREE.Vector3,
+    kind: Projectile['kind'] = 'cannon',
+    triggerId = 0,
+  ) => {
     const pool = poolRef.current;
 
     // Find first inactive projectile
@@ -24,6 +31,8 @@ export function useProjectilePool() {
         pool[i].position.copy(position);
         pool[i].direction.copy(direction).normalize();
         pool[i].lifetime = 0;
+        pool[i].kind = kind;
+        pool[i].triggerId = triggerId;
         return;
       }
     }
@@ -35,6 +44,8 @@ export function useProjectilePool() {
         position: position.clone(),
         direction: direction.clone().normalize(),
         lifetime: 0,
+        kind,
+        triggerId,
       });
     }
     // If at max, silently ignore (player firing too fast)

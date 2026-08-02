@@ -18,7 +18,7 @@ export function Particles() {
       x: (Math.random() - 0.5) * 60,
       y: Math.random() * 7.5 + 0.5,
       z: (Math.random() - 0.5) * 60,
-      speedY: Math.random() * 0.02 + 0.01,
+      speedY: Math.random() * 0.012 + 0.004,
       wanderSpeed: Math.random() * 0.5 + 0.5,
       wanderAmplitude: Math.random() * 0.3 + 0.1,
     }));
@@ -57,13 +57,13 @@ export function Particles() {
 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, particleCount]}>
-      <sphereGeometry args={[0.02, 4, 4]} />
+      <sphereGeometry args={[0.028, 4, 4]} />
       <meshStandardMaterial
-        color="#00ffff"
-        emissive="#00ffff"
-        emissiveIntensity={1.5}
+        color="#d8b36a"
+        emissive="#9f7537"
+        emissiveIntensity={0.7}
         transparent
-        opacity={0.6}
+        opacity={0.42}
         toneMapped={false}
       />
     </instancedMesh>

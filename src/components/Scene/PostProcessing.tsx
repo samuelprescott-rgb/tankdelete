@@ -1,14 +1,23 @@
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import {
+  Bloom,
+  BrightnessContrast,
+  EffectComposer,
+  HueSaturation,
+  Vignette,
+} from '@react-three/postprocessing';
 
 export function PostProcessing() {
   return (
-    <EffectComposer>
+    <EffectComposer multisampling={2}>
+      <HueSaturation saturation={0.17} />
+      <BrightnessContrast brightness={0.045} contrast={0.045} />
       <Bloom
-        intensity={2.0}
-        luminanceThreshold={0.2}
-        luminanceSmoothing={0.9}
+        intensity={0.52}
+        luminanceThreshold={0.72}
+        luminanceSmoothing={0.72}
         mipmapBlur
       />
+      <Vignette offset={0.3} darkness={0.24} />
     </EffectComposer>
   );
 }

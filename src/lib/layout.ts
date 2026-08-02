@@ -8,6 +8,16 @@ export type BlockPosition = {
   z: number;
 };
 
+function coordinateNoise(value: string, salt: number) {
+  let hash = 2166136261 ^ salt;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967295;
+}
+
 /**
  * Layout files in "city blocks" between Tron road grid lines.
  * Roads run at multiples of ROAD_GRID_SPACING.
@@ -32,7 +42,11 @@ export function layoutFilesInGrid(
     const catA = getFileCategory(a.extension);
     const catB = getFileCategory(b.extension);
     if (catA !== catB) return catA.localeCompare(catB);
-    return b.size - a.size;
+    const sizeDifference = b.size - a.size;
+    if (sizeDifference !== 0) return sizeDifference;
+    // Filesystem enumeration order is not guaranteed. A stable path tie-breaker
+    // ensures the same directory always reconstructs the same city layout.
+    return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
   });
 
   // Place folders at road intersections in front row
@@ -49,6 +63,7 @@ export function layoutFilesInGrid(
   // Files go at the center of each block with a small scatter.
   const filesPerBlock = 4; // max files per city block
   const blockInset = S * 0.3; // how far inside the block from the road edge
+  const jitterLimit = S * 0.055;
 
   // Generate block centers: blocks are at (col+0.5)*S, (row+0.5)*S
   // Start from row 0 (between z=0 road and z=S road)
@@ -74,10 +89,16 @@ export function layoutFilesInGrid(
 
       for (let f = 0; f < filesPerBlock && fileIndex < regularFiles.length; f++) {
         const [ox, oz] = offsets[f];
-        positions.set(regularFiles[fileIndex].path, {
-          x: blockCenterX + ox,
+        const file = regularFiles[fileIndex];
+        // Stable coordinate-seeded perturbation breaks the visible 2x2 grid
+        // while remaining tightly bounded around each assigned plot.
+        const coordinateSeed = `${file.path}:${row}:${col}:${f}`;
+        const jitterX = (coordinateNoise(coordinateSeed, 1968) - 0.5) * jitterLimit * 2;
+        const jitterZ = (coordinateNoise(coordinateSeed, 1971) - 0.5) * jitterLimit * 2;
+        positions.set(file.path, {
+          x: blockCenterX + ox + jitterX,
           y: 0.5,
-          z: blockCenterZ + oz,
+          z: blockCenterZ + oz + jitterZ,
         });
         fileIndex++;
       }

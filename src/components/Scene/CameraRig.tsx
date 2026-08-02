@@ -8,6 +8,7 @@ import {
 
 interface CameraRigProps {
   tankRef: React.RefObject<THREE.Group | null>;
+  napalmCinematic?: boolean;
 }
 
 // How far the mouse can orbit the camera (radians)
@@ -15,7 +16,7 @@ const MAX_YAW = Math.PI * 0.4;   // ~72° left/right
 const MAX_PITCH = Math.PI * 0.25; // ~45° up/down
 const PITCH_MIN = -0.1;           // slight look-down limit
 
-export function CameraRig({ tankRef }: CameraRigProps) {
+export function CameraRig({ tankRef, napalmCinematic = false }: CameraRigProps) {
   const { camera } = useThree();
 
   // Pre-allocate objects to avoid GC
@@ -28,6 +29,9 @@ export function CameraRig({ tankRef }: CameraRigProps) {
   const orbitYaw = useRef(0);   // horizontal orbit offset
   const orbitPitch = useRef(0); // vertical orbit offset
   const isDragging = useRef(false);
+  // Keep a strip of horizon in the chase view so distant aircraft and the
+  // layered jungle remain visible instead of being hidden behind the top HUD.
+  const lookHeight = useRef(2.75);
 
   useEffect(() => {
     function handleContextMenu(e: Event) {
@@ -101,9 +105,18 @@ export function CameraRig({ tankRef }: CameraRigProps) {
     // Smoothly lerp camera position
     camera.position.lerp(desiredPosition, CAMERA_LERP_SPEED * delta);
 
+    // A subtle cinematic tilt reveals the horizon pass without taking control
+    // away from the player. It eases back to the normal chase view afterward.
+    lookHeight.current = THREE.MathUtils.damp(
+      lookHeight.current,
+      napalmCinematic ? 3.45 : 2.75,
+      napalmCinematic ? 2.6 : 3.8,
+      delta,
+    );
+
     // Look at a point ahead of the tank, shifted by orbit
     lookAtTarget.copy(tank.position);
-    lookAtTarget.y += 1; // look slightly above tank center
+    lookAtTarget.y += lookHeight.current;
 
     camera.lookAt(lookAtTarget);
   });

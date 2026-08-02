@@ -5,14 +5,13 @@
   gap: 16px;
   padding: 16px 24px;
 
-  background: rgba(5, 5, 16, 0.95);
-  border: 2px solid #00ffff;
+  background: rgba(11, 16, 8, 0.96);
+  border: 2px solid #e3b341;
   border-radius: 8px;
 
   box-shadow:
-    0 0 15px rgba(0, 255, 255, 0.6),
-    0 0 30px rgba(0, 255, 255, 0.4),
-    0 0 45px rgba(0, 255, 255, 0.2);
+    0 0 15px rgba(227, 179, 65, 0.45),
+    0 0 30px rgba(135, 155, 99, 0.25);
 
   opacity: 0;
   transform: translateY(-20px);
@@ -26,7 +25,7 @@
 
 .achievement-icon {
   font-size: 32px;
-  filter: drop-shadow(0 0 8px rgba(0, 255, 255, 0.6));
+  filter: drop-shadow(0 0 8px rgba(227, 179, 65, 0.55));
 }
 
 .achievement-text {
@@ -37,13 +36,12 @@
 
 .achievement-label {
   font-size: 10px;
-  color: #00ffff;
+  color: #e3b341;
   letter-spacing: 2px;
   font-weight: 600;
   text-transform: uppercase;
   text-shadow:
-    0 0 5px rgba(0, 255, 255, 0.8),
-    0 0 10px rgba(0, 255, 255, 0.5);
+    0 0 5px rgba(227, 179, 65, 0.65);
 }
 
 .achievement-name {
@@ -51,6 +49,6 @@
   color: white;
   font-weight: bold;
   text-shadow:
-    0 0 8px rgba(255, 255, 255, 0.6),
-    0 0 16px rgba(0, 255, 255, 0.4);
+    0 0 8px rgba(255, 244, 198, 0.5),
+    0 0 16px rgba(135, 155, 99, 0.3);
 }

@@ -1,15 +1,15 @@
 export type FileCategory = 'media' | 'code' | 'archive' | 'other';
 
 export const CATEGORY_COLORS: Record<FileCategory, string> = {
-  media: '#00ffff',    // cyan
-  code: '#00ff66',     // green
-  archive: '#ff9900',  // orange
-  other: '#ff00ff',    // magenta
+  media: '#d9b44a',    // signal amber
+  code: '#97b36d',     // field green
+  archive: '#e36d32',  // flare orange
+  other: '#d8cf9b',    // canvas tan
 };
 
-export const GRID_COLOR = '#00ffff';
-export const PORTAL_COLOR = '#ff00ff';
-export const BACK_PORTAL_COLOR = '#00ff66';
+export const GRID_COLOR = '#879b63';
+export const PORTAL_COLOR = '#d9a441';
+export const BACK_PORTAL_COLOR = '#83a96b';
 
 const MEDIA_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',

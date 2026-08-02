@@ -5,6 +5,8 @@ interface MinimapProps {
   fileBlocks: Array<{ position: [number, number, number]; color: string; isMarked?: boolean }>;
   folderPortals: Array<{ position: [number, number, number] }>;
   backPortalPosition: [number, number, number] | null;
+  enemies: Array<{ position: [number, number, number] }>;
+  friendlies?: ReadonlyArray<{ position: [number, number, number] }>;
 }
 
 export function Minimap({
@@ -12,6 +14,8 @@ export function Minimap({
   fileBlocks,
   folderPortals,
   backPortalPosition,
+  enemies,
+  friendlies = [],
 }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -42,13 +46,13 @@ export function Minimap({
       ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
       // Draw dark circular background
-      ctx.fillStyle = 'rgba(5, 5, 16, 0.85)';
+      ctx.fillStyle = 'rgba(9, 14, 7, 0.9)';
       ctx.beginPath();
       ctx.arc(centerX, centerY, RADAR_RADIUS, 0, Math.PI * 2);
       ctx.fill();
 
       // Draw faint concentric ring guides
-      ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+      ctx.strokeStyle = 'rgba(135, 155, 99, 0.22)';
       ctx.lineWidth = 1;
       for (let i = 1; i <= 3; i++) {
         const radius = (RADAR_RADIUS / 3) * i;
@@ -63,7 +67,7 @@ export function Minimap({
       ctx.save();
       ctx.translate(centerX, centerY);
       ctx.rotate(sweepAngle);
-      ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+      ctx.strokeStyle = 'rgba(227, 179, 65, 0.24)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -99,7 +103,7 @@ export function Minimap({
         const pos = rotateAndScale(block.position[0], block.position[2]);
         if (!pos) continue;
 
-        ctx.fillStyle = block.isMarked ? '#ff3366' : block.color;
+        ctx.fillStyle = block.isMarked ? '#e36d32' : block.color;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -110,7 +114,7 @@ export function Minimap({
         const pos = rotateAndScale(portal.position[0], portal.position[2]);
         if (!pos) continue;
 
-        ctx.fillStyle = '#ff00ff';
+        ctx.fillStyle = '#d9a441';
         ctx.fillRect(pos.x - 2, pos.y - 2, 4, 4);
       }
 
@@ -118,7 +122,7 @@ export function Minimap({
       if (backPortalPosition) {
         const pos = rotateAndScale(backPortalPosition[0], backPortalPosition[2]);
         if (pos) {
-          ctx.fillStyle = '#00ff66';
+          ctx.fillStyle = '#83a96b';
           ctx.beginPath();
           ctx.moveTo(pos.x, pos.y - 4);
           ctx.lineTo(pos.x - 3, pos.y + 2);
@@ -128,8 +132,38 @@ export function Minimap({
         }
       }
 
+      // Hostile contacts show as sharp red diamonds, distinct from file targets.
+      for (const enemy of enemies) {
+        const pos = rotateAndScale(enemy.position[0], enemy.position[2]);
+        if (!pos) continue;
+
+        ctx.fillStyle = '#ee5734';
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y - 4);
+        ctx.lineTo(pos.x + 4, pos.y);
+        ctx.lineTo(pos.x, pos.y + 4);
+        ctx.lineTo(pos.x - 4, pos.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Friendly infantry use open blue-green chevrons so the two firing lines
+      // remain readable without competing with file dots or hostile diamonds.
+      for (const friendly of friendlies) {
+        const pos = rotateAndScale(friendly.position[0], friendly.position[2]);
+        if (!pos) continue;
+
+        ctx.strokeStyle = '#8fc9b0';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(pos.x - 3, pos.y - 2);
+        ctx.lineTo(pos.x, pos.y + 2);
+        ctx.lineTo(pos.x + 3, pos.y - 2);
+        ctx.stroke();
+      }
+
       // Draw player at center as bright cyan triangle pointing up
-      ctx.fillStyle = '#00ffff';
+      ctx.fillStyle = '#e3b341';
       ctx.beginPath();
       ctx.moveTo(centerX, centerY - 6);
       ctx.lineTo(centerX - 4, centerY + 3);
@@ -138,7 +172,7 @@ export function Minimap({
       ctx.fill();
 
       // Draw cyan border around canvas
-      ctx.strokeStyle = '#00ffff';
+      ctx.strokeStyle = '#879b63';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(centerX, centerY, RADAR_RADIUS, 0, Math.PI * 2);
@@ -160,11 +194,12 @@ export function Minimap({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition]);
+  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition, enemies, friendlies]);
 
   return (
     <canvas
       ref={canvasRef}
+      data-game-ui
       width={160}
       height={160}
       style={{
@@ -173,8 +208,8 @@ export function Minimap({
         left: '20px',
         zIndex: 50,
         borderRadius: '50%',
-        border: '2px solid #00ffff',
-        background: 'rgba(5, 5, 16, 0.85)',
+        border: '2px solid #879b63',
+        background: 'rgba(9, 14, 7, 0.9)',
       }}
     />
   );

@@ -2,11 +2,9 @@
 
 Disclosure / Caution: This game was entirely created by Claude. This game is intended to be an entertaining way to delete files on your system. With that being said you are deleting files on your system so use with caution.
 
-Drive a tank through your filesystem. Shoot files to delete them.
+Drive a tank through your filesystem in a Vietnam-era-inspired field-operations arena. Navigate tactical road grids, drive through tunnel portals to enter folders, and use the cannon, machine gun, flamethrower attachment, or napalm support to clear files and free disk space.
 
-A Tron-inspired desktop app where your directories become neon arenas. Navigate glowing road grids, drive through tunnel portals to enter folders, and blast files into voxel explosions to free up disk space.
-
-![Arena view — files as glowing blocks on the Tron road grid](screenshots/arena.png)
+![Arena view — files as glowing blocks on the road grid](screenshots/arena.png)
 
 ![Tunnel portals — drive through to navigate folders](screenshots/tunnels.png)
 
@@ -17,28 +15,47 @@ A Tron-inspired desktop app where your directories become neon arenas. Navigate 
 | W / S | Drive forward / backward |
 | A / D | Rotate tank left / right |
 | Mouse | Aim turret |
-| Left Click | Fire projectile |
+| Left Click / Hold | Fire; hold for automatic weapons |
+| 1 / 2 / 3 / 4 | Select cannon / machine gun / flamethrower / napalm |
+| X / Delete | Trash every armed target |
+| Escape | Disarm all targets |
+| M | Play or mute the field radio |
+| Cmd/Ctrl + Z | Undo the last trash action |
 | Right Click + Drag | Orbit camera to look around |
 
 ## Gameplay
 
 - **Pick a directory** to load it as a 3D arena
-- **Files** appear as colored blocks lining the Tron road grid
-- **Folders** are glowing tunnel portals — drive into them to navigate deeper
-- **Back portal** (green tunnel) takes you up one directory level
-- **Shoot a file** to delete it — it shatters into a voxel explosion
+- **Boot Camp** uses virtual files so every weapon and undo flow can be practiced without touching the filesystem
+- **Files** appear as colored blocks lining the tactical road grid
+- **Folders** are tunnel portals — drive into them to navigate deeper
+- **Back portal** takes you up one directory level
+- **First hit** arms a file; a later confirmed hit moves it to the operating system trash
+- **Cannon** fires a single long-range projectile
+- **M37 machine gun** fires ten rounds per second while the trigger is held
+- **Flamethrower attachment** projects a continuous cone for four seconds, then recharges over five seconds
+- **Napalm support** calls in a timed F-4 approach, then burns a 20-by-5.5-unit rectangular strike corridor with a ten-second cooldown
 - **Score** tracks total megabytes freed (1 point per MB)
 - **Achievements** unlock at 100MB, 1GB, and 10GB milestones
 
 ## Features
 
-- Tron-style glowing road grid with animated energy pulses
-- Tunnel portals for folder navigation
+- `AO CLEAN SWEEP // 1968` weathered olive, amber, and field-map visual system
+- Mud road grid, mottled ground cover, relief mounds, reflective puddles, blade-built elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
+- File targets rendered as huts, longhouses, bunkers, and radio structures while retaining category-colored outlines and labels
+- Continuous flamethrower stream, fuel/recharge meter, glowing high-visibility tracer streaks, and a small F-4 Phantom-inspired flyover that releases each napalm strike before impact
+- Integrated cannon, M37 burst, flamethrower, napalm-impact, engine-loop, and gear-shift sound effects
+- Low-volume battlefield ambience mixed beneath vehicle, weapon, and radio audio
+- Two original polyphonic field-radio tracks generated with the Web Audio API
+- Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
+- Tactical tunnel portals for folder navigation
 - Voxel shatter explosions with category-colored particles
 - Scoring system and achievement toasts
 - Radar minimap showing nearby files and portals
 - Files are sent to your system trash (recoverable)
 - Cross-platform: macOS, Windows, Linux
+
+The approved Stevie Ray Vaughan and Double Trouble cover of **“Voodoo Child (Slight Return)”** is bundled as the default tank-radio track. It is not the Jimi Hendrix recording. The **Load** button can select another audio file without adding it to the repository.
 
 ## Download
 
@@ -65,9 +82,16 @@ bun run tauri build
 
 ## Safety
 
+- Every weapon preserves the two-stage mark/confirm deletion rule
+- Automatic fire can affect each target only once per trigger hold, so the player must release and fire again to confirm deletion
+- `Escape` disarms the target queue and Cmd/Ctrl+Z restores the last trash action
 - Files are moved to your system trash, not permanently deleted
 - System directories (`/System`, `C:\Windows`, `/usr`, etc.) are blocked
-- Undo support restores files from trash
+- Marked and deleting state is cleared when changing directories
+- Pending napalm impacts are canceled when leaving an arena
+- Failed batch deletions remain armed so they are never hidden from the player
+
+Start with Boot Camp or a disposable test directory until you are comfortable with the controls.
 
 ## License
 
