@@ -34,7 +34,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - **Cannon** fires a single long-range projectile
 - **M37 machine gun** fires ten rounds per second while the trigger is held
 - **Flamethrower attachment** projects a continuous cone for four seconds, then recharges over five seconds
-- **Napalm support** affects a larger ground radius and has an eight-second cooldown
+- **Napalm support** burns a 20-by-5.5-unit rectangular strike corridor and has an eight-second cooldown
 - **Score** tracks total megabytes freed (1 point per MB)
 - **Achievements** unlock at 100MB, 1GB, and 10GB milestones
 
@@ -43,7 +43,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - `AO CLEAN SWEEP // 1968` weathered olive, amber, and field-map visual system
 - Mud road grid, mottled ground cover, relief mounds, reflective puddles, blade-built elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
 - File targets rendered as huts, longhouses, bunkers, and radio structures while retaining category-colored outlines and labels
-- Continuous flamethrower stream, fuel/recharge meter, high-visibility tracer streaks, and a camera-framed jet pass that releases each napalm strike before impact
+- Continuous flamethrower stream, fuel/recharge meter, glowing high-visibility tracer streaks, and a small F-4 Phantom-inspired flyover that releases each napalm strike before impact
 - Two original polyphonic field-radio tracks generated with the Web Audio API
 - Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
 - Tactical tunnel portals for folder navigation

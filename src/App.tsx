@@ -38,7 +38,8 @@ import {
   NapalmStrike,
   NAPALM_COOLDOWN_SECONDS,
   NAPALM_IMPACT_DELAY_MS,
-  NAPALM_RADIUS,
+  NAPALM_STRIKE_LENGTH,
+  NAPALM_STRIKE_WIDTH,
   WeaponMode,
 } from './lib/weapons';
 
@@ -384,7 +385,7 @@ function App() {
     }
   }
 
-  function handleNapalm(target: THREE.Vector3) {
+  function handleNapalm(target: THREE.Vector3, runDirection: THREE.Vector3) {
     const remaining = (napalmReadyAtRef.current - Date.now()) / 1000;
     if (remaining > 0) {
       toast(`Napalm support reloading · ${remaining.toFixed(1)}s`, { duration: 1600 });
@@ -396,19 +397,29 @@ function App() {
 
     const id = ordnanceIdRef.current++;
     const strikeSession = worldSessionRef.current;
+    const flatAimDirection = new THREE.Vector2(runDirection.x, runDirection.z).normalize();
+    const strikeDirection = new THREE.Vector2(flatAimDirection.y, -flatAimDirection.x).normalize();
+    const strikeRotation = Math.atan2(-strikeDirection.y, strikeDirection.x);
     setNapalmStrikes(prev => [...prev, {
       id,
       position: [target.x, 0.03, target.z],
+      rotation: strikeRotation,
     }]);
 
     const targets = allBlocks
       .filter(block => !deletingFiles.has(block.path))
-      .map(block => ({
-        block,
-        distance: new THREE.Vector2(block.position[0] - target.x, block.position[2] - target.z).length(),
-      }))
-      .filter(candidate => candidate.distance <= NAPALM_RADIUS)
-      .sort((a, b) => a.distance - b.distance);
+      .map(block => {
+        const offsetX = block.position[0] - target.x;
+        const offsetZ = block.position[2] - target.z;
+        const alongRun = offsetX * strikeDirection.x + offsetZ * strikeDirection.y;
+        const acrossRun = -offsetX * strikeDirection.y + offsetZ * strikeDirection.x;
+        return { block, alongRun, acrossRun };
+      })
+      .filter(candidate => (
+        Math.abs(candidate.alongRun) <= NAPALM_STRIKE_LENGTH / 2
+        && Math.abs(candidate.acrossRun) <= NAPALM_STRIKE_WIDTH / 2
+      ))
+      .sort((a, b) => Math.abs(a.alongRun) - Math.abs(b.alongRun));
 
     toast(
       targets.length > 0

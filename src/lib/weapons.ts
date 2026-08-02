@@ -3,6 +3,7 @@ export type WeaponMode = 'cannon' | 'machinegun' | 'flamethrower' | 'napalm';
 export interface NapalmStrike {
   id: number;
   position: [number, number, number];
+  rotation: number;
 }
 
 export const WEAPON_LABELS: Record<WeaponMode, string> = {
@@ -18,6 +19,7 @@ export const FLAMETHROWER_CAPACITY_SECONDS = 4;
 export const FLAMETHROWER_RECHARGE_SECONDS = 5;
 export const FLAMETHROWER_HIT_INTERVAL = 0.12;
 export const MACHINE_GUN_FIRE_INTERVAL = 0.1;
-export const NAPALM_RADIUS = 7;
+export const NAPALM_STRIKE_LENGTH = 20;
+export const NAPALM_STRIKE_WIDTH = 5.5;
 export const NAPALM_COOLDOWN_SECONDS = 8;
-export const NAPALM_IMPACT_DELAY_MS = 2100;
+export const NAPALM_IMPACT_DELAY_MS = 2750;

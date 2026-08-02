@@ -28,7 +28,7 @@ interface TankProps {
   onMachineGun?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
   onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
   onFlameFuelChange?: (fuel: number) => void;
-  onNapalm?: (target: THREE.Vector3) => void;
+  onNapalm?: (target: THREE.Vector3, direction: THREE.Vector3) => void;
   weaponMode?: WeaponMode;
   initialPosition?: [number, number, number];
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
@@ -107,7 +107,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       } else if (weaponMode === 'napalm') {
         raycaster.setFromCamera(pointer, camera);
         if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
-          onNapalm?.(intersection.clone());
+          onNapalm?.(intersection.clone(), tempWorldDir.clone());
         }
         triggerHeldRef.current = false;
       }
