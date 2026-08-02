@@ -40,7 +40,8 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 
 ## Features
 
-- `FIELD OPS // 1968` olive, amber, and canvas visual system
+- `AO CLEAN SWEEP // 1968` weathered olive, amber, and field-map visual system
+- Mud road grid, reflective puddles, elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
 - Continuous flamethrower stream, fuel/recharge meter, machine-gun tracers, and napalm burn-zone effects
 - Two original polyphonic field-radio tracks generated with the Web Audio API
 - Local field-radio loader for legally obtained audio files; recordings never enter the repository
@@ -51,7 +52,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Files are sent to your system trash (recoverable)
 - Cross-platform: macOS, Windows, Linux
 
-Commercial recordings and song melodies are intentionally not bundled. Use the field radio's **Load** button to play a legally obtained local copy during a session; the selected file stays on the player's device and is not added to the game or repository.
+Commercial recordings and song melodies are intentionally not bundled. Use the field radio's **Load** button to play a legally obtained local copy of **“Voodoo Child (Slight Return)”** during a session; the selected file stays on the player's device and is not added to the game or repository.
 
 ## Download
 

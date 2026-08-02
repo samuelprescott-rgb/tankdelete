@@ -9,7 +9,7 @@ interface DirectoryPickerProps {
 export function DirectoryPicker({ onPick, lastDirectory, onReopenLast, onStartTraining, error }: DirectoryPickerProps) {
   return (
     <div className="directory-picker">
-      <span className="era-stamp">FIELD OPS // 1968</span>
+      <span className="era-stamp">AO CLEAN SWEEP // 1968</span>
       <h1>TankDelete</h1>
       <p className="subtitle">Turn a directory into a tactical cleanup sector.</p>
 

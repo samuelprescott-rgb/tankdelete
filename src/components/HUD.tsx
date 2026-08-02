@@ -51,7 +51,7 @@ export function HUD({
       <ScoreCounter targetScore={score} />
       <div className="hud" data-game-ui>
         <div className="hud-call-sign">
-          <span>FIELD OPS // 1968</span>
+          <span>AO CLEAN SWEEP // 1968</span>
           <strong>TANKDELETE</strong>
         </div>
 
@@ -118,6 +118,7 @@ export function HUD({
             <span className="hud-kicker">Field radio</span>
             <strong>{radioTrackName}</strong>
             <small>{radioSourceLabel}</small>
+            <small className="radio-request">Local slot · Voodoo Child (Slight Return)</small>
           </div>
           <div className="field-radio-actions">
             <button type="button" onClick={onToggleRadio}>
@@ -126,7 +127,7 @@ export function HUD({
             <button type="button" onClick={onNextTrack} title="Next original track">
               Next
             </button>
-            <label className="field-radio-load" title="Load a legally obtained audio file from this device">
+            <label className="field-radio-load" title="Load a legally obtained local copy of Voodoo Child (Slight Return)">
               Load
               <input
                 type="file"

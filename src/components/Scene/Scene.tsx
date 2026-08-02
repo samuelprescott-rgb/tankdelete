@@ -2,6 +2,7 @@ import { Canvas } from '@react-three/fiber';
 import { TronGrid } from './TronGrid';
 import { Lighting } from './Lighting';
 import { PostProcessing } from './PostProcessing';
+import { VietnamEnvironment } from './VietnamEnvironment';
 
 interface SceneProps {
   children?: React.ReactNode;
@@ -14,9 +15,10 @@ export function Scene({ children }: SceneProps) {
         camera={{ position: [0, 12, 20], fov: 60, near: 0.1, far: 500 }}
         gl={{ antialias: false, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={['#071007']} />
-        <fog attach="fog" args={['#0b1309', 44, 135]} />
+        <color attach="background" args={['#10160e']} />
+        <fog attach="fog" args={['#242819', 46, 125]} />
         <Lighting />
+        <VietnamEnvironment />
         <TronGrid />
         {children}
         <PostProcessing />

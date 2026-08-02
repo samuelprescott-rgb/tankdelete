@@ -36,7 +36,8 @@ body {
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(circle at 50% 45%, rgba(89, 103, 57, 0.14), transparent 45%),
+    linear-gradient(116deg, transparent 0 47%, rgba(202, 183, 112, 0.025) 48% 49%, transparent 50% 100%),
+    radial-gradient(circle at 50% 45%, rgba(89, 103, 57, 0.18), transparent 45%),
     #080d06;
   box-sizing: border-box;
 }
@@ -66,6 +67,8 @@ body {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.18em;
+  transform: rotate(-1.2deg);
+  box-shadow: inset 0 0 16px rgba(107, 127, 72, 0.1);
 }
 
 .directory-picker .subtitle {
@@ -251,6 +254,18 @@ button:active {
   pointer-events: none;
 }
 
+.scene-container::before {
+  position: fixed;
+  z-index: 69;
+  inset: 0;
+  background:
+    linear-gradient(112deg, transparent 0 27%, rgba(223, 191, 111, 0.035) 35%, transparent 47%),
+    radial-gradient(ellipse at 52% 18%, rgba(207, 178, 99, 0.08), transparent 45%);
+  content: '';
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
 /* File List */
 .header {
   position: fixed;
@@ -261,11 +276,14 @@ button:active {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
-  background-color: rgba(9, 14, 7, 0.9);
+  background:
+    repeating-linear-gradient(96deg, rgba(190, 176, 108, 0.018) 0 1px, transparent 1px 14px),
+    rgba(9, 14, 7, 0.9);
   backdrop-filter: blur(10px);
   border-bottom: 2px solid #879b63;
   z-index: 100;
   flex-shrink: 0;
+  box-shadow: inset 0 -12px 28px rgba(55, 64, 34, 0.14), 0 6px 18px rgba(4, 7, 3, 0.36);
 }
 
 .header-left {
