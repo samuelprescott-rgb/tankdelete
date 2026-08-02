@@ -78,8 +78,8 @@ export function ProjectileManager({
 
       const isMachineGun = projectile.kind === 'machinegun';
       const color = isMachineGun ? machineGunColor : cannonColor;
-      const trailLength = isMachineGun ? 4.6 : 6.4;
-      const coreWidth = isMachineGun ? 0.11 : 0.18;
+      const trailLength = isMachineGun ? 1.7 : 2.5;
+      const coreWidth = isMachineGun ? 0.055 : 0.08;
 
       tracer.visible = true;
       tracer.position.copy(projectile.position);
@@ -87,14 +87,14 @@ export function ProjectileManager({
       tracer.quaternion.copy(tempQuaternion);
 
       core.position.z = -trailLength * 0.5;
-      core.scale.set(coreWidth, coreWidth, trailLength);
+      core.scale.set(coreWidth, trailLength, coreWidth);
       (core.material as THREE.MeshBasicMaterial).color.copy(color);
 
       glow.position.z = -trailLength * 0.5;
-      glow.scale.set(coreWidth * 3, coreWidth * 3, trailLength * 1.08);
+      glow.scale.set(coreWidth * 2.4, trailLength * 1.08, coreWidth * 2.4);
       (glow.material as THREE.MeshBasicMaterial).color.copy(color);
 
-      const headSize = isMachineGun ? 0.26 : 0.38;
+      const headSize = isMachineGun ? 0.14 : 0.2;
       head.scale.setScalar(headSize);
       (head.material as THREE.MeshBasicMaterial).color.copy(color);
     }
@@ -109,8 +109,8 @@ export function ProjectileManager({
           visible={false}
           renderOrder={80}
         >
-          <mesh ref={node => { glowRefs.current[index] = node; }} renderOrder={80}>
-            <boxGeometry args={[1, 1, 1]} />
+          <mesh ref={node => { glowRefs.current[index] = node; }} rotation={[Math.PI / 2, 0, 0]} renderOrder={80}>
+            <cylinderGeometry args={[1, 0.25, 1, 8]} />
             <meshBasicMaterial
               color="#fff3bd"
               transparent
@@ -121,8 +121,8 @@ export function ProjectileManager({
               toneMapped={false}
             />
           </mesh>
-          <mesh ref={node => { coreRefs.current[index] = node; }} renderOrder={81}>
-            <boxGeometry args={[1, 1, 1]} />
+          <mesh ref={node => { coreRefs.current[index] = node; }} rotation={[Math.PI / 2, 0, 0]} renderOrder={81}>
+            <cylinderGeometry args={[1, 0.25, 1, 8]} />
             <meshBasicMaterial
               color="#fff3bd"
               blending={THREE.AdditiveBlending}
