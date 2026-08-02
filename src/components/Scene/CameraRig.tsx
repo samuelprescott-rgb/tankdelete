@@ -29,7 +29,9 @@ export function CameraRig({ tankRef, napalmCinematic = false }: CameraRigProps) 
   const orbitYaw = useRef(0);   // horizontal orbit offset
   const orbitPitch = useRef(0); // vertical orbit offset
   const isDragging = useRef(false);
-  const lookHeight = useRef(1);
+  // Keep a strip of horizon in the chase view so distant aircraft and the
+  // layered jungle remain visible instead of being hidden behind the top HUD.
+  const lookHeight = useRef(2.75);
 
   useEffect(() => {
     function handleContextMenu(e: Event) {
@@ -107,7 +109,7 @@ export function CameraRig({ tankRef, napalmCinematic = false }: CameraRigProps) 
     // away from the player. It eases back to the normal chase view afterward.
     lookHeight.current = THREE.MathUtils.damp(
       lookHeight.current,
-      napalmCinematic ? 2.9 : 1,
+      napalmCinematic ? 3.45 : 2.75,
       napalmCinematic ? 2.6 : 3.8,
       delta,
     );

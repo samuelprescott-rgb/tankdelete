@@ -59,7 +59,9 @@ export interface EnemyHitResult {
 
 export const ENEMY_MAX_HEALTH = 100;
 export const ENEMY_HIT_RADIUS = 0.48;
-export const ENEMY_RIFLE_DAMAGE = 3;
+// Infantry crossfire primarily sells battlefield pressure; it should not decide
+// the cleanup encounter before the player has time to engage with the tank.
+export const ENEMY_RIFLE_DAMAGE = 1;
 export const ENEMY_RIFLE_SPEED = 18;
 export const ENEMY_RIFLE_LIFETIME = 3.2;
 

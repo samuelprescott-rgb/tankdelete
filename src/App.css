@@ -249,7 +249,7 @@ button:active {
   inset: 0;
   background:
     repeating-linear-gradient(0deg, rgba(255, 240, 185, 0.018) 0, rgba(255, 240, 185, 0.018) 1px, transparent 1px, transparent 4px),
-    radial-gradient(circle at center, transparent 45%, rgba(5, 8, 3, 0.38) 100%);
+    radial-gradient(circle at center, transparent 58%, rgba(5, 8, 3, 0.2) 100%);
   content: '';
   pointer-events: none;
 }

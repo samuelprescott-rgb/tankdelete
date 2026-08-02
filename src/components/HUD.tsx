@@ -131,8 +131,13 @@ export function HUD({
         </div>
 
         <div className="field-radio">
-          <div>
+          <div className="field-radio-portrait" aria-hidden="true">
+            <img src="/images/field-radio-sergeant.png" alt="" />
+            <span />
+          </div>
+          <div className="field-radio-copy">
             <span className="hud-kicker">Field radio</span>
+            <b>Air Cav Actual</b>
             <strong>{radioTrackName}</strong>
             <small>{radioSourceLabel}</small>
           </div>

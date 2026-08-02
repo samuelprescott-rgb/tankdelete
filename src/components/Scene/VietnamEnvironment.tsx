@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
@@ -500,7 +500,7 @@ function LayeredJungle() {
       </instancedMesh>
       <instancedMesh ref={broadCanopyRef} args={[undefined, undefined, broadleafTrees.length * 3]} castShadow receiveShadow>
         <icosahedronGeometry args={[1, 1]} />
-        <meshStandardMaterial color="#244525" emissive="#132713" emissiveIntensity={0.12} roughness={1} flatShading />
+        <meshStandardMaterial color="#2b522b" emissive="#173119" emissiveIntensity={0.15} roughness={1} flatShading />
       </instancedMesh>
       <instancedMesh ref={palmTrunksRef} args={[undefined, undefined, palmTrees.length]} castShadow receiveShadow>
         <cylinderGeometry args={[0.24, 0.42, 1, 8]} />
@@ -611,57 +611,288 @@ function FieldFortifications() {
   );
 }
 
-function DistantHelicopter() {
+interface HueyAirframeProps {
+  mainRotorRef?: RefObject<THREE.Group | null>;
+  tailRotorRef?: RefObject<THREE.Group | null>;
+  wrecked?: boolean;
+}
+
+/** A low-poly UH-1 silhouette shared by the airborne formation and the wreck. */
+function HueyAirframe({ mainRotorRef, tailRotorRef, wrecked = false }: HueyAirframeProps) {
+  const olive = wrecked ? '#3b3c27' : '#39462f';
+  const shadowOlive = wrecked ? '#24251a' : '#263321';
+
+  return (
+    <group>
+      <mesh scale={[1.02, 0.8, 1.42]} castShadow={!wrecked}>
+        <sphereGeometry args={[1, 10, 7]} />
+        <meshStandardMaterial
+          color={olive}
+          emissive={wrecked ? '#100d08' : '#11190d'}
+          emissiveIntensity={wrecked ? 0.04 : 0.2}
+          roughness={0.88}
+          metalness={0.14}
+          flatShading
+        />
+      </mesh>
+
+      {/* The broad divided windscreen is what makes the tiny silhouette read as a Huey. */}
+      <mesh position={[0, 0.19, -1.05]} scale={[0.88, 0.56, 0.54]} castShadow={!wrecked}>
+        <sphereGeometry args={[1, 8, 6]} />
+        <meshStandardMaterial
+          color={wrecked ? '#171b17' : '#60736b'}
+          emissive={wrecked ? '#080807' : '#15251f'}
+          emissiveIntensity={wrecked ? 0.02 : 0.26}
+          metalness={0.56}
+          roughness={0.23}
+        />
+      </mesh>
+      <mesh position={[0, 0.25, -1.58]} scale={[0.045, 0.48, 0.1]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color={shadowOlive} roughness={0.86} />
+      </mesh>
+
+      {/* Open troop-bay doors keep the fuselage from reading as a generic bubble aircraft. */}
+      {[-1, 1].map(side => (
+        <group key={side} position={[side * 0.98, -0.03, 0.42]}>
+          <mesh scale={[0.055, 0.57, 0.72]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#111811" roughness={0.96} />
+          </mesh>
+          <mesh position={[side * 0.035, 0.51, 0]} scale={[0.08, 0.08, 0.76]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color={shadowOlive} roughness={0.92} />
+          </mesh>
+        </group>
+      ))}
+
+      <mesh position={[0, 0.12, 3.08]} rotation={[Math.PI / 2, 0, 0]} castShadow={!wrecked}>
+        <coneGeometry args={[0.34, 4.42, 6]} />
+        <meshStandardMaterial color={olive} roughness={0.9} metalness={0.12} flatShading />
+      </mesh>
+      <mesh position={[0, 0.64, 5.02]} scale={[0.1, 0.88, 0.68]} rotation={[0.08, 0, -0.08]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color={shadowOlive} roughness={0.94} />
+      </mesh>
+
+      <mesh position={[0, 0.92, 0]} scale={[0.12, 0.5, 0.12]}>
+        <cylinderGeometry args={[1, 1.18, 1, 7]} />
+        <meshStandardMaterial color="#1c2119" metalness={0.5} roughness={0.55} />
+      </mesh>
+
+      {wrecked ? (
+        <>
+          <group position={[0, 1.2, 0.08]} rotation={[0, 0.44, 0.08]}>
+            <mesh position={[-1.75, 0, 0]} scale={[3.5, 0.045, 0.12]}>
+              <boxGeometry args={[1, 1, 1]} />
+              <meshStandardMaterial color="#25271d" roughness={0.93} />
+            </mesh>
+            <mesh position={[1.1, -0.16, 0]} scale={[1.55, 0.045, 0.12]} rotation={[0, 0, -0.1]}>
+              <boxGeometry args={[1, 1, 1]} />
+              <meshStandardMaterial color="#25271d" roughness={0.93} />
+            </mesh>
+          </group>
+          <mesh position={[0.93, 0.26, -0.38]} scale={[0.08, 0.38, 0.48]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#0d0c09" roughness={1} />
+          </mesh>
+          <mesh position={[-0.58, 0.57, 1.1]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.33, 0.07, 5, 9]} />
+            <meshStandardMaterial color="#15130d" roughness={1} />
+          </mesh>
+        </>
+      ) : (
+        <group ref={mainRotorRef} position={[0, 1.29, 0]}>
+          <mesh scale={[6.8, 0.028, 0.105]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color="#5b6250" transparent opacity={0.54} depthWrite={false} />
+          </mesh>
+          <mesh scale={[0.105, 0.028, 6.8]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color="#5b6250" transparent opacity={0.54} depthWrite={false} />
+          </mesh>
+        </group>
+      )}
+
+      {!wrecked && (
+        <group ref={tailRotorRef} position={[0.12, 0.62, 5.15]}>
+          <mesh scale={[1.05, 0.06, 0.045]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color="#737867" />
+          </mesh>
+          <mesh scale={[0.06, 1.05, 0.045]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color="#737867" />
+          </mesh>
+        </group>
+      )}
+
+      {[-0.76, 0.76].map(side => (
+        <group key={side} position={[side, -0.75, 0.02]}>
+          <mesh scale={[0.055, 0.72, 0.055]} rotation={[0, 0, side > 0 ? -0.24 : 0.24]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#171c14" metalness={0.34} roughness={0.68} />
+          </mesh>
+          <mesh position={[0, -0.34, 0.08]} scale={[0.075, 0.065, 1.78]}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="#171c14" metalness={0.34} roughness={0.68} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+interface FlyoverConfig {
+  altitude: number;
+  direction: 1 | -1;
+  phase: number;
+  scale: number;
+  speed: number;
+  z: number;
+}
+
+const DISTANT_FLYOVERS: FlyoverConfig[] = [
+  { altitude: 17.5, direction: 1, phase: 0.08, scale: 0.5, speed: 0.014, z: 48 },
+  { altitude: 18.3, direction: 1, phase: 0.02, scale: 0.38, speed: 0.014, z: 55 },
+  { altitude: 17.8, direction: -1, phase: 0.61, scale: 0.43, speed: 0.011, z: 46 },
+];
+
+function FlyingHuey({ config, index }: { config: FlyoverConfig; index: number }) {
   const helicopterRef = useRef<THREE.Group>(null);
-  const rotorRef = useRef<THREE.Group>(null);
+  const mainRotorRef = useRef<THREE.Group>(null);
+  const tailRotorRef = useRef<THREE.Group>(null);
 
   useFrame(({ clock }) => {
-    if (!helicopterRef.current || !rotorRef.current) return;
+    if (!helicopterRef.current || !mainRotorRef.current || !tailRotorRef.current) return;
     const time = clock.elapsedTime;
+    const progress = (time * config.speed + config.phase) % 1;
+    const corridorX = THREE.MathUtils.lerp(-82, 82, config.direction === 1 ? progress : 1 - progress);
+    const rotorBeat = time * (22 + index * 1.7);
+
     helicopterRef.current.position.set(
-      Math.cos(time * 0.045) * 58,
-      14 + Math.sin(time * 0.16) * 1.4,
-      Math.sin(time * 0.045) * 48 + 12,
+      corridorX,
+      config.altitude + Math.sin(time * 0.24 + index * 1.8) * 0.55,
+      config.z + Math.sin(time * 0.1 + index) * 1.8,
     );
-    helicopterRef.current.rotation.y = -time * 0.045 + Math.PI * 0.5;
-    helicopterRef.current.rotation.z = Math.sin(time * 0.13) * 0.04;
-    rotorRef.current.rotation.y = time * 18;
+    helicopterRef.current.rotation.y = config.direction === 1 ? -Math.PI * 0.5 : Math.PI * 0.5;
+    helicopterRef.current.rotation.z = Math.sin(time * 0.18 + index * 1.3) * 0.035 - config.direction * 0.025;
+    mainRotorRef.current.rotation.y = rotorBeat;
+    tailRotorRef.current.rotation.z = rotorBeat * 1.82;
   });
 
   return (
-    <group ref={helicopterRef} scale={0.72}>
-      <mesh scale={[1.6, 0.78, 0.8]}>
-        <sphereGeometry args={[1, 8, 6]} />
-        <meshStandardMaterial color="#20281b" roughness={0.9} />
+    <group ref={helicopterRef} scale={config.scale}>
+      <HueyAirframe mainRotorRef={mainRotorRef} tailRotorRef={tailRotorRef} />
+    </group>
+  );
+}
+
+function DistantHelicopterFormation() {
+  return (
+    <>
+      {DISTANT_FLYOVERS.map((config, index) => (
+        <FlyingHuey key={`${config.z}-${config.phase}`} config={config} index={index} />
+      ))}
+    </>
+  );
+}
+
+const WRECK_BUSHES = [
+  [-3.1, -1.4, 1.25],
+  [-2.2, -1.9, 1.05],
+  [-1.1, -1.8, 1.42],
+  [0.5, -1.85, 1.18],
+  [2.05, -1.55, 1.38],
+  [3.45, -0.9, 1.08],
+  [3.65, 1.2, 1.32],
+  [-3.35, 1.15, 1.18],
+  [-1.65, 0.05, 0.84],
+  [1.25, 0.3, 0.92],
+  [-0.45, 3.05, 1.14],
+  [0.55, 4.15, 1.06],
+] as const;
+
+const WRECK_VINES = [
+  [-0.82, 0.22, 1.45, 0.92],
+  [0.66, 0.48, 1.1, 0.74],
+  [-0.18, 2.45, 1.25, 1.08],
+  [0.35, 3.5, 0.92, 0.78],
+] as const;
+
+function CrashedHuey() {
+  return (
+    <group position={[13.2, 0, 33.4]} rotation={[0, -0.5, 0]}>
+      <mesh position={[0.2, -0.045, 0.1]} rotation={[-Math.PI / 2, 0, 0]} scale={[4.7, 2.15, 1]} receiveShadow>
+        <circleGeometry args={[1, 20]} />
+        <meshBasicMaterial color="#15130e" transparent opacity={0.52} depthWrite={false} />
       </mesh>
-      <mesh position={[0, 0.1, 2.4]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.3, 3.8, 5]} />
-        <meshStandardMaterial color="#20281b" roughness={0.9} />
-      </mesh>
-      <mesh position={[0, 0.6, 4.15]} scale={[0.08, 0.72, 0.62]}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#20281b" roughness={0.9} />
-      </mesh>
-      <group ref={rotorRef} position={[0, 1.15, 0]}>
-        <mesh scale={[6.2, 0.035, 0.11]}>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color="#444936" transparent opacity={0.65} />
-        </mesh>
-        <mesh scale={[0.11, 0.035, 6.2]}>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color="#444936" transparent opacity={0.65} />
-        </mesh>
+
+      <group position={[0, 0.95, 0]} rotation={[-0.09, 0.18, -0.27]} scale={0.78}>
+        <HueyAirframe wrecked />
       </group>
-      {[-0.72, 0.72].map(x => (
-        <group key={x} position={[x, -0.8, 0]}>
-          <mesh position={[0, 0, 0]} scale={[0.04, 0.72, 0.04]} rotation={[0, 0, x > 0 ? -0.28 : 0.28]}>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshBasicMaterial color="#181d15" />
+
+      {/* A blade and door torn clear of the airframe make the damage readable at tank speed. */}
+      <mesh position={[-3.85, 0.12, 1.85]} rotation={[0.09, -0.42, -0.05]} scale={[3.2, 0.045, 0.13]} castShadow>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#27281d" roughness={0.96} />
+      </mesh>
+      <mesh position={[2.25, 0.2, -1.75]} rotation={[0.04, 0.7, 0.12]} scale={[0.78, 0.08, 0.72]} castShadow>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#303424" roughness={0.94} metalness={0.12} />
+      </mesh>
+      {[
+        [-2.4, 0.12, 2.45, 0.22],
+        [2.9, 0.16, 1.75, -0.5],
+        [4.3, 0.11, 0.15, 0.78],
+      ].map(([x, y, z, rotation], index) => (
+        <mesh key={index} position={[x, y, z]} rotation={[0, rotation, 0]} scale={[0.38, 0.13, 0.26]} castShadow>
+          <dodecahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color={index === 1 ? '#272518' : '#343526'} roughness={1} />
+        </mesh>
+      ))}
+
+      {WRECK_BUSHES.map(([x, z, size], bushIndex) => (
+        <group key={`${x}-${z}`} position={[x, 0, z]} rotation={[0, seeded(bushIndex, 840) * Math.PI, 0]}>
+          {[-0.42, 0, 0.42].map((offset, stemIndex) => (
+            <mesh
+              key={offset}
+              position={[offset * size, size * (0.42 + stemIndex * 0.08), (stemIndex - 1) * 0.2]}
+              rotation={[0.08, stemIndex * 1.7, offset * 0.16]}
+              scale={[size * 0.67, size * (0.58 + stemIndex * 0.08), size * 0.58]}
+              castShadow
+            >
+              <icosahedronGeometry args={[1, 1]} />
+              <meshStandardMaterial
+                color={stemIndex === 1 ? '#3d6836' : '#2f572e'}
+                emissive="#173318"
+                emissiveIntensity={0.13}
+                roughness={1}
+                flatShading
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      {/* Creepers crossing the cabin and tail sell that the wreck has been reclaimed by jungle. */}
+      {WRECK_VINES.map(([x, z, height, lean], vineIndex) => (
+        <group key={`${x}-${z}`} position={[x, 0.08, z]} rotation={[lean, vineIndex * 1.3, lean * 0.32]}>
+          <mesh position={[0, height * 0.5, 0]} scale={[0.035, height, 0.035]}>
+            <cylinderGeometry args={[1, 1.25, 1, 5]} />
+            <meshStandardMaterial color="#56713c" roughness={1} />
           </mesh>
-          <mesh position={[0, -0.36, 0]} scale={[0.05, 0.05, 1.5]}>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshBasicMaterial color="#181d15" />
-          </mesh>
+          {[0.36, 0.7, 0.94].map((progress, leafIndex) => (
+            <mesh
+              key={progress}
+              position={[(leafIndex % 2 === 0 ? 1 : -1) * 0.15, height * progress, 0]}
+              rotation={[0, leafIndex * 1.7, leafIndex % 2 === 0 ? -0.6 : 0.6]}
+              scale={[0.25, 0.09, 0.13]}
+            >
+              <sphereGeometry args={[1, 6, 4]} />
+              <meshStandardMaterial color="#68834b" emissive="#23381f" emissiveIntensity={0.12} roughness={1} />
+            </mesh>
+          ))}
         </group>
       ))}
     </group>
@@ -1155,7 +1386,8 @@ export function VietnamEnvironment() {
       <LayeredJungle />
       <SmokeColumns />
       <FieldFortifications />
-      <DistantHelicopter />
+      <CrashedHuey />
+      <DistantHelicopterFormation />
     </>
   );
 }

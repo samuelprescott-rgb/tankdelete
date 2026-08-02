@@ -13,13 +13,13 @@ import {
 } from '../../lib/combat';
 
 const FRIENDLY_PROJECTILE_CAPACITY = 40;
-const FRIENDLY_RIFLE_SPEED = 27;
+const FRIENDLY_RIFLE_SPEED = 31;
 const FRIENDLY_RIFLE_LIFETIME = 2.7;
 // The squad sustains the firefight without clearing the whole encounter before
 // the player can engage; concentrated rifle fire still finishes exposed targets.
-const FRIENDLY_RIFLE_DAMAGE = 9;
+const FRIENDLY_RIFLE_DAMAGE = 1;
 const FRIENDLY_MAX_RANGE = 58;
-const TRACER_LENGTH = 0.68;
+const TRACER_LENGTH = 0.58;
 
 interface FriendlyProjectile {
   active: boolean;
@@ -38,12 +38,15 @@ interface SquadMember {
   fireInterval: number;
   initialDelay: number;
   accuracy: number;
+  burstSize: number;
 }
 
 interface SoldierRuntime {
   nextShotAt: number;
   shotIndex: number;
   flashUntil: number;
+  recoilUntil: number;
+  burstRemaining: number;
 }
 
 export interface USInfantrySquadProps {
@@ -55,12 +58,18 @@ export interface USInfantrySquadProps {
 }
 
 const SQUAD: readonly SquadMember[] = [
-  { id: 'us-rifle-1', position: [-4.8, 0.02, -5.4], kneeling: true, radioOperator: false, fireInterval: 1.18, initialDelay: 0.7, accuracy: 0.022 },
-  { id: 'us-rifle-2', position: [4.5, 0.02, -4.1], kneeling: false, radioOperator: false, fireInterval: 1.36, initialDelay: 1.05, accuracy: 0.028 },
-  { id: 'us-rifle-3', position: [-7.1, 0.02, 2.4], kneeling: true, radioOperator: false, fireInterval: 1.28, initialDelay: 1.35, accuracy: 0.024 },
-  { id: 'us-rto-4', position: [6.7, 0.02, 2.2], kneeling: false, radioOperator: true, fireInterval: 1.52, initialDelay: 1.7, accuracy: 0.03 },
-  { id: 'us-rifle-5', position: [0.3, 0.02, 4.8], kneeling: true, radioOperator: false, fireInterval: 1.42, initialDelay: 2.05, accuracy: 0.025 },
+  { id: 'us-rifle-1', position: [-5.65, 0.02, -5.35], kneeling: true, radioOperator: false, fireInterval: 1.42, initialDelay: 0.42, accuracy: 0.024, burstSize: 3 },
+  { id: 'us-rifle-2', position: [-4.12, 0.02, -5.18], kneeling: true, radioOperator: false, fireInterval: 1.55, initialDelay: 0.86, accuracy: 0.03, burstSize: 2 },
+  { id: 'us-rifle-3', position: [4.18, 0.02, -3.96], kneeling: true, radioOperator: false, fireInterval: 1.48, initialDelay: 1.16, accuracy: 0.026, burstSize: 3 },
+  { id: 'us-rto-4', position: [5.72, 0.02, -3.78], kneeling: false, radioOperator: true, fireInterval: 1.72, initialDelay: 1.48, accuracy: 0.032, burstSize: 2 },
+  { id: 'us-rifle-5', position: [0.25, 0.02, 1.82], kneeling: true, radioOperator: false, fireInterval: 1.62, initialDelay: 1.82, accuracy: 0.027, burstSize: 2 },
 ];
+
+const FIGHTING_POSITIONS = [
+  { id: 'left', position: [-4.9, 0.02, -4.7] as [number, number, number], rotation: -0.08, width: 3.15 },
+  { id: 'right', position: [4.95, 0.02, -3.28] as [number, number, number], rotation: 0.08, width: 3.15 },
+  { id: 'forward', position: [0.25, 0.02, 2.48] as [number, number, number], rotation: 0, width: 1.85 },
+] as const;
 
 export const US_INFANTRY_MINIMAP_CONTACTS = SQUAD.map(member => ({ position: member.position }));
 
@@ -68,6 +77,146 @@ function deterministicNoise(id: string, index: number, salt: number) {
   const seed = hashCombatSession(id);
   const value = Math.sin(seed * 0.00017 + index * 73.317 + salt * 23.113) * 43758.5453;
   return value - Math.floor(value);
+}
+
+function Sandbag({
+  position,
+  rotation = 0,
+  shade = 0,
+}: {
+  position: [number, number, number];
+  rotation?: number;
+  shade?: number;
+}) {
+  const colors = ['#8c8257', '#756d49', '#9a8c5c'];
+
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      <mesh scale={[0.29, 0.115, 0.17]} castShadow receiveShadow>
+        <sphereGeometry args={[1, 10, 6]} />
+        <meshStandardMaterial color={colors[shade % colors.length]} roughness={1} />
+      </mesh>
+      <mesh position={[0, 0.002, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[0.17, 0.1, 0.17]}>
+        <torusGeometry args={[1, 0.035, 4, 10]} />
+        <meshStandardMaterial color="#5d563b" roughness={1} />
+      </mesh>
+    </group>
+  );
+}
+
+function WetGrassClump({
+  position,
+  rotation = 0,
+}: {
+  position: [number, number, number];
+  rotation?: number;
+}) {
+  const blades = [-0.16, -0.08, 0, 0.09, 0.17];
+
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {blades.map((x, index) => {
+        const height = 0.38 + (index % 3) * 0.11;
+        return (
+          <mesh
+            key={x}
+            position={[x, height * 0.5, Math.sin(index * 1.8) * 0.08]}
+            rotation={[0.03 * (index - 2), 0, (x / 0.17) * -0.14]}
+            castShadow
+          >
+            <coneGeometry args={[0.035, height, 4]} />
+            <meshStandardMaterial
+              color={index % 2 === 0 ? '#394b2d' : '#536238'}
+              roughness={0.86}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function FightingPosition({
+  position,
+  rotation,
+  width,
+}: {
+  position: [number, number, number];
+  rotation: number;
+  width: number;
+}) {
+  const lowerCount = Math.max(3, Math.round(width / 0.5));
+  const lower = Array.from({ length: lowerCount }, (_, index) => (
+    -width * 0.5 + (index + 0.5) * (width / lowerCount)
+  ));
+  const upper = lower.slice(0, -1).map((value, index) => (
+    value + width / lowerCount * 0.5 + Math.sin(index * 2.3) * 0.025
+  ));
+
+  return (
+    <group position={position} rotation={[0, rotation, 0]}>
+      {/* Dark churned soil grounds the emplacement and keeps the wall from floating. */}
+      <mesh position={[0, -0.004, -0.18]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <circleGeometry args={[width * 0.55, 18]} />
+        <meshStandardMaterial color="#3c3a24" roughness={1} />
+      </mesh>
+      <mesh
+        position={[-width * 0.08, 0.004, -0.45]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        scale={[0.9, 0.36, 1]}
+        receiveShadow
+      >
+        <circleGeometry args={[width * 0.43, 18]} />
+        <meshStandardMaterial
+          color="#30483d"
+          roughness={0.32}
+          metalness={0.08}
+          transparent
+          opacity={0.72}
+        />
+      </mesh>
+
+      <group position={[0, 0, 0]}>
+        {lower.map((x, index) => (
+          <Sandbag key={`lower-${index}`} position={[x, 0.13, 0]} shade={index} />
+        ))}
+        {upper.map((x, index) => (
+          <Sandbag key={`upper-${index}`} position={[x, 0.32, 0.015]} rotation={index % 2 === 0 ? 0.025 : -0.025} shade={index + 1} />
+        ))}
+        {[-1, 1].flatMap(side => [0, 1, 2].map(step => (
+          <Sandbag
+            key={`wing-${side}-${step}`}
+            position={[side * (width * 0.5 - 0.05), 0.13 + (step === 2 ? 0.17 : 0), -0.32 - step * 0.38]}
+            rotation={Math.PI * 0.5}
+            shade={step + (side > 0 ? 1 : 0)}
+          />
+        )))}
+      </group>
+
+      {/* A few practical details sell a hastily occupied Vietnam-era fire base. */}
+      <group position={[width * 0.31, 0.14, -0.68]} rotation={[0, -0.08, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.48, 0.28, 0.35]} />
+          <meshStandardMaterial color="#4d5634" roughness={0.94} />
+        </mesh>
+        <mesh position={[0, 0.15, 0]}>
+          <boxGeometry args={[0.5, 0.035, 0.37]} />
+          <meshStandardMaterial color="#6c7245" roughness={0.95} />
+        </mesh>
+        <mesh position={[0, 0.18, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.12, 0.012, 5, 12, Math.PI]} />
+          <meshStandardMaterial color="#2d3328" metalness={0.35} roughness={0.65} />
+        </mesh>
+      </group>
+      <mesh position={[-width * 0.29, 0.08, -0.74]} rotation={[0, 0.16, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.11, 0.11, 0.34, 9]} />
+        <meshStandardMaterial color="#4c5736" roughness={0.85} metalness={0.18} />
+      </mesh>
+      <WetGrassClump position={[-width * 0.48, 0, 0.1]} rotation={0.12} />
+      <WetGrassClump position={[width * 0.46, 0, -0.08]} rotation={-0.18} />
+      {width > 2 && <WetGrassClump position={[-width * 0.18, 0, -0.96]} rotation={0.4} />}
+    </group>
+  );
 }
 
 function SoldierModel({
@@ -86,7 +235,7 @@ function SoldierModel({
   const bodyY = member.kneeling ? 0.49 : 0.62;
   const headY = member.kneeling ? 0.76 : 0.9;
   const rifleY = member.kneeling ? 0.57 : 0.71;
-  const uniform = index % 2 === 0 ? '#546444' : '#5d6947';
+  const uniform = index % 2 === 0 ? '#3f4c35' : '#46543a';
 
   return (
     <group
@@ -99,11 +248,11 @@ function SoldierModel({
           <>
             <mesh position={[-0.09, 0.17, 0.02]} rotation={[0.7, 0, 0.08]} castShadow>
               <cylinderGeometry args={[0.052, 0.066, 0.34, 7]} />
-              <meshStandardMaterial color="#48533b" roughness={0.98} />
+              <meshStandardMaterial color="#343f30" roughness={0.88} />
             </mesh>
             <mesh position={[0.1, 0.14, 0.12]} rotation={[1.17, 0, -0.1]} castShadow>
               <cylinderGeometry args={[0.052, 0.066, 0.29, 7]} />
-              <meshStandardMaterial color="#48533b" roughness={0.98} />
+              <meshStandardMaterial color="#343f30" roughness={0.88} />
             </mesh>
             <mesh position={[0.1, 0.05, 0.24]} castShadow>
               <boxGeometry args={[0.11, 0.075, 0.23]} />
@@ -115,7 +264,7 @@ function SoldierModel({
             <group key={legX}>
               <mesh position={[legX, 0.22, 0]} castShadow>
                 <cylinderGeometry args={[0.052, 0.066, 0.39, 7]} />
-                <meshStandardMaterial color="#48533b" roughness={0.98} />
+                <meshStandardMaterial color="#343f30" roughness={0.88} />
               </mesh>
               <mesh position={[legX, 0.04, -0.045]} castShadow>
                 <boxGeometry args={[0.105, 0.075, 0.2]} />
@@ -127,11 +276,11 @@ function SoldierModel({
 
         <mesh position={[0, bodyY - 0.16, 0.015]} castShadow>
           <boxGeometry args={[0.26, 0.2, 0.19]} />
-          <meshStandardMaterial color="#48533b" roughness={0.96} />
+          <meshStandardMaterial color="#343f30" roughness={0.86} />
         </mesh>
         <mesh position={[0, bodyY, 0]} castShadow>
           <boxGeometry args={[0.35, 0.35, 0.22]} />
-          <meshStandardMaterial color={uniform} roughness={0.95} />
+          <meshStandardMaterial color={uniform} roughness={0.84} />
         </mesh>
         <mesh position={[0, bodyY + 0.015, -0.122]} castShadow>
           <boxGeometry args={[0.3, 0.28, 0.055]} />
@@ -184,7 +333,7 @@ function SoldierModel({
         <group position={[0, headY + 0.09, 0]}>
           <mesh scale={[1.16, 0.57, 1.1]} castShadow>
             <sphereGeometry args={[0.135, 11, 7, 0, Math.PI * 2, 0, Math.PI * 0.68]} />
-            <meshStandardMaterial color={index % 2 === 0 ? '#4b5940' : '#596047'} roughness={0.98} />
+            <meshStandardMaterial color={index % 2 === 0 ? '#44523b' : '#505b40'} roughness={0.82} />
           </mesh>
           <mesh position={[0, -0.007, 0]}>
             <torusGeometry args={[0.122, 0.011, 5, 14]} />
@@ -254,6 +403,7 @@ function SoldierModel({
               depthWrite={false}
               toneMapped={false}
             />
+            <pointLight color="#ffbf54" intensity={2.6} distance={2.2} decay={2} />
           </mesh>
         </group>
       </group>
@@ -314,29 +464,54 @@ export function USInfantrySquad({
     if (!enabled) {
       for (const projectile of projectilePool) projectile.active = false;
       for (const flash of flashRefs.current) if (flash) flash.visible = false;
-      return;
     }
 
     SQUAD.forEach((member, memberIndex) => {
       let runtime = runtimeRef.current.get(member.id);
       if (!runtime) {
-        runtime = { nextShotAt: now + member.initialDelay, shotIndex: 0, flashUntil: 0 };
+        runtime = {
+          nextShotAt: now + member.initialDelay,
+          shotIndex: 0,
+          flashUntil: 0,
+          recoilUntil: 0,
+          burstRemaining: member.burstSize,
+        };
         runtimeRef.current.set(member.id, runtime);
       }
 
       const soldier = soldierRefs.current[memberIndex];
       const body = bodyRefs.current[memberIndex];
       const flash = flashRefs.current[memberIndex];
+      if (soldier) {
+        // Small foot/weight shifts stop the fire team reading as five static props,
+        // while staying tight enough to their fighting positions to preserve cover.
+        soldier.position.x = member.position[0]
+          + Math.sin(now * (0.34 + memberIndex * 0.025) + memberIndex * 1.7) * 0.045;
+        soldier.position.z = member.position[2]
+          + Math.sin(now * 0.27 + memberIndex * 2.1) * 0.026;
+      }
       if (body) {
-        body.rotation.z = Math.sin(now * 1.3 + memberIndex * 1.9) * 0.012;
-        body.position.y = Math.sin(now * 1.05 + memberIndex) * 0.007;
+        const recoil = now < runtime.recoilUntil
+          ? Math.sin((runtime.recoilUntil - now) * 62) * 0.034
+          : 0;
+        body.rotation.x = recoil + (member.kneeling ? -0.012 : 0.045);
+        body.rotation.z = Math.sin(now * 1.3 + memberIndex * 1.9) * 0.018;
+        body.position.y = Math.sin(now * 1.05 + memberIndex) * 0.009
+          - (member.kneeling ? (Math.sin(now * 0.42 + memberIndex) + 1) * 0.008 : 0);
+        body.position.z = recoil * 0.6;
       }
       if (flash) {
         flash.visible = now < runtime.flashUntil;
         if (flash.visible) flash.scale.setScalar(0.82 + Math.sin(now * 157 + memberIndex) * 0.18);
       }
 
-      if (enemies.length === 0) return;
+      if (!enabled || enemies.length === 0) {
+        if (soldier) {
+          soldier.rotation.y = Math.PI
+            + Math.sin(now * 0.24 + memberIndex * 1.3) * (member.radioOperator ? 0.34 : 0.22);
+        }
+        return;
+      }
       const orderedTargets = Array.from(enemies)
         .filter(enemy => enemy.alive)
         .sort((left, right) => {
@@ -346,7 +521,8 @@ export function USInfantrySquad({
         });
       if (orderedTargets.length === 0) return;
 
-      const aimTarget = orderedTargets[memberIndex % Math.min(orderedTargets.length, 3)];
+      const preferredTargetIndex = memberIndex % Math.min(orderedTargets.length, 3);
+      const aimTarget = orderedTargets[preferredTargetIndex];
       if (soldier) {
         soldier.rotation.y = Math.atan2(
           -(aimTarget.position[0] - member.position[0]),
@@ -355,15 +531,24 @@ export function USInfantrySquad({
       }
       if (now < runtime.nextShotAt) return;
 
-      muzzlePosition.set(
-        member.position[0],
-        member.position[1] + (member.kneeling ? 0.57 : 0.71),
-        member.position[2],
-      );
+      // Read the actual rendered rifle muzzle after aim/stance animation. This
+      // keeps every flash and tracer attached to the barrel instead of appearing
+      // beside the soldier when the fire team turns toward an off-axis target.
+      if (soldier && flash) {
+        soldier.updateWorldMatrix(true, true);
+        flash.getWorldPosition(muzzlePosition);
+      } else {
+        muzzlePosition.set(
+          member.position[0],
+          member.position[1] + (member.kneeling ? 0.57 : 0.71),
+          member.position[2],
+        );
+      }
 
       let selectedTarget: EnemyCombatant | null = null;
+      let suppressionTarget: EnemyCombatant | null = null;
       for (let offset = 0; offset < orderedTargets.length; offset += 1) {
-        const candidate = orderedTargets[(offset + memberIndex) % orderedTargets.length];
+        const candidate = orderedTargets[(offset + preferredTargetIndex) % orderedTargets.length];
         targetPosition.set(
           candidate.position[0],
           candidate.position[1] + (candidate.stance === 'kneeling' ? 0.52 : 0.68),
@@ -371,6 +556,7 @@ export function USInfantrySquad({
         );
         const distance = muzzlePosition.distanceTo(targetPosition);
         if (distance > FRIENDLY_MAX_RANGE) continue;
+        suppressionTarget ??= candidate;
         const obstacleT = findNearestObstacleHit(muzzlePosition, targetPosition, obstacles);
         if (obstacleT !== null && obstacleT < 0.9) continue;
         if (terrainBlocksCombatSegment(muzzlePosition, targetPosition)) continue;
@@ -378,6 +564,10 @@ export function USInfantrySquad({
         break;
       }
 
+      // The team still lays visible suppressive fire when vegetation, huts, or a
+      // mound masks every direct lane. Collision checks below continue to stop the
+      // projectile at that cover, so this improves feedback without wall-hacking.
+      selectedTarget ??= suppressionTarget;
       if (!selectedTarget) {
         runtime.nextShotAt = now + 0.45;
         return;
@@ -394,10 +584,10 @@ export function USInfantrySquad({
       shotDirection.y += (deterministicNoise(member.id, shotIndex, 2) - 0.5) * member.accuracy;
       shotDirection.z += (deterministicNoise(member.id, shotIndex, 3) - 0.5) * member.accuracy * 2;
       shotDirection.normalize();
-      muzzlePosition.addScaledVector(shotDirection, 0.76);
 
       if (spawnFriendlyRound(muzzlePosition, shotDirection, member.id)) {
-        runtime.flashUntil = now + 0.065;
+        runtime.flashUntil = now + 0.075;
+        runtime.recoilUntil = now + 0.11;
         onFriendlyFire?.({
           soldierId: member.id,
           targetEnemyId: selectedTarget.id,
@@ -405,9 +595,15 @@ export function USInfantrySquad({
           direction: shotDirection.clone(),
         });
       }
-      runtime.nextShotAt = now + member.fireInterval * (
-        0.86 + deterministicNoise(member.id, shotIndex, 4) * 0.28
-      );
+      runtime.burstRemaining -= 1;
+      if (runtime.burstRemaining > 0) {
+        runtime.nextShotAt = now + 0.105 + deterministicNoise(member.id, shotIndex, 5) * 0.065;
+      } else {
+        runtime.burstRemaining = member.burstSize;
+        runtime.nextShotAt = now + member.fireInterval * (
+          0.9 + deterministicNoise(member.id, shotIndex, 4) * 0.25
+        );
+      }
     });
 
     projectilePool.forEach((projectile, projectileIndex) => {
@@ -458,6 +654,15 @@ export function USInfantrySquad({
 
   return (
     <group>
+      {FIGHTING_POSITIONS.map(position => (
+        <FightingPosition
+          key={position.id}
+          position={position.position}
+          rotation={position.rotation}
+          width={position.width}
+        />
+      ))}
+
       {SQUAD.map((member, index) => (
         <SoldierModel
           key={member.id}

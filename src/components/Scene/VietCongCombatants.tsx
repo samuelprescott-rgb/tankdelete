@@ -22,9 +22,9 @@ const TRACER_LENGTH = 0.72;
 const MAX_ENGAGEMENT_RANGE = 48;
 
 const UNIFORM_PALETTES = [
-  { shirt: '#22291d', trousers: '#171c16', webbing: '#766e47' },
-  { shirt: '#313522', trousers: '#20241a', webbing: '#8b784d' },
-  { shirt: '#292e25', trousers: '#151a17', webbing: '#6c704b' },
+  { shirt: '#151b28', trousers: '#101522', webbing: '#646251' },
+  { shirt: '#202536', trousers: '#151a27', webbing: '#716b55' },
+  { shirt: '#1b2328', trousers: '#11181d', webbing: '#5d624e' },
 ] as const;
 
 interface HostileProjectile {
@@ -59,6 +59,99 @@ function shotNoise(enemyId: string, shotIndex: number, salt: number) {
   return value - Math.floor(value);
 }
 
+function CylinderBetween({
+  start,
+  end,
+  radius,
+  color,
+}: {
+  start: [number, number, number];
+  end: [number, number, number];
+  radius: number;
+  color: string;
+}) {
+  const startPoint = new THREE.Vector3(...start);
+  const endPoint = new THREE.Vector3(...end);
+  const direction = endPoint.clone().sub(startPoint);
+  const length = direction.length();
+  const midpoint = startPoint.clone().lerp(endPoint, 0.5);
+  const orientation = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize(),
+  );
+
+  return (
+    <mesh position={midpoint} quaternion={orientation} castShadow>
+      <cylinderGeometry args={[radius * 0.86, radius, length, 6]} />
+      <meshStandardMaterial color={color} roughness={0.98} />
+    </mesh>
+  );
+}
+
+function JungleConcealment({ index, kneeling }: { index: number; kneeling: boolean }) {
+  const foliage = index % 3;
+  const leafPalette = foliage === 0
+    ? ['#263f20', '#365526', '#4b6a2d']
+    : foliage === 1
+      ? ['#1f381d', '#315126', '#526b2c']
+      : ['#29441f', '#3e5b28', '#5c7132'];
+  const coverHeight = kneeling ? 0.31 : 0.26;
+  const clusters = [
+    { x: -0.43, z: 0.04, scale: 1.02 },
+    { x: 0.43, z: 0.09, scale: 0.92 },
+    { x: -0.2, z: 0.25, scale: 0.72 },
+    { x: 0.2, z: 0.28, scale: 0.68 },
+  ];
+
+  return (
+    <group>
+      {/* Low, open-centred jungle scrub gives concealment without masking the target silhouette. */}
+      {clusters.map((cluster, clusterIndex) => (
+        <group
+          key={`${cluster.x}-${cluster.z}`}
+          position={[cluster.x, 0, cluster.z]}
+          scale={cluster.scale}
+          rotation={[0, (index * 1.37 + clusterIndex * 0.71) % Math.PI, 0]}
+        >
+          {[-0.075, 0, 0.075].map((stemX, stemIndex) => (
+            <group key={stemX} rotation={[0, stemIndex * 1.8, stemX * 1.8]}>
+              <mesh position={[stemX, coverHeight * 0.48, 0]} rotation={[0, 0, stemX * 1.4]}>
+                <cylinderGeometry args={[0.008, 0.014, coverHeight, 5]} />
+                <meshStandardMaterial color="#3c3f25" roughness={1} />
+              </mesh>
+              <mesh
+                position={[stemX * 1.8, coverHeight * (0.72 + stemIndex * 0.08), -0.015]}
+                rotation={[0.25, stemIndex * 1.35, stemX * 2.1]}
+                castShadow
+              >
+                <dodecahedronGeometry args={[0.13 + stemIndex * 0.012, 0]} />
+                <meshStandardMaterial color={leafPalette[stemIndex]} roughness={1} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+      ))}
+
+      {/* A few broad fern fronds break the toy-like round-bush outline. */}
+      {[-0.62, 0.61].map((side, sideIndex) => (
+        <group key={side} position={[side, 0.035, 0.13]} rotation={[0, sideIndex ? -0.5 : 0.45, 0]}>
+          {[-0.34, -0.17, 0, 0.17, 0.34].map((angle, frondIndex) => (
+            <mesh
+              key={angle}
+              position={[Math.sin(angle) * 0.12, 0.14 + Math.cos(angle) * 0.055, 0]}
+              rotation={[0.2, angle, -angle * 0.85]}
+              castShadow
+            >
+              <boxGeometry args={[0.055, 0.28 - frondIndex * 0.012, 0.018]} />
+              <meshStandardMaterial color={leafPalette[(frondIndex + 1) % leafPalette.length]} roughness={1} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function VietCongFighter({
   enemy,
   index,
@@ -78,16 +171,21 @@ function VietCongFighter({
   const torsoY = kneeling ? 0.46 : 0.59;
   const headY = kneeling ? 0.72 : 0.86;
   const rifleY = kneeling ? 0.53 : 0.67;
+  const concealmentRotation = Math.atan2(enemy.position[0], enemy.position[2]);
 
   return (
-    <group
-      ref={node => { fighterRefs.current[index] = node; }}
-      position={enemy.position}
-      visible={enemy.alive}
-      scale={0.96}
-    >
-      {/* Dark field clothing and web gear, sized to the compressed vehicle scale. */}
-      <group ref={node => { torsoRefs.current[index] = node; }}>
+    <group position={enemy.position}>
+      <group rotation={[0, concealmentRotation, 0]}>
+        <JungleConcealment index={index} kneeling={kneeling} />
+      </group>
+
+      <group
+        ref={node => { fighterRefs.current[index] = node; }}
+        visible={enemy.alive}
+        scale={0.96}
+      >
+        {/* Dark field clothing and web gear, sized to the compressed vehicle scale. */}
+        <group ref={node => { torsoRefs.current[index] = node; }}>
         {kneeling ? (
           <>
             <mesh position={[-0.085, 0.16, 0.01]} rotation={[0.72, 0, 0.08]} castShadow>
@@ -145,23 +243,39 @@ function VietCongFighter({
           </mesh>
         ))}
 
-        {/* Arms settle naturally onto the rifle rather than floating beside it. */}
-        <mesh position={[-0.19, rifleY + 0.015, -0.08]} rotation={[1.17, 0, -0.22]} castShadow>
-          <cylinderGeometry args={[0.043, 0.052, 0.34, 6]} />
-          <meshStandardMaterial color={palette.shirt} roughness={0.96} />
-        </mesh>
-        <mesh position={[0.18, rifleY + 0.015, -0.075]} rotation={[1.08, 0, 0.24]} castShadow>
-          <cylinderGeometry args={[0.043, 0.052, 0.32, 6]} />
-          <meshStandardMaterial color={palette.shirt} roughness={0.96} />
-        </mesh>
-        <mesh position={[-0.105, rifleY - 0.005, -0.24]}>
-          <sphereGeometry args={[0.055, 7, 5]} />
-          <meshStandardMaterial color="#805d3f" roughness={1} />
-        </mesh>
-        <mesh position={[0.105, rifleY - 0.005, -0.23]}>
-          <sphereGeometry args={[0.055, 7, 5]} />
-          <meshStandardMaterial color="#805d3f" roughness={1} />
-        </mesh>
+          {/* Both arms now meet a shouldered rifle: trigger hand aft, support hand on the foregrip. */}
+          <CylinderBetween
+            start={[-0.145, torsoY + 0.105, -0.015]}
+            end={[-0.13, rifleY + 0.045, -0.18]}
+            radius={0.05}
+            color={palette.shirt}
+          />
+          <CylinderBetween
+            start={[-0.13, rifleY + 0.045, -0.18]}
+            end={[-0.035, rifleY, -0.41]}
+            radius={0.044}
+            color={palette.shirt}
+          />
+          <CylinderBetween
+            start={[0.15, torsoY + 0.1, -0.012]}
+            end={[0.13, rifleY + 0.035, -0.12]}
+            radius={0.05}
+            color={palette.shirt}
+          />
+          <CylinderBetween
+            start={[0.13, rifleY + 0.035, -0.12]}
+            end={[0.055, rifleY - 0.002, -0.2]}
+            radius={0.044}
+            color={palette.shirt}
+          />
+          <mesh position={[-0.035, rifleY, -0.41]}>
+            <sphereGeometry args={[0.052, 7, 5]} />
+            <meshStandardMaterial color="#805d3f" roughness={1} />
+          </mesh>
+          <mesh position={[0.055, rifleY - 0.002, -0.2]}>
+            <sphereGeometry args={[0.052, 7, 5]} />
+            <meshStandardMaterial color="#805d3f" roughness={1} />
+          </mesh>
 
         <mesh position={[0, headY - 0.095, 0]}>
           <cylinderGeometry args={[0.055, 0.065, 0.1, 7]} />
@@ -172,73 +286,112 @@ function VietCongFighter({
           <meshStandardMaterial color="#876044" roughness={1} />
         </mesh>
 
-        {enemy.headwear === 'pith' ? (
-          <group position={[0, headY + 0.105, 0]}>
-            <mesh castShadow>
-              <cylinderGeometry args={[0.16, 0.17, 0.028, 10]} />
-              <meshStandardMaterial color="#66704a" roughness={1} />
-            </mesh>
-            <mesh position={[0, 0.045, 0]} scale={[1, 0.65, 1]} castShadow>
-              <sphereGeometry args={[0.115, 8, 5]} />
-              <meshStandardMaterial color="#596542" roughness={1} />
-            </mesh>
-          </group>
-        ) : (
-          <group position={[0, headY + 0.1, 0]}>
-            <mesh castShadow>
-              <cylinderGeometry args={[0.15, 0.165, 0.024, 9]} />
-              <meshStandardMaterial color="#343b27" roughness={1} />
-            </mesh>
-            <mesh position={[0, 0.045, 0]} castShadow>
-              <cylinderGeometry args={[0.105, 0.12, 0.09, 8]} />
-              <meshStandardMaterial color="#293222" roughness={1} />
-            </mesh>
-          </group>
-        )}
+          {enemy.headwear === 'pith' ? (
+            <group position={[0, headY + 0.115, 0]}>
+              <mesh scale={[1, 1, 1.08]} castShadow>
+                <cylinderGeometry args={[0.142, 0.178, 0.034, 12]} />
+                <meshStandardMaterial color="#7d774c" roughness={1} />
+              </mesh>
+              <mesh position={[0, 0.048, 0.005]} scale={[1, 0.68, 1.05]} castShadow>
+                <sphereGeometry args={[0.12, 10, 6]} />
+                <meshStandardMaterial color="#666d43" roughness={1} />
+              </mesh>
+              <mesh position={[0, 0.045, -0.108]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.086, 0.009, 4, 12, Math.PI]} />
+                <meshStandardMaterial color="#3f452e" roughness={1} />
+              </mesh>
+            </group>
+          ) : (
+            <group position={[0, headY + 0.115, 0]}>
+              {/* Dark lacquered palm-leaf field hat, with woven ribs and a visible chin cord. */}
+              <mesh position={[0, 0.025, 0]} castShadow>
+                <coneGeometry args={[0.205, 0.095, 18]} />
+                <meshStandardMaterial color="#282b28" roughness={1} side={THREE.DoubleSide} />
+              </mesh>
+              {[0.085, 0.137, 0.187].map((radius, ringIndex) => (
+                <mesh key={radius} position={[0, -0.008 + ringIndex * 0.014, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[radius, 0.0055, 4, 18]} />
+                  <meshStandardMaterial color="#111715" roughness={1} />
+                </mesh>
+              ))}
+              {Array.from({ length: 9 }, (_, ribIndex) => {
+                const angle = (ribIndex / 9) * Math.PI * 2;
+                return (
+                  <mesh
+                    key={`hat-rib-${ribIndex}`}
+                    position={[Math.sin(angle) * 0.09, 0.014, Math.cos(angle) * 0.09]}
+                    rotation={[0, angle, 0]}
+                  >
+                    <boxGeometry args={[0.007, 0.007, 0.185]} />
+                    <meshStandardMaterial color="#3b3c35" roughness={1} />
+                  </mesh>
+                );
+              })}
+              <CylinderBetween
+                start={[-0.14, -0.005, 0]}
+                end={[-0.045, -0.16, -0.045]}
+                radius={0.006}
+                color="#171814"
+              />
+              <CylinderBetween
+                start={[0.14, -0.005, 0]}
+                end={[0.045, -0.16, -0.045]}
+                radius={0.006}
+                color="#171814"
+              />
+            </group>
+          )}
 
-        {/* Wood-stocked rifle with a distinct receiver, gas tube, magazine, and muzzle. */}
-        <group position={[0, rifleY, -0.1]}>
-          <mesh position={[0, 0, 0.08]} castShadow>
-            <boxGeometry args={[0.105, 0.1, 0.29]} />
-            <meshStandardMaterial color="#633d26" roughness={0.88} />
-          </mesh>
-          <mesh position={[0, 0, -0.105]} castShadow>
-            <boxGeometry args={[0.09, 0.095, 0.2]} />
-            <meshStandardMaterial color="#252821" roughness={0.72} metalness={0.35} />
-          </mesh>
-          <mesh position={[0, -0.085, -0.12]} rotation={[0.2, 0, 0]} castShadow>
-            <boxGeometry args={[0.07, 0.17, 0.11]} />
-            <meshStandardMaterial color="#3a3022" roughness={0.9} />
-          </mesh>
-          <mesh position={[0, 0.018, -0.345]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.018, 0.022, 0.38, 7]} />
-            <meshStandardMaterial color="#20231e" roughness={0.7} metalness={0.45} />
-          </mesh>
-          <mesh position={[0, 0.052, -0.29]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.014, 0.016, 0.25, 6]} />
-            <meshStandardMaterial color="#30352b" roughness={0.76} metalness={0.3} />
-          </mesh>
-          <mesh position={[0, 0.018, -0.55]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.025, 0.018, 0.075, 7]} />
-            <meshStandardMaterial color="#1d201c" roughness={0.75} metalness={0.48} />
-          </mesh>
-          <mesh
-            ref={node => { muzzleFlashRefs.current[index] = node; }}
-            position={[0, 0.018, -0.62]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            visible={false}
-            renderOrder={85}
-          >
-            <coneGeometry args={[0.085, 0.22, 7]} />
-            <meshBasicMaterial
-              color="#ffd36a"
-              transparent
-              opacity={0.94}
-              blending={THREE.AdditiveBlending}
-              depthWrite={false}
-              toneMapped={false}
-            />
-          </mesh>
+          {/* Shouldered, wood-stocked rifle with AK-pattern gas tube and curved magazine. */}
+          <group position={[0.025, rifleY, -0.1]}>
+            <mesh position={[0.025, 0.012, 0.13]} rotation={[0.03, 0, -0.04]} castShadow>
+              <boxGeometry args={[0.105, 0.105, 0.31]} />
+              <meshStandardMaterial color="#6a4228" roughness={0.88} />
+            </mesh>
+            <mesh position={[0, 0, -0.105]} castShadow>
+              <boxGeometry args={[0.09, 0.095, 0.2]} />
+              <meshStandardMaterial color="#252821" roughness={0.72} metalness={0.35} />
+            </mesh>
+            <group position={[0, -0.1, -0.105]} rotation={[-0.2, 0, 0]}>
+              <mesh position={[0, 0.005, 0.018]} rotation={[0.12, 0, 0]} castShadow>
+                <boxGeometry args={[0.072, 0.15, 0.095]} />
+                <meshStandardMaterial color="#3a3022" roughness={0.9} />
+              </mesh>
+              <mesh position={[0, -0.065, 0.055]} rotation={[0.22, 0, 0]} castShadow>
+                <boxGeometry args={[0.07, 0.1, 0.08]} />
+                <meshStandardMaterial color="#4b3726" roughness={0.92} />
+              </mesh>
+            </group>
+            <mesh position={[0, 0.018, -0.345]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.018, 0.022, 0.38, 7]} />
+              <meshStandardMaterial color="#20231e" roughness={0.7} metalness={0.45} />
+            </mesh>
+            <mesh position={[0, 0.052, -0.29]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.014, 0.016, 0.25, 6]} />
+              <meshStandardMaterial color="#30352b" roughness={0.76} metalness={0.3} />
+            </mesh>
+            <mesh position={[0, 0.018, -0.55]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.025, 0.018, 0.075, 7]} />
+              <meshStandardMaterial color="#1d201c" roughness={0.75} metalness={0.48} />
+            </mesh>
+            <mesh
+              ref={node => { muzzleFlashRefs.current[index] = node; }}
+              position={[0, 0.018, -0.62]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              visible={false}
+              renderOrder={85}
+            >
+              <coneGeometry args={[0.085, 0.22, 7]} />
+              <meshBasicMaterial
+                color="#ffd36a"
+                transparent
+                opacity={0.94}
+                blending={THREE.AdditiveBlending}
+                depthWrite={false}
+                toneMapped={false}
+              />
+            </mesh>
+          </group>
         </group>
       </group>
     </group>
@@ -340,10 +493,17 @@ export function VietCongCombatants({
           const dz = tankCenter.z - enemy.position[2];
           fighter.rotation.y = Math.atan2(-dx, -dz);
         }
+        const idlePhase = now * (0.48 + index * 0.014) + index * 1.67;
+        fighter.position.x = Math.sin(idlePhase) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
+        fighter.position.y = Math.sin(idlePhase * 1.7) * 0.006;
+        fighter.rotation.z = Math.sin(idlePhase * 0.82) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
       }
       if (torso) {
-        torso.rotation.z = Math.sin(now * 1.55 + index * 1.73) * 0.014;
+        const firingRecoil = now < runtime.flashUntil ? 0.018 : 0;
+        torso.rotation.x = Math.sin(now * 0.72 + index * 1.31) * 0.008;
+        torso.rotation.z = Math.sin(now * 1.1 + index * 1.73) * 0.012;
         torso.position.y = Math.sin(now * 1.2 + index) * 0.008;
+        torso.position.z = firingRecoil;
       }
       if (flash) {
         flash.visible = now < runtime.flashUntil;

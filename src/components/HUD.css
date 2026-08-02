@@ -182,22 +182,22 @@
 
 .weapon-selector {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   pointer-events: auto;
 }
 
 .weapon-selector button {
   display: grid;
-  grid-template-columns: 20px 1fr auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
   border: 1px solid rgba(135, 155, 99, 0.28);
-  padding: 5px 8px;
+  padding: 5px 6px;
   color: #918e75;
   background: rgba(24, 31, 18, 0.65);
-  font-size: 10px;
+  font-size: 9px;
   text-align: left;
   letter-spacing: 0.05em;
 }
@@ -236,18 +236,75 @@
 }
 
 .field-radio {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 8px;
   border-top: 1px solid rgba(135, 155, 99, 0.2);
   padding-top: 9px;
 }
 
-.field-radio > div:first-child {
+.field-radio-portrait {
+  grid-row: 1 / 3;
+  position: relative;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border: 2px solid #a79b61;
+  border-radius: 50%;
+  background: #29311f;
+  box-shadow:
+    0 0 0 2px rgba(22, 28, 15, 0.95),
+    0 0 0 3px rgba(135, 155, 99, 0.42),
+    0 0 14px rgba(227, 179, 65, 0.18);
+}
+
+.field-radio-portrait::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(0deg, rgba(10, 17, 8, 0.13) 0 1px, transparent 1px 3px),
+    radial-gradient(circle at 50% 40%, transparent 46%, rgba(9, 13, 7, 0.38) 100%);
+  content: '';
+  pointer-events: none;
+}
+
+.field-radio-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: sepia(0.18) saturate(0.86) contrast(1.08);
+  transform: scale(1.07);
+}
+
+.field-radio-portrait span {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #25301d;
+  border-radius: 50%;
+  background: #d4b45d;
+  box-shadow: 0 0 7px rgba(227, 179, 65, 0.8);
+}
+
+.field-radio-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.field-radio-copy b {
+  color: #d7a83e;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
 }
 
 .field-radio strong {
@@ -259,12 +316,17 @@
 }
 
 .field-radio small {
+  overflow: hidden;
   color: #696d57;
   font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-radio-actions {
   display: flex;
+  grid-column: 2;
+  grid-row: 2;
   gap: 4px;
   pointer-events: auto;
 }
@@ -278,6 +340,7 @@
   cursor: pointer;
   font-size: 9px;
   letter-spacing: 0.04em;
+  line-height: 1.15;
 }
 
 .field-radio-load input {
