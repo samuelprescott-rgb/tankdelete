@@ -1,8 +1,18 @@
-import { useEffect, useMemo, useRef, type RefObject } from 'react';
+import { useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
 import { TERRAIN_MOUNDS } from '../../lib/terrain';
+import { coordinateNoise, createDeterministicScatter } from './environmentGeneration';
+
+const DEFAULT_ENVIRONMENT_SEED = 1968;
+
+function finalizeInstanceMatrices(mesh: THREE.InstancedMesh, dynamic = false) {
+  mesh.instanceMatrix.setUsage(dynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage);
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.computeBoundingBox();
+  mesh.computeBoundingSphere();
+}
 
 function seeded(index: number, salt = 0) {
   const value = Math.sin(index * 91.719 + salt * 17.173) * 43758.5453;
@@ -150,45 +160,52 @@ function createGrassClumpGeometry() {
   return geometry;
 }
 
-function ElephantGrass() {
+function ElephantGrass({ seed }: { seed: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const grass = useMemo(() => {
-    const placements: Array<{ position: [number, number, number]; scale: [number, number, number]; rotation: number }> = [];
-    let candidate = 0;
+    const points = createDeterministicScatter({
+      width: 150,
+      depth: 150,
+      cellSize: 2.5,
+      minDistance: 1.7,
+      seed: seed ^ 0x45a1,
+      maxPoints: 480,
+      accept: (x, z) => (
+        distanceToRoad(x) >= 2.4
+        && distanceToRoad(z) >= 2.4
+        && !(Math.abs(x) < 7 && z > -18 && z < 8)
+        && !isInsidePaddy(x, z, 0.7)
+      ),
+    });
 
-    while (placements.length < 620 && candidate < 7000) {
-      const x = (seeded(candidate, 1) - 0.5) * 150;
-      const z = (seeded(candidate, 2) - 0.5) * 150;
-      candidate += 1;
-      if (distanceToRoad(x) < 2.4 || distanceToRoad(z) < 2.4) continue;
-      if (Math.abs(x) < 7 && z > -18 && z < 8) continue;
-      if (isInsidePaddy(x, z, 0.7)) continue;
-
-      const height = 0.9 + seeded(candidate, 3) * 1.3;
-      placements.push({
-        position: [x, -0.03, z],
-        scale: [0.95 + seeded(candidate, 4) * 1.0, height, 0.95 + seeded(candidate, 5) * 1.0],
-        rotation: seeded(candidate, 6) * Math.PI,
-      });
-    }
-
-    return placements;
-  }, []);
+    return points.map(point => {
+      const height = 0.9 + coordinateNoise(point.cellX, point.cellZ, seed, 11) * 1.3;
+      return {
+        position: [point.x, -0.03, point.z] as [number, number, number],
+        scale: [
+          0.95 + coordinateNoise(point.cellX, point.cellZ, seed, 12),
+          height,
+          0.95 + coordinateNoise(point.cellX, point.cellZ, seed, 13),
+        ] as [number, number, number],
+        rotation: coordinateNoise(point.cellX, point.cellZ, seed, 14) * Math.PI,
+        lean: (coordinateNoise(point.cellX, point.cellZ, seed, 15) - 0.5) * 0.055,
+      };
+    });
+  }, [seed]);
   const grassGeometry = useMemo(() => createGrassClumpGeometry(), []);
 
-  useFrame(({ clock }) => {
+  useLayoutEffect(() => {
     if (!meshRef.current) return;
-    const wind = Math.sin(clock.elapsedTime * 0.7) * 0.055;
     grass.forEach((blade, index) => {
       dummy.position.set(...blade.position);
       dummy.scale.set(...blade.scale);
-      dummy.rotation.set(wind * (0.5 + seeded(index, 8)), blade.rotation, wind * 0.35);
+      dummy.rotation.set(blade.lean, blade.rotation, blade.lean * 0.35);
       dummy.updateMatrix();
       meshRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    meshRef.current.instanceMatrix.needsUpdate = true;
-  });
+    finalizeInstanceMatrices(meshRef.current);
+  }, [dummy, grass]);
 
   return (
     <instancedMesh ref={meshRef} args={[grassGeometry, undefined, grass.length]} castShadow={false} receiveShadow={false}>
@@ -221,7 +238,7 @@ function TerrainRelief() {
     })
   )), []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!meshRef.current || !rocksRef.current) return;
     TERRAIN_MOUNDS.forEach((mound, index) => {
       dummy.position.set(mound.x, mound.y, mound.z);
@@ -230,7 +247,7 @@ function TerrainRelief() {
       dummy.updateMatrix();
       meshRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    meshRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(meshRef.current);
 
     ridgeRocks.forEach((rock, index) => {
       dummy.position.set(rock.x, rock.y, rock.z);
@@ -239,7 +256,7 @@ function TerrainRelief() {
       dummy.updateMatrix();
       rocksRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    rocksRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(rocksRef.current);
   }, [dummy, ridgeRocks]);
 
   return (
@@ -256,7 +273,7 @@ function TerrainRelief() {
   );
 }
 
-function GroundPatches() {
+function GroundPatches({ seed }: { seed: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const colors = useMemo(() => [
@@ -265,16 +282,23 @@ function GroundPatches() {
     new THREE.Color('#5a5131'),
     new THREE.Color('#2b432d'),
   ], []);
-  const patches = useMemo(() => Array.from({ length: 58 }, (_, index) => ({
-    x: (seeded(index, 90) - 0.5) * 150,
-    z: (seeded(index, 91) - 0.5) * 150,
-    sx: 2.2 + seeded(index, 92) * 6.5,
-    sz: 1.4 + seeded(index, 93) * 4.3,
-    rotation: seeded(index, 94) * Math.PI,
-    color: Math.floor(seeded(index, 95) * colors.length),
-  })), [colors.length]);
+  const patches = useMemo(() => createDeterministicScatter({
+    width: 150,
+    depth: 150,
+    cellSize: 9.2,
+    minDistance: 6.4,
+    seed: seed ^ 0x2b17,
+    maxPoints: 58,
+  }).map(point => ({
+    x: point.x,
+    z: point.z,
+    sx: 2.2 + coordinateNoise(point.cellX, point.cellZ, seed, 92) * 6.5,
+    sz: 1.4 + coordinateNoise(point.cellX, point.cellZ, seed, 93) * 4.3,
+    rotation: coordinateNoise(point.cellX, point.cellZ, seed, 94) * Math.PI,
+    color: Math.floor(coordinateNoise(point.cellX, point.cellZ, seed, 95) * colors.length),
+  })), [colors.length, seed]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!meshRef.current) return;
     patches.forEach((patch, index) => {
       dummy.position.set(patch.x, -0.072, patch.z);
@@ -284,7 +308,7 @@ function GroundPatches() {
       meshRef.current!.setMatrixAt(index, dummy.matrix);
       meshRef.current!.setColorAt(index, colors[patch.color]);
     });
-    meshRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(meshRef.current);
     if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
   }, [colors, dummy, patches]);
 
@@ -333,14 +357,16 @@ function createPalmCrownGeometry() {
   return geometry;
 }
 
-function LayeredJungle() {
+function LayeredJungle({ seed }: { seed: number }) {
   const broadTrunksRef = useRef<THREE.InstancedMesh>(null);
   const broadCanopyRef = useRef<THREE.InstancedMesh>(null);
   const palmTrunksRef = useRef<THREE.InstancedMesh>(null);
   const palmCrownsRef = useRef<THREE.InstancedMesh>(null);
+  const windPalmCrownsRef = useRef<THREE.InstancedMesh>(null);
   const vinesRef = useRef<THREE.InstancedMesh>(null);
   const understoryStemsRef = useRef<THREE.InstancedMesh>(null);
   const understoryLeavesRef = useRef<THREE.InstancedMesh>(null);
+  const lastWindUpdateRef = useRef(-1);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const palmGeometry = useMemo(() => createPalmCrownGeometry(), []);
   const trees = useMemo(() => {
@@ -354,71 +380,93 @@ function LayeredJungle() {
       palm: boolean;
     }> = [];
 
-    for (let index = 0; index < 112; index += 1) {
-      const angle = (index / 112) * Math.PI * 2 + seeded(index, 10) * 0.1;
-      const radius = 55 + seeded(index, 11) * 31;
+    // A jittered perimeter supplies a dense horizon without placing hundreds
+    // of trees in the active combat corridor.
+    const perimeterCount = 96;
+    for (let index = 0; index < perimeterCount; index += 1) {
+      const angle = (index / perimeterCount) * Math.PI * 2
+        + (coordinateNoise(index, 0, seed, 10) - 0.5) * 0.12;
+      const radius = 55 + coordinateNoise(index, 0, seed, 11) * 31;
       placements.push({
         x: Math.cos(angle) * radius,
         z: Math.sin(angle) * radius,
-        height: 5.8 + seeded(index, 12) * 8.8,
-        crown: 1.05 + seeded(index, 13) * 0.7,
-        lean: (seeded(index, 14) - 0.5) * 0.12,
-        rotation: seeded(index, 15) * Math.PI,
-        palm: seeded(index, 16) > 0.56,
+        height: 5.8 + coordinateNoise(index, 0, seed, 12) * 8.8,
+        crown: 1.05 + coordinateNoise(index, 0, seed, 13) * 0.7,
+        lean: (coordinateNoise(index, 0, seed, 14) - 0.5) * 0.12,
+        rotation: coordinateNoise(index, 0, seed, 15) * Math.PI,
+        palm: coordinateNoise(index, 0, seed, 16) > 0.56,
       });
     }
 
-    let candidate = 0;
-    while (placements.length < 208 && candidate < 3000) {
-      const x = (seeded(candidate, 20) - 0.5) * 124;
-      const z = (seeded(candidate, 21) - 0.5) * 116;
-      candidate += 1;
-      if (distanceToRoad(x) < 2.45 || distanceToRoad(z) < 2.45) continue;
-      if (Math.abs(x) < 12 && z > -22 && z < 18) continue;
-      if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
-      if (isInsidePaddy(x, z, 1.35)) continue;
-
+    const innerTrees = createDeterministicScatter({
+      width: 124,
+      depth: 116,
+      cellSize: 5.15,
+      minDistance: 4.35,
+      seed: seed ^ 0x1c6d,
+      maxPoints: 86,
+      accept: (x, z) => (
+        distanceToRoad(x) >= 2.45
+        && distanceToRoad(z) >= 2.45
+        && !(Math.abs(x) < 12 && z > -22 && z < 18)
+        && !(Math.abs(x) < 22 && z > 7 && z < 26)
+        && !isInsidePaddy(x, z, 1.35)
+      ),
+    });
+    innerTrees.forEach(point => {
       placements.push({
-        x,
-        z,
-        height: 4.8 + seeded(candidate, 22) * 7.5,
-        crown: 0.88 + seeded(candidate, 23) * 0.62,
-        lean: (seeded(candidate, 24) - 0.5) * 0.16,
-        rotation: seeded(candidate, 25) * Math.PI,
-        palm: seeded(candidate, 26) > 0.64,
+        x: point.x,
+        z: point.z,
+        height: 4.8 + coordinateNoise(point.cellX, point.cellZ, seed, 22) * 7.5,
+        crown: 0.88 + coordinateNoise(point.cellX, point.cellZ, seed, 23) * 0.62,
+        lean: (coordinateNoise(point.cellX, point.cellZ, seed, 24) - 0.5) * 0.16,
+        rotation: coordinateNoise(point.cellX, point.cellZ, seed, 25) * Math.PI,
+        palm: coordinateNoise(point.cellX, point.cellZ, seed, 26) > 0.64,
       });
-    }
+    });
 
     return placements;
-  }, []);
+  }, [seed]);
   const broadleafTrees = useMemo(() => trees.filter(tree => !tree.palm), [trees]);
   const palmTrees = useMemo(() => trees.filter(tree => tree.palm), [trees]);
+  const windPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 === 0), [palmTrees]);
+  const staticPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 !== 0), [palmTrees]);
   const vineTrees = useMemo(() => broadleafTrees.filter((_, index) => index % 3 === 0), [broadleafTrees]);
   const understory = useMemo(() => {
-    const placements: Array<{ x: number; z: number; height: number; scale: number; rotation: number }> = [];
-    let candidate = 0;
-    while (placements.length < 118 && candidate < 3000) {
-      const x = (seeded(candidate, 201) - 0.5) * 122;
-      const z = (seeded(candidate, 202) - 0.5) * 108;
-      candidate += 1;
-      if (distanceToRoad(x) < 2.05 || distanceToRoad(z) < 2.05) continue;
-      if (Math.abs(x) < 8 && z > -20 && z < 12) continue;
-      if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
-      if (isInsidePaddy(x, z, 0.85)) continue;
-      placements.push({
-        x,
-        z,
-        height: 1.1 + seeded(candidate, 203) * 1.2,
-        scale: 0.34 + seeded(candidate, 204) * 0.28,
-        rotation: seeded(candidate, 205) * Math.PI,
-      });
-    }
-    return placements;
-  }, []);
+    return createDeterministicScatter({
+      width: 122,
+      depth: 108,
+      cellSize: 3.75,
+      minDistance: 2.75,
+      seed: seed ^ 0x6f31,
+      maxPoints: 96,
+      accept: (x, z) => (
+        distanceToRoad(x) >= 2.05
+        && distanceToRoad(z) >= 2.05
+        && !(Math.abs(x) < 8 && z > -20 && z < 12)
+        && !(Math.abs(x) < 22 && z > 7 && z < 26)
+        && !isInsidePaddy(x, z, 0.85)
+      ),
+    }).map(point => ({
+      x: point.x,
+      z: point.z,
+      height: 1.1 + coordinateNoise(point.cellX, point.cellZ, seed, 203) * 1.2,
+      scale: 0.34 + coordinateNoise(point.cellX, point.cellZ, seed, 204) * 0.28,
+      rotation: coordinateNoise(point.cellX, point.cellZ, seed, 205) * Math.PI,
+    }));
+  }, [seed]);
 
-  useFrame(({ clock }) => {
-    if (!broadTrunksRef.current || !broadCanopyRef.current || !palmTrunksRef.current || !palmCrownsRef.current || !vinesRef.current || !understoryStemsRef.current || !understoryLeavesRef.current) return;
-    const sway = Math.sin(clock.elapsedTime * 0.38) * 0.022;
+  useLayoutEffect(() => {
+    if (
+      !broadTrunksRef.current
+      || !broadCanopyRef.current
+      || !palmTrunksRef.current
+      || !palmCrownsRef.current
+      || !windPalmCrownsRef.current
+      || !vinesRef.current
+      || !understoryStemsRef.current
+      || !understoryLeavesRef.current
+    ) return;
 
     broadleafTrees.forEach((tree, index) => {
       dummy.position.set(tree.x, tree.height * 0.5, tree.z);
@@ -435,7 +483,7 @@ function LayeredJungle() {
           tree.height + (lobe === 0 ? tree.crown * 0.55 : 0),
           tree.z + Math.sin(angle) * tree.crown * 0.7,
         );
-        dummy.rotation.set(sway * (lobe + 1), angle, -sway * 0.65);
+        dummy.rotation.set(tree.lean * 0.55, angle, -tree.lean * 0.35);
         dummy.scale.set(tree.crown * 1.75, tree.crown * (lobe === 0 ? 1.25 : 1.05), tree.crown * 1.5);
         dummy.updateMatrix();
         broadCanopyRef.current!.setMatrixAt(lobeIndex, dummy.matrix);
@@ -448,12 +496,22 @@ function LayeredJungle() {
       dummy.scale.set(0.27, tree.height, 0.27);
       dummy.updateMatrix();
       palmTrunksRef.current!.setMatrixAt(index, dummy.matrix);
+    });
 
+    staticPalmTrees.forEach((tree, index) => {
       dummy.position.set(tree.x, tree.height, tree.z);
-      dummy.rotation.set(sway, tree.rotation + sway, -sway * 0.7);
+      dummy.rotation.set(tree.lean * 0.7, tree.rotation, -tree.lean * 0.45);
       dummy.scale.set(tree.crown, tree.crown, tree.crown);
       dummy.updateMatrix();
       palmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    windPalmTrees.forEach((tree, index) => {
+      dummy.position.set(tree.x, tree.height, tree.z);
+      dummy.rotation.set(tree.lean * 0.7, tree.rotation, -tree.lean * 0.45);
+      dummy.scale.set(tree.crown, tree.crown, tree.crown);
+      dummy.updateMatrix();
+      windPalmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
     });
 
     vineTrees.forEach((tree, index) => {
@@ -463,7 +521,7 @@ function LayeredJungle() {
         tree.height - vineLength * 0.22,
         tree.z + (seeded(index, 35) - 0.5) * tree.crown * 1.7,
       );
-      dummy.rotation.set(sway * 0.7, seeded(index, 36) * Math.PI, sway);
+      dummy.rotation.set(tree.lean * 0.45, seeded(index, 36) * Math.PI, tree.lean * 0.55);
       dummy.scale.set(0.028, vineLength, 0.028);
       dummy.updateMatrix();
       vinesRef.current!.setMatrixAt(index, dummy.matrix);
@@ -477,47 +535,69 @@ function LayeredJungle() {
       understoryStemsRef.current!.setMatrixAt(index, dummy.matrix);
 
       dummy.position.set(plant.x, plant.height, plant.z);
-      dummy.rotation.set(sway * 1.8, plant.rotation + sway, -sway);
+      dummy.rotation.set(0.025 * Math.sin(index * 1.7), plant.rotation, 0.018 * Math.cos(index));
       dummy.scale.set(plant.scale, plant.scale * 0.72, plant.scale);
       dummy.updateMatrix();
       understoryLeavesRef.current!.setMatrixAt(index, dummy.matrix);
     });
 
-    broadTrunksRef.current.instanceMatrix.needsUpdate = true;
-    broadCanopyRef.current.instanceMatrix.needsUpdate = true;
-    palmTrunksRef.current.instanceMatrix.needsUpdate = true;
-    palmCrownsRef.current.instanceMatrix.needsUpdate = true;
-    vinesRef.current.instanceMatrix.needsUpdate = true;
-    understoryStemsRef.current.instanceMatrix.needsUpdate = true;
-    understoryLeavesRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(broadTrunksRef.current);
+    finalizeInstanceMatrices(broadCanopyRef.current);
+    finalizeInstanceMatrices(palmTrunksRef.current);
+    finalizeInstanceMatrices(palmCrownsRef.current);
+    finalizeInstanceMatrices(windPalmCrownsRef.current, true);
+    finalizeInstanceMatrices(vinesRef.current);
+    finalizeInstanceMatrices(understoryStemsRef.current);
+    finalizeInstanceMatrices(understoryLeavesRef.current);
+  }, [broadleafTrees, dummy, palmTrees, staticPalmTrees, understory, vineTrees, windPalmTrees]);
+
+  useFrame(({ clock }) => {
+    if (!windPalmCrownsRef.current) return;
+    const time = clock.elapsedTime;
+    // A small accent set is enough to sell wind. Updating it at 18 Hz avoids
+    // uploading every tree matrix on a 60/120 Hz display.
+    if (time - lastWindUpdateRef.current < 1 / 18) return;
+    lastWindUpdateRef.current = time;
+    const sway = Math.sin(time * 0.42) * 0.045;
+    windPalmTrees.forEach((tree, index) => {
+      dummy.position.set(tree.x, tree.height, tree.z);
+      dummy.rotation.set(sway + tree.lean * 0.7, tree.rotation + sway * 0.45, -sway * 0.7);
+      dummy.scale.set(tree.crown, tree.crown, tree.crown);
+      dummy.updateMatrix();
+      windPalmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    windPalmCrownsRef.current.instanceMatrix.needsUpdate = true;
   });
 
   return (
     <>
-      <instancedMesh ref={broadTrunksRef} args={[undefined, undefined, broadleafTrees.length]} castShadow receiveShadow>
+      <instancedMesh ref={broadTrunksRef} args={[undefined, undefined, broadleafTrees.length]} receiveShadow>
         <cylinderGeometry args={[0.28, 0.48, 1, 7]} />
         <meshStandardMaterial color="#463b27" roughness={1} />
       </instancedMesh>
-      <instancedMesh ref={broadCanopyRef} args={[undefined, undefined, broadleafTrees.length * 3]} castShadow receiveShadow>
+      <instancedMesh ref={broadCanopyRef} args={[undefined, undefined, broadleafTrees.length * 3]} receiveShadow>
         <icosahedronGeometry args={[1, 1]} />
         <meshStandardMaterial color="#2b522b" emissive="#173119" emissiveIntensity={0.15} roughness={1} flatShading />
       </instancedMesh>
-      <instancedMesh ref={palmTrunksRef} args={[undefined, undefined, palmTrees.length]} castShadow receiveShadow>
+      <instancedMesh ref={palmTrunksRef} args={[undefined, undefined, palmTrees.length]} receiveShadow>
         <cylinderGeometry args={[0.24, 0.42, 1, 8]} />
         <meshStandardMaterial color="#66583a" roughness={0.98} />
       </instancedMesh>
-      <instancedMesh ref={palmCrownsRef} args={[palmGeometry, undefined, palmTrees.length]} castShadow>
+      <instancedMesh ref={palmCrownsRef} args={[palmGeometry, undefined, staticPalmTrees.length]}>
         <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.96} />
       </instancedMesh>
-      <instancedMesh ref={vinesRef} args={[undefined, undefined, vineTrees.length]} castShadow>
+      <instancedMesh ref={windPalmCrownsRef} args={[palmGeometry, undefined, windPalmTrees.length]}>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.96} />
+      </instancedMesh>
+      <instancedMesh ref={vinesRef} args={[undefined, undefined, vineTrees.length]}>
         <cylinderGeometry args={[1, 1.25, 1, 5]} />
         <meshStandardMaterial color="#38552c" roughness={1} />
       </instancedMesh>
-      <instancedMesh ref={understoryStemsRef} args={[undefined, undefined, understory.length]} castShadow>
+      <instancedMesh ref={understoryStemsRef} args={[undefined, undefined, understory.length]}>
         <cylinderGeometry args={[0.6, 1, 1, 6]} />
         <meshStandardMaterial color="#50613b" roughness={1} />
       </instancedMesh>
-      <instancedMesh ref={understoryLeavesRef} args={[palmGeometry, undefined, understory.length]} castShadow>
+      <instancedMesh ref={understoryLeavesRef} args={[palmGeometry, undefined, understory.length]}>
         <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.98} />
       </instancedMesh>
     </>
@@ -532,15 +612,22 @@ const SMOKE_SOURCES: Array<[number, number, number]> = [
 
 function SmokeColumns() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const lastUpdateRef = useRef(-1);
   const matrix = useMemo(() => new THREE.Matrix4(), []);
   const position = useMemo(() => new THREE.Vector3(), []);
   const scale = useMemo(() => new THREE.Vector3(), []);
   const quaternion = useMemo(() => new THREE.Quaternion(), []);
-  const countPerSource = 16;
+  const countPerSource = 10;
+
+  useLayoutEffect(() => {
+    if (meshRef.current) meshRef.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  }, []);
 
   useFrame(({ clock }) => {
     if (!meshRef.current) return;
     const time = clock.elapsedTime;
+    if (time - lastUpdateRef.current < 1 / 24) return;
+    lastUpdateRef.current = time;
 
     SMOKE_SOURCES.forEach((source, sourceIndex) => {
       for (let particleIndex = 0; particleIndex < countPerSource; particleIndex += 1) {
@@ -571,42 +658,74 @@ function SmokeColumns() {
 }
 
 function FieldFortifications() {
-  const sandbags = [-1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8];
+  const sandbags = useMemo(() => [-1.8, -1.2, -0.6, 0, 0.6, 1.2, 1.8], []);
+  const barrelPositions = useMemo<Array<[number, number, number]>>(() => [
+    [-9, 0.08, -3],
+    [9.6, 0.08, -1],
+    [-11, 0.08, 6],
+  ], []);
+  const sandbagsRef = useRef<THREE.InstancedMesh>(null);
+  const cratesRef = useRef<THREE.InstancedMesh>(null);
+  const barrelsRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const barrelColors = useMemo(() => [
+    new THREE.Color('#495432'),
+    new THREE.Color('#6f3f24'),
+    new THREE.Color('#495432'),
+  ], []);
+
+  useLayoutEffect(() => {
+    if (!sandbagsRef.current || !cratesRef.current || !barrelsRef.current) return;
+
+    sandbags.forEach((x, index) => {
+      dummy.position.set(x, index % 2 === 0 ? 0 : 0.18, 0);
+      dummy.rotation.set(0, (index % 3 - 1) * 0.06, 0);
+      dummy.scale.set(0.54, 0.22, 0.34);
+      dummy.updateMatrix();
+      sandbagsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(sandbagsRef.current);
+
+    [[0, 0, 0], [0.7, 0, 0], [0.35, 0.7, 0]].forEach((position, index) => {
+      dummy.position.set(position[0], position[1], position[2]);
+      dummy.rotation.set(0, index * 0.08, 0);
+      dummy.scale.setScalar(0.62);
+      dummy.updateMatrix();
+      cratesRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(cratesRef.current);
+
+    barrelsRef.current.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    barrelColors.forEach((color, index) => {
+      dummy.position.set(...barrelPositions[index]);
+      dummy.rotation.set(0, 0, Math.PI / 2);
+      dummy.scale.set(0.32, 0.38, 0.32);
+      dummy.updateMatrix();
+      barrelsRef.current!.setMatrixAt(index, dummy.matrix);
+      barrelsRef.current!.setColorAt(index, color);
+    });
+    finalizeInstanceMatrices(barrelsRef.current);
+    if (barrelsRef.current.instanceColor) barrelsRef.current.instanceColor.needsUpdate = true;
+  }, [barrelColors, barrelPositions, dummy, sandbags]);
 
   return (
     <>
       <group position={[-7.4, 0.12, -8]} rotation={[0, 0.28, 0]}>
-        {sandbags.map((x, index) => (
-          <mesh key={x} position={[x, index % 2 === 0 ? 0 : 0.18, 0]} scale={[0.54, 0.22, 0.34]}>
-            <sphereGeometry args={[1, 8, 5]} />
-            <meshStandardMaterial color="#77704a" roughness={1} />
-          </mesh>
-        ))}
+        <instancedMesh ref={sandbagsRef} args={[undefined, undefined, sandbags.length]} receiveShadow>
+          <sphereGeometry args={[1, 7, 4]} />
+          <meshStandardMaterial color="#77704a" roughness={1} flatShading />
+        </instancedMesh>
       </group>
       <group position={[7.8, 0.22, -6.7]} rotation={[0, -0.24, 0]}>
-        {[[0, 0, 0], [0.7, 0, 0], [0.35, 0.7, 0]] .map((position, index) => (
-          <mesh key={index} position={position as [number, number, number]}>
-            <boxGeometry args={[0.62, 0.62, 0.62]} />
-            <meshStandardMaterial color="#5f5936" roughness={0.9} />
-          </mesh>
-        ))}
+        <instancedMesh ref={cratesRef} args={[undefined, undefined, 3]} receiveShadow>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#5f5936" roughness={0.9} />
+        </instancedMesh>
       </group>
-      {[
-        [-9, 0.08, -3],
-        [9.6, 0.08, -1],
-        [-11, 0.08, 6],
-      ].map((position, index) => (
-        <group key={index} position={position as [number, number, number]}>
-          <mesh rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.32, 0.32, 0.76, 12]} />
-            <meshStandardMaterial color={index === 1 ? '#6f3f24' : '#495432'} metalness={0.35} roughness={0.72} />
-          </mesh>
-          <lineSegments rotation={[0, 0, Math.PI / 2]}>
-            <edgesGeometry args={[new THREE.CylinderGeometry(0.32, 0.32, 0.76, 12)]} />
-            <lineBasicMaterial color="#a6945d" transparent opacity={0.38} />
-          </lineSegments>
-        </group>
-      ))}
+      <instancedMesh ref={barrelsRef} args={[undefined, undefined, barrelPositions.length]} receiveShadow>
+        <cylinderGeometry args={[1, 1, 2, 10]} />
+        <meshStandardMaterial vertexColors color="#ffffff" metalness={0.35} roughness={0.72} />
+      </instancedMesh>
     </>
   );
 }
@@ -624,7 +743,7 @@ function HueyAirframe({ mainRotorRef, tailRotorRef, wrecked = false }: HueyAirfr
 
   return (
     <group>
-      <mesh scale={[1.02, 0.8, 1.42]} castShadow={!wrecked}>
+      <mesh scale={[1.02, 0.8, 1.42]}>
         <sphereGeometry args={[1, 10, 7]} />
         <meshStandardMaterial
           color={olive}
@@ -637,7 +756,7 @@ function HueyAirframe({ mainRotorRef, tailRotorRef, wrecked = false }: HueyAirfr
       </mesh>
 
       {/* The broad divided windscreen is what makes the tiny silhouette read as a Huey. */}
-      <mesh position={[0, 0.19, -1.05]} scale={[0.88, 0.56, 0.54]} castShadow={!wrecked}>
+      <mesh position={[0, 0.19, -1.05]} scale={[0.88, 0.56, 0.54]}>
         <sphereGeometry args={[1, 8, 6]} />
         <meshStandardMaterial
           color={wrecked ? '#171b17' : '#60736b'}
@@ -666,7 +785,7 @@ function HueyAirframe({ mainRotorRef, tailRotorRef, wrecked = false }: HueyAirfr
         </group>
       ))}
 
-      <mesh position={[0, 0.12, 3.08]} rotation={[Math.PI / 2, 0, 0]} castShadow={!wrecked}>
+      <mesh position={[0, 0.12, 3.08]} rotation={[Math.PI / 2, 0, 0]}>
         <coneGeometry args={[0.34, 4.42, 6]} />
         <meshStandardMaterial color={olive} roughness={0.9} metalness={0.12} flatShading />
       </mesh>
@@ -754,9 +873,55 @@ interface FlyoverConfig {
 
 const DISTANT_FLYOVERS: FlyoverConfig[] = [
   { altitude: 17.5, direction: 1, phase: 0.08, scale: 0.5, speed: 0.014, z: 48 },
-  { altitude: 18.3, direction: 1, phase: 0.02, scale: 0.38, speed: 0.014, z: 55 },
   { altitude: 17.8, direction: -1, phase: 0.61, scale: 0.43, speed: 0.011, z: 46 },
 ];
+
+/** Minimal silhouette for distant aircraft: eight meshes instead of the
+ * detailed wreck airframe's eighteen-plus. At this scale the strong cabin,
+ * boom, rotor, and skid shapes carry the read more effectively than detail. */
+function DistantHueyAirframe({
+  mainRotorRef,
+  tailRotorRef,
+}: Pick<HueyAirframeProps, 'mainRotorRef' | 'tailRotorRef'>) {
+  return (
+    <group>
+      <mesh scale={[1.02, 0.78, 1.42]}>
+        <sphereGeometry args={[1, 8, 5]} />
+        <meshStandardMaterial color="#39462f" emissive="#162011" emissiveIntensity={0.22} roughness={0.9} flatShading />
+      </mesh>
+      <mesh position={[0, 0.18, -1.04]} scale={[0.86, 0.54, 0.5]}>
+        <sphereGeometry args={[1, 7, 4]} />
+        <meshStandardMaterial color="#60736b" emissive="#15251f" emissiveIntensity={0.28} metalness={0.45} roughness={0.28} />
+      </mesh>
+      <mesh position={[0, 0.1, 3.06]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.33, 4.38, 5]} />
+        <meshStandardMaterial color="#34412c" roughness={0.92} flatShading />
+      </mesh>
+      <mesh position={[0, 0.61, 5.02]} scale={[0.1, 0.85, 0.66]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="#263321" roughness={0.94} />
+      </mesh>
+      <group ref={mainRotorRef} position={[0, 1.28, 0]}>
+        <mesh scale={[6.9, 0.03, 0.12]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#717867" transparent opacity={0.56} depthWrite={false} />
+        </mesh>
+      </group>
+      <group ref={tailRotorRef} position={[0.12, 0.62, 5.14]}>
+        <mesh scale={[1.14, 0.065, 0.05]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#858a79" />
+        </mesh>
+      </group>
+      {[-0.72, 0.72].map(side => (
+        <mesh key={side} position={[side, -0.88, 0.12]} scale={[0.07, 0.07, 1.72]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#171c14" roughness={0.76} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
 
 function FlyingHuey({ config, index }: { config: FlyoverConfig; index: number }) {
   const helicopterRef = useRef<THREE.Group>(null);
@@ -783,7 +948,7 @@ function FlyingHuey({ config, index }: { config: FlyoverConfig; index: number })
 
   return (
     <group ref={helicopterRef} scale={config.scale}>
-      <HueyAirframe mainRotorRef={mainRotorRef} tailRotorRef={tailRotorRef} />
+      <DistantHueyAirframe mainRotorRef={mainRotorRef} tailRotorRef={tailRotorRef} />
     </group>
   );
 }
@@ -821,10 +986,81 @@ const WRECK_VINES = [
 ] as const;
 
 function CrashedHuey() {
+  const debrisRef = useRef<THREE.InstancedMesh>(null);
+  const bushesRef = useRef<THREE.InstancedMesh>(null);
+  const vineStemsRef = useRef<THREE.InstancedMesh>(null);
+  const vineLeavesRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const bushColors = useMemo(() => [
+    new THREE.Color('#2f572e'),
+    new THREE.Color('#3d6836'),
+    new THREE.Color('#315a30'),
+  ], []);
+  const debris = useMemo(() => [
+    [-2.4, 0.12, 2.45, 0.22],
+    [2.9, 0.16, 1.75, -0.5],
+    [4.3, 0.11, 0.15, 0.78],
+  ] as const, []);
+
+  useLayoutEffect(() => {
+    if (!debrisRef.current || !bushesRef.current || !vineStemsRef.current || !vineLeavesRef.current) return;
+
+    debris.forEach(([x, y, z, rotation], index) => {
+      dummy.position.set(x, y, z);
+      dummy.rotation.set(0, rotation, 0);
+      dummy.scale.set(0.38 + index * 0.025, 0.13, 0.26 + index * 0.02);
+      dummy.updateMatrix();
+      debrisRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(debrisRef.current);
+
+    WRECK_BUSHES.forEach(([x, z, size], bushIndex) => {
+      const groupRotation = seeded(bushIndex, 840) * Math.PI;
+      const cosine = Math.cos(groupRotation);
+      const sine = Math.sin(groupRotation);
+      [-0.42, 0, 0.42].forEach((offset, stemIndex) => {
+        const index = bushIndex * 3 + stemIndex;
+        const localX = offset * size;
+        const localZ = (stemIndex - 1) * 0.2;
+        dummy.position.set(
+          x + cosine * localX + sine * localZ,
+          size * (0.42 + stemIndex * 0.08),
+          z - sine * localX + cosine * localZ,
+        );
+        dummy.rotation.set(0.08, groupRotation + stemIndex * 1.7, offset * 0.16);
+        dummy.scale.set(size * 0.67, size * (0.58 + stemIndex * 0.08), size * 0.58);
+        dummy.updateMatrix();
+        bushesRef.current!.setMatrixAt(index, dummy.matrix);
+        bushesRef.current!.setColorAt(index, bushColors[stemIndex]);
+      });
+    });
+    finalizeInstanceMatrices(bushesRef.current);
+    if (bushesRef.current.instanceColor) bushesRef.current.instanceColor.needsUpdate = true;
+
+    WRECK_VINES.forEach(([x, z, height, lean], vineIndex) => {
+      dummy.position.set(x, 0.08 + height * 0.5, z);
+      dummy.rotation.set(lean * 0.16, vineIndex * 1.3, lean * 0.12);
+      dummy.scale.set(0.035, height, 0.035);
+      dummy.updateMatrix();
+      vineStemsRef.current!.setMatrixAt(vineIndex, dummy.matrix);
+
+      [0.36, 0.7, 0.94].forEach((progress, leafIndex) => {
+        const index = vineIndex * 3 + leafIndex;
+        dummy.position.set(x + (leafIndex % 2 === 0 ? 0.15 : -0.15), 0.08 + height * progress, z);
+        dummy.rotation.set(0, vineIndex * 1.3 + leafIndex * 1.7, leafIndex % 2 === 0 ? -0.6 : 0.6);
+        dummy.scale.set(0.25, 0.09, 0.13);
+        dummy.updateMatrix();
+        vineLeavesRef.current!.setMatrixAt(index, dummy.matrix);
+      });
+    });
+    finalizeInstanceMatrices(vineStemsRef.current);
+    finalizeInstanceMatrices(vineLeavesRef.current);
+  }, [bushColors, debris, dummy]);
+
   return (
     <group position={[13.2, 0, 33.4]} rotation={[0, -0.5, 0]}>
       <mesh position={[0.2, -0.045, 0.1]} rotation={[-Math.PI / 2, 0, 0]} scale={[4.7, 2.15, 1]} receiveShadow>
-        <circleGeometry args={[1, 20]} />
+        <circleGeometry args={[1, 12]} />
         <meshBasicMaterial color="#15130e" transparent opacity={0.52} depthWrite={false} />
       </mesh>
 
@@ -833,68 +1069,40 @@ function CrashedHuey() {
       </group>
 
       {/* A blade and door torn clear of the airframe make the damage readable at tank speed. */}
-      <mesh position={[-3.85, 0.12, 1.85]} rotation={[0.09, -0.42, -0.05]} scale={[3.2, 0.045, 0.13]} castShadow>
+      <mesh position={[-3.85, 0.12, 1.85]} rotation={[0.09, -0.42, -0.05]} scale={[3.2, 0.045, 0.13]}>
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color="#27281d" roughness={0.96} />
       </mesh>
-      <mesh position={[2.25, 0.2, -1.75]} rotation={[0.04, 0.7, 0.12]} scale={[0.78, 0.08, 0.72]} castShadow>
+      <mesh position={[2.25, 0.2, -1.75]} rotation={[0.04, 0.7, 0.12]} scale={[0.78, 0.08, 0.72]}>
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial color="#303424" roughness={0.94} metalness={0.12} />
       </mesh>
-      {[
-        [-2.4, 0.12, 2.45, 0.22],
-        [2.9, 0.16, 1.75, -0.5],
-        [4.3, 0.11, 0.15, 0.78],
-      ].map(([x, y, z, rotation], index) => (
-        <mesh key={index} position={[x, y, z]} rotation={[0, rotation, 0]} scale={[0.38, 0.13, 0.26]} castShadow>
-          <dodecahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color={index === 1 ? '#272518' : '#343526'} roughness={1} />
-        </mesh>
-      ))}
+      <instancedMesh ref={debrisRef} args={[undefined, undefined, debris.length]}>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#343526" roughness={1} flatShading />
+      </instancedMesh>
 
-      {WRECK_BUSHES.map(([x, z, size], bushIndex) => (
-        <group key={`${x}-${z}`} position={[x, 0, z]} rotation={[0, seeded(bushIndex, 840) * Math.PI, 0]}>
-          {[-0.42, 0, 0.42].map((offset, stemIndex) => (
-            <mesh
-              key={offset}
-              position={[offset * size, size * (0.42 + stemIndex * 0.08), (stemIndex - 1) * 0.2]}
-              rotation={[0.08, stemIndex * 1.7, offset * 0.16]}
-              scale={[size * 0.67, size * (0.58 + stemIndex * 0.08), size * 0.58]}
-              castShadow
-            >
-              <icosahedronGeometry args={[1, 1]} />
-              <meshStandardMaterial
-                color={stemIndex === 1 ? '#3d6836' : '#2f572e'}
-                emissive="#173318"
-                emissiveIntensity={0.13}
-                roughness={1}
-                flatShading
-              />
-            </mesh>
-          ))}
-        </group>
-      ))}
+      <instancedMesh ref={bushesRef} args={[undefined, undefined, WRECK_BUSHES.length * 3]} receiveShadow>
+        <icosahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial
+          vertexColors
+          color="#ffffff"
+          emissive="#173318"
+          emissiveIntensity={0.13}
+          roughness={1}
+          flatShading
+        />
+      </instancedMesh>
 
       {/* Creepers crossing the cabin and tail sell that the wreck has been reclaimed by jungle. */}
-      {WRECK_VINES.map(([x, z, height, lean], vineIndex) => (
-        <group key={`${x}-${z}`} position={[x, 0.08, z]} rotation={[lean, vineIndex * 1.3, lean * 0.32]}>
-          <mesh position={[0, height * 0.5, 0]} scale={[0.035, height, 0.035]}>
-            <cylinderGeometry args={[1, 1.25, 1, 5]} />
-            <meshStandardMaterial color="#56713c" roughness={1} />
-          </mesh>
-          {[0.36, 0.7, 0.94].map((progress, leafIndex) => (
-            <mesh
-              key={progress}
-              position={[(leafIndex % 2 === 0 ? 1 : -1) * 0.15, height * progress, 0]}
-              rotation={[0, leafIndex * 1.7, leafIndex % 2 === 0 ? -0.6 : 0.6]}
-              scale={[0.25, 0.09, 0.13]}
-            >
-              <sphereGeometry args={[1, 6, 4]} />
-              <meshStandardMaterial color="#68834b" emissive="#23381f" emissiveIntensity={0.12} roughness={1} />
-            </mesh>
-          ))}
-        </group>
-      ))}
+      <instancedMesh ref={vineStemsRef} args={[undefined, undefined, WRECK_VINES.length]}>
+        <cylinderGeometry args={[1, 1.25, 1, 5]} />
+        <meshStandardMaterial color="#56713c" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={vineLeavesRef} args={[undefined, undefined, WRECK_VINES.length * 3]}>
+        <sphereGeometry args={[1, 6, 4]} />
+        <meshStandardMaterial color="#68834b" emissive="#23381f" emissiveIntensity={0.12} roughness={1} />
+      </instancedMesh>
     </group>
   );
 }
@@ -974,14 +1182,14 @@ function createBananaPlantGeometry() {
   return geometry;
 }
 
-function RicePaddies() {
+function RicePaddies({ seed }: { seed: number }) {
   const riceRef = useRef<THREE.InstancedMesh>(null);
   const bermRef = useRef<THREE.InstancedMesh>(null);
   const channelRef = useRef<THREE.InstancedMesh>(null);
   const rippleRef = useRef<THREE.InstancedMesh>(null);
   const bananaStemsRef = useRef<THREE.InstancedMesh>(null);
   const bananaLeavesRef = useRef<THREE.InstancedMesh>(null);
-  const waterMaterialsRef = useRef<Array<THREE.MeshPhysicalMaterial | null>>([]);
+  const lastAnimationUpdateRef = useRef(-1);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const riceGeometry = useMemo(() => createRiceShootGeometry(), []);
   const bananaGeometry = useMemo(() => createBananaPlantGeometry(), []);
@@ -1017,6 +1225,7 @@ function RicePaddies() {
     const fringe: Array<{ x: number; y: number; z: number; rotation: number; scale: number }> = [];
 
     PADDY_FIELDS.forEach((field, fieldIndex) => {
+      const noise = (index: number, channel: number) => coordinateNoise(index, fieldIndex, seed, channel);
       const outline = createPaddyOutline(field, fieldIndex);
       const columns = Math.max(7, Math.floor(field.width / 0.62));
       const rows = Math.max(7, Math.floor(field.depth / 0.62));
@@ -1030,18 +1239,18 @@ function RicePaddies() {
           const localX = -usableWidth * 0.5
             + column * (usableWidth / Math.max(columns - 1, 1))
             + (row % 2) * 0.045
-            + (seeded(seedlingIndex, 430 + fieldIndex) - 0.5) * 0.08;
+            + (noise(seedlingIndex, 430) - 0.5) * 0.08;
           const localZ = -usableDepth * 0.5
             + row * (usableDepth / Math.max(rows - 1, 1))
-            + (seeded(seedlingIndex, 440 + fieldIndex) - 0.5) * 0.07;
+            + (noise(seedlingIndex, 440) - 0.5) * 0.07;
           if (!isInsideOutline(localX, localZ, outline)) continue;
           const world = paddyLocalToWorld(field, localX, localZ);
           seedlings.push({
             x: world.x,
             y: field.waterLevel + 0.012,
             z: world.z,
-            rotation: field.rotation + (seeded(seedlingIndex, 450 + fieldIndex) - 0.5) * 0.34,
-            scale: 0.27 + seeded(seedlingIndex, 460 + fieldIndex) * 0.08,
+            rotation: field.rotation + (noise(seedlingIndex, 450) - 0.5) * 0.34,
+            scale: 0.27 + noise(seedlingIndex, 460) * 0.08,
           });
         }
       }
@@ -1057,13 +1266,13 @@ function RicePaddies() {
         const world = paddyLocalToWorld(field, localX, localZ);
         berms.push({
           x: world.x,
-          y: field.waterLevel + 0.055 + seeded(segmentIndex, 470 + fieldIndex) * 0.025,
+          y: field.waterLevel + 0.055 + noise(segmentIndex, 470) * 0.025,
           z: world.z,
-          rotation: baseRotation + (seeded(segmentIndex, 480 + fieldIndex) - 0.5) * 0.035,
+          rotation: baseRotation + (noise(segmentIndex, 480) - 0.5) * 0.035,
           scaleX,
-          scaleY: 0.075 + seeded(segmentIndex, 490 + fieldIndex) * 0.035,
+          scaleY: 0.075 + noise(segmentIndex, 490) * 0.035,
           scaleZ,
-          color: Math.floor(seeded(segmentIndex, 500 + fieldIndex) * bermColors.length),
+          color: Math.floor(noise(segmentIndex, 500) * bermColors.length),
         });
       };
 
@@ -1090,23 +1299,23 @@ function RicePaddies() {
           const localZ = THREE.MathUtils.lerp(start[1], end[1], progress);
           const alongDrain = field.drainSide === 'east' || field.drainSide === 'west' ? localZ : localX;
           const isSluiceGap = drainEdge && Math.abs(alongDrain - field.drainOffset) < segmentLength * 0.82;
-          const isNaturalBreak = seeded(segment + edgeIndex * 17, 710 + fieldIndex) < 0.115;
+          const isNaturalBreak = noise(segment + edgeIndex * 17, 710) < 0.115;
           if (isSluiceGap || isNaturalBreak) continue;
 
           const segmentSeed = segment + edgeIndex * 23 + fieldIndex * 149;
           addBerm(
             localX,
             localZ,
-            segmentLength * (0.46 + seeded(segmentSeed, 720) * 0.045),
-            0.19 + seeded(segmentSeed, 721) * 0.045,
+            segmentLength * (0.46 + noise(segmentSeed, 720) * 0.045),
+            0.19 + noise(segmentSeed, 721) * 0.045,
             segmentSeed,
             edgeRotation,
           );
         }
       });
 
-      const channelLength = 1.65 + seeded(fieldIndex, 550) * 0.45;
-      const channelWidth = 0.38 + seeded(fieldIndex, 551) * 0.08;
+      const channelLength = 1.65 + noise(fieldIndex, 550) * 0.45;
+      const channelWidth = 0.38 + noise(fieldIndex, 551) * 0.08;
       const eastWest = field.drainSide === 'east' || field.drainSide === 'west';
       const direction = field.drainSide === 'east' || field.drainSide === 'north' ? 1 : -1;
       const channelLocalX = eastWest
@@ -1138,16 +1347,16 @@ function RicePaddies() {
       }
 
       for (let rippleIndex = 0; rippleIndex < 2; rippleIndex += 1) {
-        const localX = (seeded(rippleIndex, 560 + fieldIndex) - 0.5) * field.width * 0.48;
-        const localZ = (seeded(rippleIndex, 570 + fieldIndex) - 0.5) * field.depth * 0.45;
+        const localX = (noise(rippleIndex, 560) - 0.5) * field.width * 0.48;
+        const localZ = (noise(rippleIndex, 570) - 0.5) * field.depth * 0.45;
         const world = paddyLocalToWorld(field, localX, localZ);
         ripples.push({
           x: world.x,
           y: field.waterLevel + 0.018,
           z: world.z,
           rotation: field.rotation,
-          phase: seeded(rippleIndex, 580 + fieldIndex),
-          size: 0.42 + seeded(rippleIndex, 590 + fieldIndex) * 0.35,
+          phase: noise(rippleIndex, 580),
+          size: 0.42 + noise(rippleIndex, 590) * 0.35,
         });
       }
 
@@ -1163,17 +1372,17 @@ function RicePaddies() {
           x: world.x,
           y: field.waterLevel + 0.12,
           z: world.z,
-          rotation: field.rotation + seeded(plantIndex, 600 + fieldIndex) * Math.PI,
-          scale: 0.48 + seeded(plantIndex, 610 + fieldIndex) * 0.24,
+          rotation: field.rotation + noise(plantIndex, 600) * Math.PI,
+          scale: 0.48 + noise(plantIndex, 610) * 0.24,
         });
       }
     });
 
     return { seedlings, berms, channels, ripples, fringe };
-  }, [bermColors.length]);
+  }, [bermColors.length, seed]);
 
-  useEffect(() => {
-    if (!riceRef.current || !bermRef.current || !channelRef.current || !bananaStemsRef.current) return;
+  useLayoutEffect(() => {
+    if (!riceRef.current || !bermRef.current || !channelRef.current || !bananaStemsRef.current || !bananaLeavesRef.current || !rippleRef.current) return;
 
     paddyDetails.seedlings.forEach((seedling, index) => {
       dummy.position.set(seedling.x, seedling.y, seedling.z);
@@ -1182,7 +1391,7 @@ function RicePaddies() {
       dummy.updateMatrix();
       riceRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    riceRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(riceRef.current);
 
     paddyDetails.berms.forEach((berm, index) => {
       dummy.position.set(berm.x, berm.y, berm.z);
@@ -1192,7 +1401,7 @@ function RicePaddies() {
       bermRef.current!.setMatrixAt(index, dummy.matrix);
       bermRef.current!.setColorAt(index, bermColors[berm.color]);
     });
-    bermRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(bermRef.current);
     if (bermRef.current.instanceColor) bermRef.current.instanceColor.needsUpdate = true;
 
     paddyDetails.channels.forEach((channel, index) => {
@@ -1202,7 +1411,7 @@ function RicePaddies() {
       dummy.updateMatrix();
       channelRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    channelRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(channelRef.current);
 
     paddyDetails.fringe.forEach((plant, index) => {
       dummy.position.set(plant.x, plant.y + plant.scale * 0.38, plant.z);
@@ -1211,16 +1420,31 @@ function RicePaddies() {
       dummy.updateMatrix();
       bananaStemsRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    bananaStemsRef.current.instanceMatrix.needsUpdate = true;
+    finalizeInstanceMatrices(bananaStemsRef.current);
+
+    paddyDetails.fringe.forEach((plant, index) => {
+      dummy.position.set(plant.x, plant.y, plant.z);
+      dummy.rotation.set(0, plant.rotation, 0);
+      dummy.scale.setScalar(plant.scale);
+      dummy.updateMatrix();
+      bananaLeavesRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(bananaLeavesRef.current, true);
+
+    paddyDetails.ripples.forEach((ripple, index) => {
+      dummy.position.set(ripple.x, ripple.y, ripple.z);
+      dummy.rotation.set(-Math.PI / 2, 0, ripple.rotation);
+      dummy.scale.setScalar(0.01);
+      dummy.updateMatrix();
+      rippleRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(rippleRef.current, true);
   }, [bermColors, dummy, paddyDetails]);
 
   useFrame(({ clock }) => {
     const time = clock.elapsedTime;
-    waterMaterialsRef.current.forEach((material, index) => {
-      if (!material) return;
-      material.roughness = 0.11 + (Math.sin(time * 0.42 + index * 1.7) * 0.5 + 0.5) * 0.055;
-      material.clearcoatRoughness = 0.08 + (Math.sin(time * 0.31 + index) * 0.5 + 0.5) * 0.08;
-    });
+    if (time - lastAnimationUpdateRef.current < 1 / 20) return;
+    lastAnimationUpdateRef.current = time;
 
     if (rippleRef.current) {
       paddyDetails.ripples.forEach((ripple, index) => {
@@ -1270,7 +1494,6 @@ function RicePaddies() {
           >
             <shapeGeometry args={[waterShapes[fieldIndex]]} />
             <meshPhysicalMaterial
-              ref={(node) => { waterMaterialsRef.current[fieldIndex] = node; }}
               color={fieldIndex % 3 === 0 ? '#6f8674' : '#657e6d'}
               emissive="#18251e"
               emissiveIntensity={0.1}
@@ -1300,7 +1523,7 @@ function RicePaddies() {
         />
       </instancedMesh>
 
-      <instancedMesh ref={bermRef} args={[undefined, undefined, paddyDetails.berms.length]} castShadow receiveShadow>
+      <instancedMesh ref={bermRef} args={[undefined, undefined, paddyDetails.berms.length]} receiveShadow>
         <sphereGeometry args={[1, 8, 5]} />
         <meshStandardMaterial
           vertexColors
@@ -1323,7 +1546,7 @@ function RicePaddies() {
       </instancedMesh>
 
       <instancedMesh ref={rippleRef} args={[undefined, undefined, paddyDetails.ripples.length]} renderOrder={3}>
-        <ringGeometry args={[0.78, 1, 24]} />
+        <ringGeometry args={[0.78, 1, 16]} />
         <meshBasicMaterial
           color="#c3d4bd"
           transparent
@@ -1334,25 +1557,47 @@ function RicePaddies() {
         />
       </instancedMesh>
 
-      <instancedMesh ref={bananaStemsRef} args={[undefined, undefined, paddyDetails.fringe.length]} castShadow>
+      <instancedMesh ref={bananaStemsRef} args={[undefined, undefined, paddyDetails.fringe.length]}>
         <cylinderGeometry args={[1, 1.35, 1, 6]} />
         <meshStandardMaterial color="#62713b" roughness={1} />
       </instancedMesh>
-      <instancedMesh ref={bananaLeavesRef} args={[bananaGeometry, undefined, paddyDetails.fringe.length]} castShadow>
+      <instancedMesh ref={bananaLeavesRef} args={[bananaGeometry, undefined, paddyDetails.fringe.length]}>
         <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.94} />
       </instancedMesh>
     </>
   );
 }
 
-function MudAndPuddles() {
-  const puddles = useMemo(() => Array.from({ length: 18 }, (_, index) => ({
-    x: (Math.floor(seeded(index, 40) * 11) - 5) * ROAD_GRID_SPACING + (seeded(index, 41) - 0.5) * 2.5,
-    z: (Math.floor(seeded(index, 42) * 11) - 5) * ROAD_GRID_SPACING + (seeded(index, 43) - 0.5) * 2.5,
-    scaleX: 0.45 + seeded(index, 44) * 1.35,
-    scaleZ: 0.22 + seeded(index, 45) * 0.65,
-    rotation: seeded(index, 46) * Math.PI,
-  })), []);
+function MudAndPuddles({ seed }: { seed: number }) {
+  const puddlesRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const puddles = useMemo(() => createDeterministicScatter({
+    width: 148,
+    depth: 148,
+    cellSize: 9.4,
+    minDistance: 6.2,
+    seed: seed ^ 0x7a2f,
+    maxPoints: 18,
+    accept: (x, z) => distanceToRoad(x) < 1.9 || distanceToRoad(z) < 1.9,
+  }).map(point => ({
+    x: point.x,
+    z: point.z,
+    scaleX: 0.45 + coordinateNoise(point.cellX, point.cellZ, seed, 44) * 1.35,
+    scaleZ: 0.22 + coordinateNoise(point.cellX, point.cellZ, seed, 45) * 0.65,
+    rotation: coordinateNoise(point.cellX, point.cellZ, seed, 46) * Math.PI,
+  })), [seed]);
+
+  useLayoutEffect(() => {
+    if (!puddlesRef.current) return;
+    puddles.forEach((puddle, index) => {
+      dummy.position.set(puddle.x, -0.038, puddle.z);
+      dummy.rotation.set(-Math.PI / 2, 0, puddle.rotation);
+      dummy.scale.set(puddle.scaleX, puddle.scaleZ, 1);
+      dummy.updateMatrix();
+      puddlesRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(puddlesRef.current);
+  }, [dummy, puddles]);
 
   return (
     <>
@@ -1360,30 +1605,29 @@ function MudAndPuddles() {
         <planeGeometry args={[260, 260]} />
         <meshStandardMaterial color="#405036" roughness={1} metalness={0} />
       </mesh>
-      {puddles.map((puddle, index) => (
-        <mesh
-          key={index}
-          rotation={[-Math.PI / 2, 0, puddle.rotation]}
-          position={[puddle.x, -0.038, puddle.z]}
-          scale={[puddle.scaleX, puddle.scaleZ, 1]}
-        >
-          <circleGeometry args={[1, 20]} />
-          <meshStandardMaterial color="#1c261e" metalness={0.45} roughness={0.24} transparent opacity={0.7} />
-        </mesh>
-      ))}
+      <instancedMesh ref={puddlesRef} args={[undefined, undefined, puddles.length]}>
+        <circleGeometry args={[1, 12]} />
+        <meshStandardMaterial color="#1c261e" metalness={0.45} roughness={0.24} transparent opacity={0.7} />
+      </instancedMesh>
     </>
   );
 }
 
-export function VietnamEnvironment() {
+interface VietnamEnvironmentProps {
+  seed?: number;
+}
+
+export function VietnamEnvironment({ seed = DEFAULT_ENVIRONMENT_SEED }: VietnamEnvironmentProps) {
+  const environmentSeed = Number.isFinite(seed) ? Math.trunc(seed) : DEFAULT_ENVIRONMENT_SEED;
+
   return (
     <>
-      <MudAndPuddles />
-      <GroundPatches />
-      <RicePaddies />
+      <MudAndPuddles seed={environmentSeed} />
+      <GroundPatches seed={environmentSeed} />
+      <RicePaddies seed={environmentSeed} />
       <TerrainRelief />
-      <ElephantGrass />
-      <LayeredJungle />
+      <ElephantGrass seed={environmentSeed} />
+      <LayeredJungle seed={environmentSeed} />
       <SmokeColumns />
       <FieldFortifications />
       <CrashedHuey />

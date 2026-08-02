@@ -8,14 +8,14 @@ export function Lighting() {
         position={[-28, 38, 14]}
         intensity={1.62}
         color="#ffd69a"
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-near={1}
         shadow-camera-far={190}
-        shadow-camera-left={-90}
-        shadow-camera-right={90}
-        shadow-camera-top={90}
-        shadow-camera-bottom={-90}
+        shadow-camera-left={-72}
+        shadow-camera-right={72}
+        shadow-camera-top={72}
+        shadow-camera-bottom={-72}
         shadow-bias={-0.0004}
       />
       <directionalLight position={[20, 18, -26]} intensity={0.52} color="#9fc4ad" />

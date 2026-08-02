@@ -8,7 +8,7 @@ import {
 
 export function PostProcessing() {
   return (
-    <EffectComposer>
+    <EffectComposer multisampling={2}>
       <HueSaturation saturation={0.17} />
       <BrightnessContrast brightness={0.045} contrast={0.045} />
       <Bloom

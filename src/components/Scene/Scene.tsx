@@ -7,16 +7,17 @@ import { VietnamEnvironment } from './VietnamEnvironment';
 
 interface SceneProps {
   children?: React.ReactNode;
+  environmentSeed?: number;
 }
 
-export function Scene({ children }: SceneProps) {
+export function Scene({ children, environmentSeed = 1968 }: SceneProps) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
       <Canvas
         camera={{ position: [0, 12, 20], fov: 60, near: 0.1, far: 500 }}
         shadows
-        dpr={[1, 1.5]}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
+        dpr={[0.85, 1.25]}
+        gl={{ antialias: false, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.26;
@@ -27,7 +28,7 @@ export function Scene({ children }: SceneProps) {
         <color attach="background" args={['#354b35']} />
         <fog attach="fog" args={['#68735a', 46, 142]} />
         <Lighting />
-        <VietnamEnvironment />
+        <VietnamEnvironment seed={environmentSeed} />
         <TronGrid />
         {children}
         <PostProcessing />

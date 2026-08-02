@@ -48,6 +48,7 @@ import {
   NAPALM_STRIKE_WIDTH,
   WeaponMode,
 } from './lib/weapons';
+import { hashCombatSession } from './lib/combat';
 
 type AppState = 'checking' | 'picking' | 'scanning' | 'ready';
 
@@ -950,7 +951,7 @@ function App() {
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>
-        <Scene>
+        <Scene environmentSeed={hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY)}>
           <Tank
             ref={tankRef}
             initialPosition={tankStartPosition}

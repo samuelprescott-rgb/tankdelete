@@ -14,6 +14,32 @@ const STRUCTURE_ACCENTS: Record<FileCategory, string> = {
   other: '#8a7b51',
 };
 
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const MAX_FLOATING_LABELS = 44;
+const LABEL_VISIBILITY_RADIUS_SQ = 34 * 34;
+const LABEL_INDEX_CELL_SIZE = 12;
+const LABEL_REFRESH_CELL_SIZE = 6;
+const MAX_OUTLINED_BLOCKS_PER_CATEGORY = 120;
+const MAX_SHADOWED_BLOCKS_PER_CATEGORY = 160;
+
+function pathNoise(path: string, salt: number) {
+  let hash = 2166136261 ^ salt;
+  for (let index = 0; index < path.length; index += 1) {
+    hash ^= path.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967295;
+}
+
+function blockYaw(path: string) {
+  return (pathNoise(path, 1968) - 0.5) * 0.11;
+}
+
+function labelCellKey(x: number, z: number) {
+  return `${x}:${z}`;
+}
+
 function colorGeometry(geometry: THREE.BufferGeometry, color: string) {
   const value = new THREE.Color(color);
   const colors = new Float32Array(geometry.getAttribute('position').count * 3);
@@ -182,21 +208,30 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
 
   const geometry = useMemo(() => createStructureGeometry(category), [category]);
 
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
   // Create merged wireframe geometry for all blocks in this category
   const mergedWireframe = useMemo(() => {
+    // A merged outline cannot be culled per instance. Drop the decorative pass
+    // for very large directories instead of submitting every edge every frame.
+    if (blocks.length > MAX_OUTLINED_BLOCKS_PER_CATEGORY) return null;
     const edgeGeometries: THREE.EdgesGeometry[] = [];
+    const baseEdges = new THREE.EdgesGeometry(geometry, 15);
 
     for (const block of blocks) {
-      const edgesGeometry = new THREE.EdgesGeometry(geometry, 15);
+      const edgesGeometry = baseEdges.clone();
       const matrix = new THREE.Matrix4();
+      const quaternion = new THREE.Quaternion().setFromAxisAngle(Y_AXIS, blockYaw(block.path));
       matrix.compose(
         new THREE.Vector3(...block.position),
-        new THREE.Quaternion(),
+        quaternion,
         new THREE.Vector3(block.scale, block.scale, block.scale)
       );
       edgesGeometry.applyMatrix4(matrix);
       edgeGeometries.push(edgesGeometry);
     }
+
+    baseEdges.dispose();
 
     if (edgeGeometries.length === 0) return null;
     const merged = mergeGeometries(edgeGeometries);
@@ -207,11 +242,30 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
     return merged;
   }, [blocks, geometry]);
 
+  useEffect(() => () => mergedWireframe?.dispose(), [mergedWireframe]);
+
   // Pre-allocated objects for frame updates
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(), []);
+  const blockIndexByPath = useMemo(
+    () => new Map(blocks.map((block, index) => [block.path, index])),
+    [blocks],
+  );
+  const yaws = useMemo(() => blocks.map(block => blockYaw(block.path)), [blocks]);
+  const activeDeletions = useMemo(() => {
+    const active: Array<{ path: string; blockIndex: number }> = [];
+    for (const path of deletingFiles) {
+      const blockIndex = blockIndexByPath.get(path);
+      if (blockIndex !== undefined) active.push({ path, blockIndex });
+    }
+    return active;
+  }, [blockIndexByPath, deletingFiles]);
+  const hasMarkedBlock = useMemo(
+    () => blocks.some(block => markedFiles.has(block.path)),
+    [blocks, markedFiles],
+  );
 
   // Setup instance matrices
   useEffect(() => {
@@ -221,69 +275,91 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
       const block = blocks[i];
       tempPosition.set(...block.position);
       tempScale.set(block.scale, block.scale, block.scale);
+      tempQuaternion.setFromAxisAngle(Y_AXIS, yaws[i]);
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       meshRef.current.setMatrixAt(i, tempMatrix);
     }
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [blocks, tempMatrix, tempPosition, tempQuaternion, tempScale]);
+  }, [blocks, tempMatrix, tempPosition, tempQuaternion, tempScale, yaws]);
+
+  // A failed/cancelled deletion leaves the file in the directory. Restore its
+  // static matrix immediately instead of leaving a partially de-rezzed hut.
+  const completedDeletionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!meshRef.current) return;
+
+    let matricesChanged = false;
+    for (const path of deletionProgressRef.current.keys()) {
+      if (deletingFiles.has(path)) continue;
+
+      deletionProgressRef.current.delete(path);
+      completedDeletionsRef.current.delete(path);
+      const blockIndex = blockIndexByPath.get(path);
+      if (blockIndex === undefined) continue;
+
+      const block = blocks[blockIndex];
+      tempPosition.set(...block.position);
+      tempScale.setScalar(block.scale);
+      tempQuaternion.setFromAxisAngle(Y_AXIS, yaws[blockIndex]);
+      tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+      meshRef.current.setMatrixAt(blockIndex, tempMatrix);
+      matricesChanged = true;
+    }
+
+    for (const path of completedDeletionsRef.current) {
+      if (!deletingFiles.has(path)) completedDeletionsRef.current.delete(path);
+    }
+
+    if (matricesChanged) meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [blocks, blockIndexByPath, deletingFiles, tempMatrix, tempPosition, tempQuaternion, tempScale, yaws]);
 
   // Animate: gentle bob, pulsing glow, mark visuals, de-rez animation
   useFrame(({ clock }, delta) => {
-    if (!meshRef.current || !groupRef.current) return;
+    if (!meshRef.current) return;
 
     const time = clock.getElapsedTime();
 
-    // Update deletion progress for deleting files
-    for (const block of blocks) {
-      if (deletingFiles.has(block.path)) {
-        const currentProgress = deletionProgressRef.current.get(block.path) || 0;
-        const newProgress = currentProgress + delta / DEREZ_DURATION;
+    // Static structures keep their original GPU instance matrices. Only active
+    // de-rez entries touch the buffer, rather than rewriting every file every frame.
+    let matricesChanged = false;
+    for (const { path, blockIndex } of activeDeletions) {
+      if (completedDeletionsRef.current.has(path)) continue;
+      const block = blocks[blockIndex];
+      const currentProgress = deletionProgressRef.current.get(path) || 0;
+      const deletionProgress = Math.min(1, currentProgress + delta / DEREZ_DURATION);
+      const scale = block.scale * (1 - deletionProgress);
 
-        if (newProgress >= 1.0) {
-          // Animation complete
-          deletionProgressRef.current.delete(block.path);
-          if (onDeletionComplete) {
-            onDeletionComplete(block.path);
-          }
-        } else {
-          deletionProgressRef.current.set(block.path, newProgress);
-        }
-      }
-    }
-
-    // Update instance matrices with bob animation, mark visuals, and de-rez
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      const isDeleting = deletingFiles.has(block.path);
-      const deletionProgress = deletionProgressRef.current.get(block.path) || 0;
-
-      // De-rez animation: shrink and sink
-      let scale = block.scale;
-      let yOffset = 0;
-      if (isDeleting) {
-        scale = block.scale * (1 - deletionProgress);
-        yOffset = -deletionProgress * 2; // Sink into ground
-      }
-
-      tempPosition.set(block.position[0], block.position[1] + yOffset, block.position[2]);
+      deletionProgressRef.current.set(path, deletionProgress);
+      tempPosition.set(block.position[0], block.position[1] - deletionProgress * 2, block.position[2]);
       tempScale.set(scale, scale, scale);
+      tempQuaternion.setFromAxisAngle(Y_AXIS, yaws[blockIndex]);
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
-      meshRef.current.setMatrixAt(i, tempMatrix);
+      meshRef.current.setMatrixAt(blockIndex, tempMatrix);
+      matricesChanged = true;
+
+      if (deletionProgress >= 1) {
+        completedDeletionsRef.current.add(path);
+        onDeletionComplete?.(path);
+      }
     }
-    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (matricesChanged) meshRef.current.instanceMatrix.needsUpdate = true;
 
     // Pulsing glow on material (stronger pulse for marked files)
     const material = meshRef.current.material as THREE.MeshStandardMaterial;
     if (material) {
-      const hasMarked = blocks.some(b => markedFiles.has(b.path));
-      if (hasMarked) {
+      if (hasMarkedBlock) {
         material.emissiveIntensity = 0.25 + Math.sin(time * 4) * 0.12;
       } else {
         material.emissiveIntensity = 0.08;
       }
     }
 
-    groupRef.current.position.y = 0;
+    // Merged outlines cannot animate one entry independently. Hide the category
+    // outline during its short deletion pass so a full-size ghost is not left behind.
+    if (groupRef.current) {
+      groupRef.current.visible = activeDeletions.length === 0;
+      groupRef.current.position.y = 0;
+    }
   });
 
   // Hover detection
@@ -306,7 +382,7 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
       <instancedMesh
         ref={meshRef}
         args={[geometry, undefined, blocks.length]}
-        castShadow
+        castShadow={blocks.length <= MAX_SHADOWED_BLOCKS_PER_CATEGORY}
         receiveShadow
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
@@ -332,7 +408,7 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
 
       {/* Marked file overlays - pulsing red-orange glow */}
       {blocks.filter(block => markedFiles.has(block.path)).map((block) => (
-        <group key={`marked-${block.path}`} position={block.position}>
+        <group key={`marked-${block.path}`} position={block.position} rotation={[0, blockYaw(block.path), 0]}>
           <mesh position={[0, block.scale * 0.1, 0]}>
             <boxGeometry args={[block.scale * 1.55, block.scale * 1.55, block.scale * 1.35]} />
             <meshBasicMaterial color="#ff4c1f" wireframe transparent opacity={0.65} toneMapped={false} />
@@ -344,8 +420,114 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
         </group>
       ))}
 
-      {/* Floating filename labels */}
-      {blocks.map((block) => (
+    </>
+  );
+}
+
+function ProximityFileLabels({
+  blocks,
+  markedFiles,
+}: {
+  blocks: BlockData[];
+  markedFiles: Set<string>;
+}) {
+  const [visiblePaths, setVisiblePaths] = useState<string[]>([]);
+  const nextRefreshAtRef = useRef(0);
+  const lastSelectionKeyRef = useRef('');
+  const lastBlocksRef = useRef(blocks);
+  const lastMarkedFilesRef = useRef(markedFiles);
+  const { blocksByPath, blocksByCell } = useMemo(() => {
+    const byPath = new Map<string, BlockData>();
+    const byCell = new Map<string, BlockData[]>();
+
+    for (const block of blocks) {
+      byPath.set(block.path, block);
+      const cellX = Math.floor(block.position[0] / LABEL_INDEX_CELL_SIZE);
+      const cellZ = Math.floor(block.position[2] / LABEL_INDEX_CELL_SIZE);
+      const key = labelCellKey(cellX, cellZ);
+      const cell = byCell.get(key);
+      if (cell) cell.push(block);
+      else byCell.set(key, [block]);
+    }
+
+    return { blocksByPath: byPath, blocksByCell: byCell };
+  }, [blocks]);
+
+  useFrame(({ camera, clock }) => {
+    const inputsChanged = lastBlocksRef.current !== blocks || lastMarkedFilesRef.current !== markedFiles;
+    if (!inputsChanged && clock.elapsedTime < nextRefreshAtRef.current) return;
+
+    lastBlocksRef.current = blocks;
+    lastMarkedFilesRef.current = markedFiles;
+    nextRefreshAtRef.current = clock.elapsedTime + 0.4;
+
+    const refreshCellX = Math.floor(camera.position.x / LABEL_REFRESH_CELL_SIZE);
+    const refreshCellZ = Math.floor(camera.position.z / LABEL_REFRESH_CELL_SIZE);
+    const selectionKey = labelCellKey(refreshCellX, refreshCellZ);
+    if (!inputsChanged && selectionKey === lastSelectionKeyRef.current) return;
+    lastSelectionKeyRef.current = selectionKey;
+
+    const ranked: Array<{ block: BlockData; distanceSq: number; marked: boolean }> = [];
+    const seenPaths = new Set<string>();
+    const indexCellX = Math.floor(camera.position.x / LABEL_INDEX_CELL_SIZE);
+    const indexCellZ = Math.floor(camera.position.z / LABEL_INDEX_CELL_SIZE);
+    const indexRadius = Math.ceil(Math.sqrt(LABEL_VISIBILITY_RADIUS_SQ) / LABEL_INDEX_CELL_SIZE);
+
+    for (let x = indexCellX - indexRadius; x <= indexCellX + indexRadius; x += 1) {
+      for (let z = indexCellZ - indexRadius; z <= indexCellZ + indexRadius; z += 1) {
+        const cell = blocksByCell.get(labelCellKey(x, z));
+        if (!cell) continue;
+
+        for (const block of cell) {
+          const dx = block.position[0] - camera.position.x;
+          const dz = block.position[2] - camera.position.z;
+          const distanceSq = dx * dx + dz * dz;
+          const marked = markedFiles.has(block.path);
+          if (!marked && distanceSq > LABEL_VISIBILITY_RADIUS_SQ) continue;
+          seenPaths.add(block.path);
+          ranked.push({ block, distanceSq, marked });
+        }
+      }
+    }
+
+    // Marked targets remain identifiable even when they are outside the local
+    // label query. This loop scales with selections, not total directory size.
+    for (const path of markedFiles) {
+      if (seenPaths.has(path)) continue;
+      const block = blocksByPath.get(path);
+      if (!block) continue;
+      const dx = block.position[0] - camera.position.x;
+      const dz = block.position[2] - camera.position.z;
+      const distanceSq = dx * dx + dz * dz;
+      ranked.push({ block, distanceSq, marked: true });
+    }
+
+    const nextVisiblePaths = ranked
+      .sort((left, right) => {
+        if (left.marked !== right.marked) return left.marked ? -1 : 1;
+        return left.distanceSq - right.distanceSq;
+      })
+      .slice(0, MAX_FLOATING_LABELS)
+      .map(entry => entry.block.path);
+
+    setVisiblePaths(current => (
+      current.length === nextVisiblePaths.length
+      && current.every((path, index) => path === nextVisiblePaths[index])
+        ? current
+        : nextVisiblePaths
+    ));
+  });
+
+  const visibleBlocks = useMemo(
+    () => visiblePaths
+      .map(path => blocksByPath.get(path))
+      .filter((block): block is BlockData => block !== undefined),
+    [blocksByPath, visiblePaths],
+  );
+
+  return (
+    <>
+      {visibleBlocks.map(block => (
         <Text
           key={block.path}
           position={[block.position[0], block.position[1] + block.scale * 1.65 + 0.45, block.position[2]]}
@@ -403,6 +585,7 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
     setHoveredBlock(block);
     onHover(block);
   };
+  const allBlocks = useMemo(() => Array.from(blocks.values()).flat(), [blocks]);
 
   return (
     <>
@@ -427,6 +610,8 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
           />
         );
       })}
+
+      <ProximityFileLabels blocks={allBlocks} markedFiles={markedFiles} />
 
       {/* Hover tooltip */}
       {hoveredBlock && (
