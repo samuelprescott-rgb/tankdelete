@@ -7,6 +7,7 @@ interface CrosshairProps {
 
 const CROSSHAIR_COLORS: Record<WeaponMode, string> = {
   cannon: '#a8bf78',
+  machinegun: '#ffe197',
   flamethrower: '#ff7435',
   napalm: '#e3b341',
 };

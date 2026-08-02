@@ -5,13 +5,14 @@ import { Projectile } from '../../hooks/useProjectilePool';
 import { PROJECTILE_SPEED, PROJECTILE_MAX_LIFETIME } from '../../lib/constants';
 import { BlockData } from '../../hooks/useFileBlocks';
 
-const MAX_PROJECTILES = 20;
+const MAX_PROJECTILES = 48;
 const HIT_RADIUS = 1.5; // Distance threshold for projectile-block collision
+const MACHINE_GUN_SPEED = PROJECTILE_SPEED * 1.65;
 
 interface ProjectileManagerProps {
   pool: React.RefObject<Projectile[]>;
   despawn: (index: number) => void;
-  onHit: (filePath: string) => void;
+  onHit: (filePath: string, projectile: Projectile) => void;
   allBlocks: BlockData[];
 }
 
@@ -28,6 +29,8 @@ export function ProjectileManager({
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(1, 1, 1), []);
+  const cannonColor = useMemo(() => new THREE.Color('#e3b341'), []);
+  const machineGunColor = useMemo(() => new THREE.Color('#ffe197'), []);
 
   useFrame((_state, delta) => {
     if (!pool.current || !meshRef.current) return;
@@ -39,7 +42,8 @@ export function ProjectileManager({
       if (!projectile.active) continue;
 
       // Move projectile
-      projectile.position.addScaledVector(projectile.direction, PROJECTILE_SPEED * delta);
+      const speed = projectile.kind === 'machinegun' ? MACHINE_GUN_SPEED : PROJECTILE_SPEED;
+      projectile.position.addScaledVector(projectile.direction, speed * delta);
       projectile.lifetime += delta;
 
       // Despawn if too old
@@ -61,28 +65,33 @@ export function ProjectileManager({
       }
 
       if (hitBlock) {
-        onHit(hitBlock.path);
+        onHit(hitBlock.path, projectile);
         despawn(i);
         continue;
       }
 
       // Update instance matrix for visible projectile
-      tempScale.set(1, 1, 1);
+      tempScale.setScalar(projectile.kind === 'machinegun' ? 0.48 : 1);
       tempMatrix.compose(projectile.position, tempQuaternion, tempScale);
       meshRef.current.setMatrixAt(visibleCount, tempMatrix);
+      meshRef.current.setColorAt(
+        visibleCount,
+        projectile.kind === 'machinegun' ? machineGunColor : cannonColor,
+      );
       visibleCount++;
     }
 
     meshRef.current.count = visibleCount;
     if (visibleCount > 0) {
       meshRef.current.instanceMatrix.needsUpdate = true;
+      if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
     }
   });
 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, MAX_PROJECTILES]}>
       <sphereGeometry args={[0.12, 8, 8]} />
-      <meshBasicMaterial color="#e3b341" toneMapped={false} />
+      <meshBasicMaterial vertexColors toneMapped={false} />
     </instancedMesh>
   );
 }

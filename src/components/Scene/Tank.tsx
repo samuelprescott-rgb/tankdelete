@@ -1,9 +1,16 @@
-import { useRef, useMemo, forwardRef, useEffect } from 'react';
+import { useRef, useMemo, forwardRef, useEffect, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useKeyboardControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { TANK_SPEED, TANK_ROTATION_SPEED } from '../../lib/constants';
-import { WeaponMode } from '../../lib/weapons';
+import {
+  FLAMETHROWER_CAPACITY_SECONDS,
+  FLAMETHROWER_HIT_INTERVAL,
+  FLAMETHROWER_RECHARGE_SECONDS,
+  MACHINE_GUN_FIRE_INTERVAL,
+  WeaponMode,
+} from '../../lib/weapons';
+import { FlameStream } from './FlameStream';
 
 const TANK_ARMOR_COLOR = '#a8bf78';
 const TANK_WEAPON_COLOR = '#e3b341';
@@ -18,16 +25,27 @@ export enum Controls {
 
 interface TankProps {
   onShoot?: (position: THREE.Vector3, direction: THREE.Vector3) => void;
-  onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3) => void;
+  onMachineGun?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
+  onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
+  onFlameFuelChange?: (fuel: number) => void;
   onNapalm?: (target: THREE.Vector3) => void;
   weaponMode?: WeaponMode;
   initialPosition?: [number, number, number];
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
 }
 
-export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrower, onNapalm, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
+export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
+  const [flameActive, setFlameActive] = useState(false);
+  const flameActiveRef = useRef(false);
   const { camera, pointer } = useThree();
+  const triggerHeldRef = useRef(false);
+  const triggerIdRef = useRef(0);
+  const machineGunClockRef = useRef(0);
+  const flameHitClockRef = useRef(0);
+  const flameFuelRef = useRef(FLAMETHROWER_CAPACITY_SECONDS);
+  const flameLockedRef = useRef(false);
+  const lastFuelReportRef = useRef(1);
 
   // Pre-allocate reusable objects to avoid GC pressure
   const direction = useMemo(() => new THREE.Vector3(), []);
@@ -48,6 +66,12 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrowe
     }
   }, [initialPosition, tankRef]);
 
+  useEffect(() => {
+    triggerHeldRef.current = false;
+    flameActiveRef.current = false;
+    setFlameActive(false);
+  }, [weaponMode]);
+
   // Mouse click handler for shooting
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -55,6 +79,11 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrowe
       if (event.button !== 0) return;
       if ((event.target as HTMLElement | null)?.closest?.('[data-game-ui]')) return;
       if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
+
+      triggerHeldRef.current = true;
+      triggerIdRef.current += 1;
+      machineGunClockRef.current = 0;
+      flameHitClockRef.current = 0;
 
       // Get turret world position and direction
       turretRef.current.getWorldPosition(tempWorldPos);
@@ -69,20 +98,44 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrowe
 
       if (weaponMode === 'cannon') {
         onShoot?.(spawnPosition, tempWorldDir.clone());
-      } else if (weaponMode === 'flamethrower') {
-        onFlamethrower?.(spawnPosition, tempWorldDir.clone());
+      } else if (weaponMode === 'machinegun') {
+        onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
+      } else if (weaponMode === 'flamethrower' && !flameLockedRef.current && flameFuelRef.current > 0) {
+        flameActiveRef.current = true;
+        setFlameActive(true);
+        onFlamethrower?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
       } else if (weaponMode === 'napalm') {
         raycaster.setFromCamera(pointer, camera);
         if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
           onNapalm?.(intersection.clone());
         }
+        triggerHeldRef.current = false;
       }
+    }
+
+    function handlePointerUp(event: PointerEvent) {
+      if (event.button !== 0) return;
+      triggerHeldRef.current = false;
+      flameActiveRef.current = false;
+      setFlameActive(false);
+    }
+
+    function handleWindowBlur() {
+      triggerHeldRef.current = false;
+      flameActiveRef.current = false;
+      setFlameActive(false);
     }
 
     // Use capture phase to ensure we receive the event before R3F Canvas
     document.addEventListener('pointerdown', handlePointerDown, true);
-    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
-  }, [tankRef, onShoot, onFlamethrower, onNapalm, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
+    document.addEventListener('pointerup', handlePointerUp, true);
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('pointerup', handlePointerUp, true);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
 
   useFrame((_state, delta) => {
     if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
@@ -134,6 +187,61 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrowe
       // To aim -Z toward (x, z): angle = atan2(-x, -z)
       const angle = Math.atan2(-localTarget.x, -localTarget.z);
       turretRef.current.rotation.y = angle;
+    }
+
+    turretRef.current.getWorldPosition(tempWorldPos);
+    turretRef.current.getWorldDirection(tempWorldDir);
+    tempWorldDir.negate();
+    const spawnPosition = tempWorldPos.clone().addScaledVector(tempWorldDir, 0.8);
+
+    if (weaponMode === 'machinegun' && triggerHeldRef.current) {
+      machineGunClockRef.current += delta;
+      if (machineGunClockRef.current >= MACHINE_GUN_FIRE_INTERVAL) {
+        machineGunClockRef.current %= MACHINE_GUN_FIRE_INTERVAL;
+        onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
+      }
+    }
+
+    const canFireFlame = weaponMode === 'flamethrower'
+      && triggerHeldRef.current
+      && !flameLockedRef.current
+      && flameFuelRef.current > 0;
+
+    if (canFireFlame) {
+      flameFuelRef.current = Math.max(0, flameFuelRef.current - delta);
+      if (!flameActiveRef.current) {
+        flameActiveRef.current = true;
+        setFlameActive(true);
+      }
+      flameHitClockRef.current += delta;
+      if (flameHitClockRef.current >= FLAMETHROWER_HIT_INTERVAL) {
+        flameHitClockRef.current %= FLAMETHROWER_HIT_INTERVAL;
+        onFlamethrower?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
+      }
+      if (flameFuelRef.current <= 0) {
+        flameLockedRef.current = true;
+        flameActiveRef.current = false;
+        setFlameActive(false);
+      }
+    } else {
+      if (flameActiveRef.current) {
+        flameActiveRef.current = false;
+        setFlameActive(false);
+      }
+      const rechargeRate = FLAMETHROWER_CAPACITY_SECONDS / FLAMETHROWER_RECHARGE_SECONDS;
+      flameFuelRef.current = Math.min(
+        FLAMETHROWER_CAPACITY_SECONDS,
+        flameFuelRef.current + rechargeRate * delta,
+      );
+      if (flameFuelRef.current >= FLAMETHROWER_CAPACITY_SECONDS) {
+        flameLockedRef.current = false;
+      }
+    }
+
+    const fuelRatio = flameFuelRef.current / FLAMETHROWER_CAPACITY_SECONDS;
+    if (Math.abs(fuelRatio - lastFuelReportRef.current) >= 0.015 || fuelRatio === 0 || fuelRatio === 1) {
+      lastFuelReportRef.current = fuelRatio;
+      onFlameFuelChange?.(fuelRatio);
     }
   });
 
@@ -252,7 +360,23 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onFlamethrowe
                 <lineBasicMaterial color={TANK_WEAPON_COLOR} toneMapped={false} />
               </lineSegments>
             </group>
+            <group position={[0, 0.15, -1.5]}>
+              <FlameStream active={flameActive} />
+            </group>
           </>
+        )}
+
+        {weaponMode === 'machinegun' && (
+          <group position={[0.23, 0.11, -0.66]}>
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.035, 0.05, 1.15, 8]} />
+              <meshStandardMaterial color="#7c805e" emissive="#e3b341" emissiveIntensity={0.35} />
+            </mesh>
+            <mesh position={[0.15, -0.08, 0.32]}>
+              <boxGeometry args={[0.24, 0.22, 0.34]} />
+              <meshStandardMaterial color="#676b4d" metalness={0.55} roughness={0.65} />
+            </mesh>
+          </group>
         )}
 
         {weaponMode === 'napalm' && (

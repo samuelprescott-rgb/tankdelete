@@ -149,6 +149,21 @@
   font-size: 9px;
 }
 
+.flame-fuel {
+  height: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.38);
+  background: rgba(8, 11, 6, 0.8);
+}
+
+.flame-fuel span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #b43c20, #ff8a32 62%, #ffe07a);
+  box-shadow: 0 0 8px rgba(255, 112, 42, 0.55);
+  transition: width 90ms linear;
+}
+
 .field-radio {
   display: flex;
   align-items: flex-end;
@@ -183,13 +198,19 @@
   pointer-events: auto;
 }
 
-.field-radio button {
+.field-radio button,
+.field-radio-load {
   border: 1px solid #879b63;
   padding: 4px 6px;
   color: #b9c68a;
   background: rgba(57, 72, 39, 0.25);
+  cursor: pointer;
   font-size: 9px;
   letter-spacing: 0.04em;
+}
+
+.field-radio-load input {
+  display: none;
 }
 
 .controls-ribbon {

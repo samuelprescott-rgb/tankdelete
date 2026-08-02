@@ -14,11 +14,14 @@ interface HUDProps {
   onClearMarked: () => void;
   weaponMode: WeaponMode;
   onWeaponChange: (mode: WeaponMode) => void;
+  flameFuel: number;
   napalmCooldown: number;
   radioEnabled: boolean;
   radioTrackName: string;
+  radioSourceLabel: string;
   onToggleRadio: () => void;
   onNextTrack: () => void;
+  onLoadLocalTrack: (file: File) => void;
 }
 
 export function HUD({
@@ -32,13 +35,16 @@ export function HUD({
   onClearMarked,
   weaponMode,
   onWeaponChange,
+  flameFuel,
   napalmCooldown,
   radioEnabled,
   radioTrackName,
+  radioSourceLabel,
   onToggleRadio,
   onNextTrack,
+  onLoadLocalTrack,
 }: HUDProps) {
-  const weaponModes: WeaponMode[] = ['cannon', 'flamethrower', 'napalm'];
+  const weaponModes: WeaponMode[] = ['cannon', 'machinegun', 'flamethrower', 'napalm'];
 
   return (
     <>
@@ -65,8 +71,14 @@ export function HUD({
                 {mode === 'napalm' && napalmCooldown > 0 && (
                   <small>{napalmCooldown.toFixed(1)}s</small>
                 )}
+                {mode === 'flamethrower' && (
+                  <small>{Math.round(flameFuel * 100)}%</small>
+                )}
               </button>
             ))}
+          </div>
+          <div className="flame-fuel" aria-label={`Flamethrower fuel ${Math.round(flameFuel * 100)} percent`}>
+            <span style={{ width: `${flameFuel * 100}%` }} />
           </div>
         </div>
 
@@ -105,7 +117,7 @@ export function HUD({
           <div>
             <span className="hud-kicker">Field radio</span>
             <strong>{radioTrackName}</strong>
-            <small>Original procedural transmission</small>
+            <small>{radioSourceLabel}</small>
           </div>
           <div className="field-radio-actions">
             <button type="button" onClick={onToggleRadio}>
@@ -114,6 +126,18 @@ export function HUD({
             <button type="button" onClick={onNextTrack} title="Next original track">
               Next
             </button>
+            <label className="field-radio-load" title="Load a legally obtained audio file from this device">
+              Load
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) onLoadLocalTrack(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
           </div>
         </div>
       </div>
@@ -122,8 +146,8 @@ export function HUD({
         <span><kbd>W/S</kbd> Drive</span>
         <span><kbd>A/D</kbd> Steer</span>
         <span><kbd>Mouse</kbd> Aim</span>
-        <span><kbd>Click</kbd> Fire</span>
-        <span><kbd>1/2/3</kbd> Weapons</span>
+        <span><kbd>Hold Click</kbd> Auto fire</span>
+        <span><kbd>1/2/3/4</kbd> Weapons</span>
         <span><kbd>X</kbd> Purge armed</span>
         <span><kbd>Esc</kbd> Disarm</span>
         <span><kbd>M</kbd> Radio</span>

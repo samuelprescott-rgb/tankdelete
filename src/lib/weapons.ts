@@ -1,10 +1,4 @@
-export type WeaponMode = 'cannon' | 'flamethrower' | 'napalm';
-
-export interface FlameBurst {
-  id: number;
-  origin: [number, number, number];
-  direction: [number, number, number];
-}
+export type WeaponMode = 'cannon' | 'machinegun' | 'flamethrower' | 'napalm';
 
 export interface NapalmStrike {
   id: number;
@@ -13,11 +7,16 @@ export interface NapalmStrike {
 
 export const WEAPON_LABELS: Record<WeaponMode, string> = {
   cannon: 'M41 Cannon',
+  machinegun: 'M37 Machine Gun',
   flamethrower: 'Flame Unit',
   napalm: 'Napalm Strike',
 };
 
 export const FLAMETHROWER_RANGE = 11;
 export const FLAMETHROWER_CONE_DOT = Math.cos(Math.PI / 7);
+export const FLAMETHROWER_CAPACITY_SECONDS = 4;
+export const FLAMETHROWER_RECHARGE_SECONDS = 5;
+export const FLAMETHROWER_HIT_INTERVAL = 0.12;
+export const MACHINE_GUN_FIRE_INTERVAL = 0.1;
 export const NAPALM_RADIUS = 7;
 export const NAPALM_COOLDOWN_SECONDS = 8;

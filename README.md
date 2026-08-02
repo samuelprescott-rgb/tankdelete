@@ -2,7 +2,7 @@
 
 Disclosure / Caution: This game was entirely created by Claude. This game is intended to be an entertaining way to delete files on your system. With that being said you are deleting files on your system so use with caution.
 
-Drive a tank through your filesystem in a Vietnam-era-inspired field-operations arena. Navigate tactical road grids, drive through tunnel portals to enter folders, and use the cannon, flamethrower attachment, or napalm support to clear files and free disk space.
+Drive a tank through your filesystem in a Vietnam-era-inspired field-operations arena. Navigate tactical road grids, drive through tunnel portals to enter folders, and use the cannon, machine gun, flamethrower attachment, or napalm support to clear files and free disk space.
 
 ![Arena view — files as glowing blocks on the road grid](screenshots/arena.png)
 
@@ -15,8 +15,8 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 | W / S | Drive forward / backward |
 | A / D | Rotate tank left / right |
 | Mouse | Aim turret |
-| Left Click | Fire selected weapon |
-| 1 / 2 / 3 | Select cannon / flamethrower / napalm |
+| Left Click / Hold | Fire; hold for automatic weapons |
+| 1 / 2 / 3 / 4 | Select cannon / machine gun / flamethrower / napalm |
 | X / Delete | Trash every armed target |
 | Escape | Disarm all targets |
 | M | Play or mute the field radio |
@@ -32,7 +32,8 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - **Back portal** takes you up one directory level
 - **First hit** arms a file; a later confirmed hit moves it to the operating system trash
 - **Cannon** fires a single long-range projectile
-- **Flamethrower attachment** sweeps up to six nearby files in a short cone
+- **M37 machine gun** fires ten rounds per second while the trigger is held
+- **Flamethrower attachment** projects a continuous cone for four seconds, then recharges over five seconds
 - **Napalm support** affects a larger ground radius and has an eight-second cooldown
 - **Score** tracks total megabytes freed (1 point per MB)
 - **Achievements** unlock at 100MB, 1GB, and 10GB milestones
@@ -40,8 +41,9 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 ## Features
 
 - `FIELD OPS // 1968` olive, amber, and canvas visual system
-- Animated flamethrower cone and napalm burn-zone effects
+- Continuous flamethrower stream, fuel/recharge meter, machine-gun tracers, and napalm burn-zone effects
 - Two original polyphonic field-radio tracks generated with the Web Audio API
+- Local field-radio loader for legally obtained audio files; recordings never enter the repository
 - Tactical tunnel portals for folder navigation
 - Voxel shatter explosions with category-colored particles
 - Scoring system and achievement toasts
@@ -49,7 +51,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Files are sent to your system trash (recoverable)
 - Cross-platform: macOS, Windows, Linux
 
-Commercial recordings and song melodies are intentionally not bundled. Licensed audio can be added later through a dedicated media pipeline without changing the gameplay code.
+Commercial recordings and song melodies are intentionally not bundled. Use the field radio's **Load** button to play a legally obtained local copy during a session; the selected file stays on the player's device and is not added to the game or repository.
 
 ## Download
 
@@ -77,6 +79,7 @@ bun run tauri build
 ## Safety
 
 - Every weapon preserves the two-stage mark/confirm deletion rule
+- Automatic fire can affect each target only once per trigger hold, so the player must release and fire again to confirm deletion
 - `Escape` disarms the target queue and Cmd/Ctrl+Z restores the last trash action
 - Files are moved to your system trash, not permanently deleted
 - System directories (`/System`, `C:\Windows`, `/usr`, etc.) are blocked

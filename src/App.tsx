@@ -20,7 +20,7 @@ import { Tank } from './components/Scene/Tank';
 import { CameraRig } from './components/Scene/CameraRig';
 import { Crosshair } from './components/Scene/Crosshair';
 import { useFileBlocks } from './hooks/useFileBlocks';
-import { useProjectilePool } from './hooks/useProjectilePool';
+import { Projectile, useProjectilePool } from './hooks/useProjectilePool';
 import { useMarkedFiles } from './hooks/useMarkedFiles';
 import { ProjectileManager } from './components/Scene/ProjectileManager';
 import { layoutFilesInGrid } from './lib/layout';
@@ -33,7 +33,6 @@ import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
 import {
-  FlameBurst,
   FLAMETHROWER_CONE_DOT,
   FLAMETHROWER_RANGE,
   NapalmStrike,
@@ -65,13 +64,14 @@ function App() {
   const [tankStartPosition, setTankStartPosition] = useState<[number, number, number]>([0, 0, -12]);
   const [isTraining, setIsTraining] = useState(false);
   const [weaponMode, setWeaponMode] = useState<WeaponMode>('cannon');
-  const [flameBursts, setFlameBursts] = useState<FlameBurst[]>([]);
+  const [flameFuel, setFlameFuel] = useState(1);
   const [napalmStrikes, setNapalmStrikes] = useState<NapalmStrike[]>([]);
   const [napalmCooldown, setNapalmCooldown] = useState(0);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
   const worldSessionRef = useRef(0);
+  const automaticHitTriggerByPathRef = useRef(new Map<string, number>());
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -173,8 +173,9 @@ function App() {
       }
 
       if (e.key === '1') setWeaponMode('cannon');
-      if (e.key === '2') setWeaponMode('flamethrower');
-      if (e.key === '3') setWeaponMode('napalm');
+      if (e.key === '2') setWeaponMode('machinegun');
+      if (e.key === '3') setWeaponMode('flamethrower');
+      if (e.key === '4') setWeaponMode('napalm');
       if (e.key === 'm' || e.key === 'M') fieldRadio.toggle();
     }
 
@@ -184,6 +185,7 @@ function App() {
 
   async function pickDirectory() {
     worldSessionRef.current += 1;
+    automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setIsTraining(false);
     setState('picking');
@@ -211,6 +213,7 @@ function App() {
 
   function startTraining() {
     worldSessionRef.current += 1;
+    automaticHitTriggerByPathRef.current.clear();
     setIsTraining(true);
     setCurrentDirectory(TRAINING_DIRECTORY);
     setLastDirectory(null);
@@ -219,7 +222,7 @@ function App() {
     setDeletedBytes(0);
     setTankStartPosition([0, 0, -12]);
     setWeaponMode('cannon');
-    setFlameBursts([]);
+    setFlameFuel(1);
     setNapalmStrikes([]);
     napalmReadyAtRef.current = 0;
     setNapalmCooldown(0);
@@ -253,6 +256,7 @@ function App() {
     if (!lastDirectory) return;
 
     worldSessionRef.current += 1;
+    automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setCurrentDirectory(lastDirectory);
     setLastDirectory(null);
@@ -262,10 +266,10 @@ function App() {
 
   function changeDirectory() {
     worldSessionRef.current += 1;
+    automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     fieldRadio.stop();
     setIsTraining(false);
-    setFlameBursts([]);
     setNapalmStrikes([]);
     setLastDirectory(null);
     setState('picking');
@@ -273,6 +277,7 @@ function App() {
 
   async function navigateToDirectory(dirPath: string) {
     worldSessionRef.current += 1;
+    automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setCurrentDirectory(dirPath);
     await commands.saveLastDirectory(dirPath);
@@ -334,17 +339,29 @@ function App() {
 
   // Shoot handler for Tank component
   function handleShoot(position: THREE.Vector3, direction: THREE.Vector3) {
-    spawn(position, direction);
+    spawn(position, direction, 'cannon');
   }
 
-  function handleFlamethrower(position: THREE.Vector3, direction: THREE.Vector3) {
+  function handleMachineGun(position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) {
+    spawn(position, direction, 'machinegun', triggerId);
+  }
+
+  function handleAutomaticHit(filePath: string, triggerId: number) {
+    if (automaticHitTriggerByPathRef.current.get(filePath) === triggerId) return;
+    automaticHitTriggerByPathRef.current.set(filePath, triggerId);
+    void handleProjectileHit(filePath);
+  }
+
+  function handleProjectileCollision(filePath: string, projectile: Projectile) {
+    if (projectile.kind === 'machinegun') {
+      handleAutomaticHit(filePath, projectile.triggerId);
+      return;
+    }
+    void handleProjectileHit(filePath);
+  }
+
+  function handleFlamethrower(position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) {
     const normalizedDirection = direction.clone().normalize();
-    const id = ordnanceIdRef.current++;
-    setFlameBursts(prev => [...prev, {
-      id,
-      origin: position.toArray(),
-      direction: normalizedDirection.toArray(),
-    }]);
 
     const targets = allBlocks
       .filter(block => !deletingFiles.has(block.path))
@@ -361,11 +378,9 @@ function App() {
 
     if (targets.length === 0) return;
 
-    void (async () => {
-      for (const { block } of targets) {
-        await handleProjectileHit(block.path);
-      }
-    })();
+    for (const { block } of targets) {
+      handleAutomaticHit(block.path, triggerId);
+    }
   }
 
   function handleNapalm(target: THREE.Vector3) {
@@ -410,10 +425,6 @@ function App() {
         }
       })();
     }, 350);
-  }
-
-  function handleFlameComplete(id: number) {
-    setFlameBursts(prev => prev.filter(burst => burst.id !== id));
   }
 
   function handleNapalmComplete(id: number) {
@@ -711,11 +722,14 @@ function App() {
         onClearMarked={clearMarked}
         weaponMode={weaponMode}
         onWeaponChange={setWeaponMode}
+        flameFuel={flameFuel}
         napalmCooldown={napalmCooldown}
         radioEnabled={fieldRadio.enabled}
         radioTrackName={fieldRadio.trackName}
         onToggleRadio={fieldRadio.toggle}
         onNextTrack={fieldRadio.nextTrack}
+        onLoadLocalTrack={fieldRadio.loadLocalTrack}
+        radioSourceLabel={fieldRadio.sourceLabel}
       />
 
       <Crosshair weaponMode={weaponMode} />
@@ -752,7 +766,9 @@ function App() {
             tankStateRef={tankStateRef}
             weaponMode={weaponMode}
             onShoot={handleShoot}
+            onMachineGun={handleMachineGun}
             onFlamethrower={handleFlamethrower}
+            onFlameFuelChange={setFlameFuel}
             onNapalm={handleNapalm}
           />
           <CameraRig tankRef={tankRef} />
@@ -768,7 +784,7 @@ function App() {
           <ProjectileManager
             pool={pool}
             despawn={despawn}
-            onHit={handleProjectileHit}
+            onHit={handleProjectileCollision}
             allBlocks={allBlocks}
           />
 
@@ -776,11 +792,9 @@ function App() {
             <ExplosionParticles explosions={explosions} onExplosionComplete={despawnExplosion} />
           )}
 
-          {(flameBursts.length > 0 || napalmStrikes.length > 0) && (
+          {napalmStrikes.length > 0 && (
             <OrdnanceEffects
-              flameBursts={flameBursts}
               napalmStrikes={napalmStrikes}
-              onFlameComplete={handleFlameComplete}
               onNapalmComplete={handleNapalmComplete}
             />
           )}

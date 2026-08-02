@@ -52,14 +52,17 @@ function playTone(
 export function useFieldRadio() {
   const [enabled, setEnabled] = useState(false);
   const [trackIndex, setTrackIndex] = useState(0);
+  const [localTrackName, setLocalTrackName] = useState<string | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const masterRef = useRef<GainNode | null>(null);
   const staticSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const intervalRef = useRef<number | null>(null);
   const stepRef = useRef(0);
   const trackIndexRef = useRef(0);
+  const localAudioRef = useRef<HTMLAudioElement | null>(null);
+  const localObjectUrlRef = useRef<string | null>(null);
 
-  const stop = useCallback(() => {
+  const stopProcedural = useCallback(() => {
     if (intervalRef.current !== null) {
       window.clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -68,12 +71,27 @@ export function useFieldRadio() {
     staticSourceRef.current = null;
     masterRef.current?.disconnect();
     masterRef.current = null;
-    contextRef.current?.close();
+    void contextRef.current?.close();
     contextRef.current = null;
-    setEnabled(false);
   }, []);
 
+  const stop = useCallback(() => {
+    stopProcedural();
+    localAudioRef.current?.pause();
+    setEnabled(false);
+  }, [stopProcedural]);
+
   const start = useCallback(async () => {
+    if (localAudioRef.current) {
+      try {
+        await localAudioRef.current.play();
+        setEnabled(true);
+      } catch {
+        setEnabled(false);
+      }
+      return;
+    }
+
     if (contextRef.current) return;
 
     const AudioContextClass = window.AudioContext
@@ -137,29 +155,61 @@ export function useFieldRadio() {
   }, []);
 
   const toggle = useCallback(() => {
-    if (contextRef.current) {
+    if (enabled) {
       stop();
     } else {
       void start();
     }
-  }, [start, stop]);
+  }, [enabled, start, stop]);
+
+  const loadLocalTrack = useCallback((file: File) => {
+    stopProcedural();
+    localAudioRef.current?.pause();
+    if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
+
+    const objectUrl = URL.createObjectURL(file);
+    const audio = new Audio(objectUrl);
+    audio.loop = true;
+    audio.volume = 0.38;
+    localObjectUrlRef.current = objectUrl;
+    localAudioRef.current = audio;
+    setLocalTrackName(file.name.replace(/\.[^.]+$/, ''));
+    setEnabled(true);
+    void audio.play().catch(() => setEnabled(false));
+  }, [stopProcedural]);
 
   const nextTrack = useCallback(() => {
+    const resumeAfterSwitch = enabled;
+    if (localAudioRef.current) {
+      localAudioRef.current.pause();
+      localAudioRef.current = null;
+      if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
+      localObjectUrlRef.current = null;
+      setLocalTrackName(null);
+    }
+
     setTrackIndex(prev => {
       const next = (prev + 1) % TRACKS.length;
       trackIndexRef.current = next;
       stepRef.current = 0;
       return next;
     });
-  }, []);
+    if (resumeAfterSwitch) void start();
+  }, [enabled, start]);
 
-  useEffect(() => stop, [stop]);
+  useEffect(() => () => {
+    stopProcedural();
+    localAudioRef.current?.pause();
+    if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
+  }, [stopProcedural]);
 
   return {
     enabled,
-    trackName: TRACKS[trackIndex].name,
+    trackName: localTrackName ?? TRACKS[trackIndex].name,
+    sourceLabel: localTrackName ? 'Local track · not bundled' : 'Original procedural transmission',
     toggle,
     nextTrack,
+    loadLocalTrack,
     stop,
   };
 }
