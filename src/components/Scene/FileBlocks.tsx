@@ -44,35 +44,112 @@ function createStructureGeometry(category: FileCategory) {
 
   const wood = '#59472d';
   const darkWood = '#33291d';
-  const thatch = '#756a3f';
+  const bamboo = '#8b7650';
+  const thatch = '#9a874c';
+  const dryThatch = '#b5a365';
   const earth = '#51452f';
   const accent = STRUCTURE_ACCENTS[category];
 
+  const addThatchedRoof = (width: number, depth: number, eaveY: number, rise: number) => {
+    const halfSpan = width * 0.5 + 0.18;
+    const roofDepth = depth + 0.42;
+    const slopeLength = Math.hypot(halfSpan, rise);
+    const slopeAngle = Math.atan2(rise, halfSpan);
+
+    [-1, 1].forEach((side) => {
+      addPart(
+        new THREE.BoxGeometry(slopeLength, 0.12, roofDepth),
+        side < 0 ? thatch : dryThatch,
+        [side * halfSpan * 0.5, eaveY + rise * 0.5, 0],
+        [0, 0, side < 0 ? slopeAngle : -slopeAngle],
+      );
+      addPart(
+        new THREE.BoxGeometry(slopeLength * 0.94, 0.035, roofDepth + 0.035),
+        '#6e633c',
+        [side * halfSpan * 0.49, eaveY + rise * 0.48 - 0.055, 0],
+        [0, 0, side < 0 ? slopeAngle : -slopeAngle],
+      );
+    });
+
+    addPart(
+      new THREE.CylinderGeometry(0.065, 0.075, roofDepth + 0.14, 8),
+      '#c0ad69',
+      [0, eaveY + rise + 0.035, 0],
+      [Math.PI / 2, 0, 0],
+    );
+
+    for (let fringe = 0; fringe < 7; fringe += 1) {
+      const z = -roofDepth * 0.42 + fringe * roofDepth * 0.14;
+      [-1, 1].forEach((side) => {
+        addPart(
+          new THREE.CylinderGeometry(0.012, 0.02, 0.18 + (fringe % 2) * 0.045, 5),
+          fringe % 2 === 0 ? dryThatch : thatch,
+          [side * halfSpan, eaveY - 0.07, z],
+          [0, 0, (side * Math.PI) / 18],
+        );
+      });
+    }
+  };
+
+  const addStiltHut = (width: number, depth: number, wallHeight: number, roofRise: number) => {
+    const wallBase = -0.08;
+    const wallCenter = wallBase + wallHeight * 0.5;
+    const eaveY = wallBase + wallHeight + 0.08;
+
+    addPart(new THREE.BoxGeometry(width + 0.18, 0.12, depth + 0.22), darkWood, [0, wallBase - 0.09, 0]);
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([xSide, zSide]) => {
+      addPart(
+        new THREE.CylinderGeometry(0.045, 0.065, 0.54, 6),
+        darkWood,
+        [xSide * width * 0.4, wallBase - 0.34, zSide * depth * 0.38],
+      );
+    });
+    addPart(new THREE.BoxGeometry(width, wallHeight, depth), bamboo, [0, wallCenter, 0]);
+
+    for (let slat = -2; slat <= 2; slat += 1) {
+      addPart(
+        new THREE.BoxGeometry(width * 0.9, 0.025, 0.018),
+        slat % 2 === 0 ? '#6b5738' : '#a08a5b',
+        [0, wallCenter + slat * wallHeight * 0.085, -(depth * 0.5 + 0.012)],
+      );
+    }
+    [-1, 1].forEach((side) => {
+      addPart(
+        new THREE.BoxGeometry(0.025, wallHeight * 0.92, 0.025),
+        wood,
+        [side * width * 0.43, wallCenter, -(depth * 0.5 + 0.025)],
+      );
+    });
+
+    addPart(new THREE.BoxGeometry(width * 0.24, wallHeight * 0.72, 0.04), darkWood, [0, wallBase + wallHeight * 0.36, -(depth * 0.5 + 0.035)]);
+    [-0.31, 0.31].forEach((x) => {
+      addPart(new THREE.BoxGeometry(width * 0.16, wallHeight * 0.24, 0.045), accent, [x * width, wallCenter + wallHeight * 0.08, -(depth * 0.5 + 0.04)]);
+      addPart(new THREE.BoxGeometry(width * 0.18, 0.028, 0.055), darkWood, [x * width, wallCenter + wallHeight * 0.08, -(depth * 0.5 + 0.065)]);
+    });
+
+    addThatchedRoof(width, depth, eaveY, roofRise);
+  };
+
   if (category === 'media') {
-    addPart(new THREE.BoxGeometry(1.45, 0.62, 0.92), wood, [0, -0.08, 0]);
-    addPart(new THREE.ConeGeometry(0.95, 0.52, 4), thatch, [0, 0.49, 0], [0, Math.PI / 4, 0], [1.36, 1, 1]);
-    [[-0.52, -0.47], [0.52, -0.47], [-0.52, 0.47], [0.52, 0.47]].forEach(([x, z]) => {
-      addPart(new THREE.CylinderGeometry(0.045, 0.06, 0.42, 6), darkWood, [x, -0.47, z]);
+    addStiltHut(1.5, 1.0, 0.62, 0.46);
+    addPart(new THREE.BoxGeometry(1.05, 0.08, 0.34), wood, [0, -0.12, -0.66]);
+    [-0.32, 0, 0.32].forEach((x) => {
+      addPart(new THREE.BoxGeometry(0.26, 0.035, 0.08), dryThatch, [x, 0.63, -0.71]);
     });
-    addPart(new THREE.BoxGeometry(0.28, 0.42, 0.035), accent, [0, -0.12, -0.48]);
   } else if (category === 'code') {
-    addPart(new THREE.BoxGeometry(0.9, 0.82, 0.82), wood, [0, -0.02, 0]);
-    addPart(new THREE.ConeGeometry(0.72, 0.5, 4), thatch, [0, 0.63, 0], [0, Math.PI / 4, 0]);
-    addPart(new THREE.CylinderGeometry(0.025, 0.035, 1.55, 6), accent, [0.27, 1.18, 0.12]);
-    addPart(new THREE.SphereGeometry(0.09, 6, 4), accent, [0.27, 1.97, 0.12]);
-    addPart(new THREE.BoxGeometry(0.24, 0.4, 0.035), darkWood, [0, -0.12, -0.43]);
+    addStiltHut(1.06, 0.9, 0.72, 0.5);
+    addPart(new THREE.CylinderGeometry(0.018, 0.026, 0.94, 6), accent, [0.32, 1.25, 0.18]);
+    addPart(new THREE.SphereGeometry(0.06, 6, 4), accent, [0.32, 1.73, 0.18]);
   } else if (category === 'archive') {
-    addPart(new THREE.BoxGeometry(1.25, 0.55, 1.0), earth, [0, -0.19, 0]);
-    addPart(new THREE.BoxGeometry(1.42, 0.18, 1.14), thatch, [0, 0.18, 0]);
-    [-0.52, 0, 0.52].forEach(x => {
-      addPart(new THREE.CylinderGeometry(0.11, 0.11, 0.92, 7), '#76684a', [x, -0.36, -0.56], [0, 0, Math.PI / 2]);
+    addStiltHut(1.42, 1.08, 0.55, 0.4);
+    [-0.46, 0, 0.46].forEach((x) => {
+      addPart(new THREE.CylinderGeometry(0.09, 0.1, 0.74, 7), earth, [x, -0.34, -0.68], [0, 0, Math.PI / 2]);
     });
-    addPart(new THREE.BoxGeometry(0.34, 0.38, 0.05), accent, [0, -0.18, -0.53]);
   } else {
-    addPart(new THREE.BoxGeometry(1.0, 0.7, 0.9), wood, [0, -0.11, 0]);
-    addPart(new THREE.ConeGeometry(0.82, 0.52, 4), thatch, [0, 0.47, 0], [0, Math.PI / 4, 0]);
-    addPart(new THREE.BoxGeometry(0.25, 0.42, 0.035), darkWood, [0, -0.17, -0.47]);
-    addPart(new THREE.BoxGeometry(0.18, 0.18, 0.035), accent, [0.3, 0.03, -0.47]);
+    addStiltHut(1.18, 0.96, 0.64, 0.44);
+    for (let rung = 0; rung < 3; rung += 1) {
+      addPart(new THREE.BoxGeometry(0.28, 0.03, 0.04), wood, [0, -0.22 - rung * 0.12, -0.58]);
+    }
   }
 
   const merged = mergeGeometries(parts, false);
@@ -229,6 +306,8 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
       <instancedMesh
         ref={meshRef}
         args={[geometry, undefined, blocks.length]}
+        castShadow
+        receiveShadow
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
       >
@@ -246,7 +325,7 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
       {mergedWireframe && (
         <group ref={groupRef}>
           <lineSegments geometry={mergedWireframe}>
-            <lineBasicMaterial color={categoryColor} toneMapped={false} />
+            <lineBasicMaterial color={categoryColor} transparent opacity={0.56} toneMapped={false} />
           </lineSegments>
         </group>
       )}

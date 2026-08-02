@@ -205,54 +205,228 @@ function GroundPatches() {
   );
 }
 
-function JunglePerimeter() {
-  const trunksRef = useRef<THREE.InstancedMesh>(null);
-  const canopyRef = useRef<THREE.InstancedMesh>(null);
+function createPalmCrownGeometry() {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const heartColor = new THREE.Color('#56733a');
+  const tipColor = new THREE.Color('#243f24');
+
+  const push = (x: number, y: number, z: number, color: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(color.r, color.g, color.b);
+  };
+
+  for (let frond = 0; frond < 10; frond += 1) {
+    const angle = (frond / 10) * Math.PI * 2;
+    const sideX = Math.cos(angle + Math.PI * 0.5);
+    const sideZ = Math.sin(angle + Math.PI * 0.5);
+    const midX = Math.cos(angle) * 1.25;
+    const midZ = Math.sin(angle) * 1.25;
+    const tipX = Math.cos(angle) * (2.5 + (frond % 3) * 0.16);
+    const tipZ = Math.sin(angle) * (2.5 + (frond % 3) * 0.16);
+    const width = 0.28;
+
+    push(0, 0.08, 0, heartColor);
+    push(midX + sideX * width, 0.08, midZ + sideZ * width, heartColor);
+    push(tipX, -0.55 - (frond % 2) * 0.12, tipZ, tipColor);
+    push(0, 0.08, 0, heartColor);
+    push(tipX, -0.55 - (frond % 2) * 0.12, tipZ, tipColor);
+    push(midX - sideX * width, 0.08, midZ - sideZ * width, heartColor);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function LayeredJungle() {
+  const broadTrunksRef = useRef<THREE.InstancedMesh>(null);
+  const broadCanopyRef = useRef<THREE.InstancedMesh>(null);
+  const palmTrunksRef = useRef<THREE.InstancedMesh>(null);
+  const palmCrownsRef = useRef<THREE.InstancedMesh>(null);
+  const vinesRef = useRef<THREE.InstancedMesh>(null);
+  const understoryStemsRef = useRef<THREE.InstancedMesh>(null);
+  const understoryLeavesRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const trees = useMemo(() => Array.from({ length: 76 }, (_, index) => {
-    const angle = (index / 76) * Math.PI * 2 + seeded(index, 10) * 0.12;
-    const radius = 67 + seeded(index, 11) * 24;
-    const height = 5.5 + seeded(index, 12) * 7;
-    return {
-      x: Math.cos(angle) * radius,
-      z: Math.sin(angle) * radius,
-      height,
-      crown: 2.8 + seeded(index, 13) * 3.4,
-      lean: (seeded(index, 14) - 0.5) * 0.11,
-    };
-  }), []);
+  const palmGeometry = useMemo(() => createPalmCrownGeometry(), []);
+  const trees = useMemo(() => {
+    const placements: Array<{
+      x: number;
+      z: number;
+      height: number;
+      crown: number;
+      lean: number;
+      rotation: number;
+      palm: boolean;
+    }> = [];
+
+    for (let index = 0; index < 112; index += 1) {
+      const angle = (index / 112) * Math.PI * 2 + seeded(index, 10) * 0.1;
+      const radius = 55 + seeded(index, 11) * 31;
+      placements.push({
+        x: Math.cos(angle) * radius,
+        z: Math.sin(angle) * radius,
+        height: 5.8 + seeded(index, 12) * 8.8,
+        crown: 1.05 + seeded(index, 13) * 0.7,
+        lean: (seeded(index, 14) - 0.5) * 0.12,
+        rotation: seeded(index, 15) * Math.PI,
+        palm: seeded(index, 16) > 0.56,
+      });
+    }
+
+    let candidate = 0;
+    while (placements.length < 208 && candidate < 3000) {
+      const x = (seeded(candidate, 20) - 0.5) * 124;
+      const z = (seeded(candidate, 21) - 0.5) * 116;
+      candidate += 1;
+      if (distanceToRoad(x) < 2.45 || distanceToRoad(z) < 2.45) continue;
+      if (Math.abs(x) < 12 && z > -22 && z < 18) continue;
+      if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
+
+      placements.push({
+        x,
+        z,
+        height: 4.8 + seeded(candidate, 22) * 7.5,
+        crown: 0.88 + seeded(candidate, 23) * 0.62,
+        lean: (seeded(candidate, 24) - 0.5) * 0.16,
+        rotation: seeded(candidate, 25) * Math.PI,
+        palm: seeded(candidate, 26) > 0.64,
+      });
+    }
+
+    return placements;
+  }, []);
+  const broadleafTrees = useMemo(() => trees.filter(tree => !tree.palm), [trees]);
+  const palmTrees = useMemo(() => trees.filter(tree => tree.palm), [trees]);
+  const vineTrees = useMemo(() => broadleafTrees.filter((_, index) => index % 3 === 0), [broadleafTrees]);
+  const understory = useMemo(() => {
+    const placements: Array<{ x: number; z: number; height: number; scale: number; rotation: number }> = [];
+    let candidate = 0;
+    while (placements.length < 118 && candidate < 3000) {
+      const x = (seeded(candidate, 201) - 0.5) * 122;
+      const z = (seeded(candidate, 202) - 0.5) * 108;
+      candidate += 1;
+      if (distanceToRoad(x) < 2.05 || distanceToRoad(z) < 2.05) continue;
+      if (Math.abs(x) < 8 && z > -20 && z < 12) continue;
+      if (Math.abs(x) < 22 && z > 7 && z < 26) continue;
+      if (PADDY_POSITIONS.some(([paddyX, paddyZ]) => Math.abs(x - paddyX) < 2.75 && Math.abs(z - paddyZ) < 2.75)) continue;
+      placements.push({
+        x,
+        z,
+        height: 1.1 + seeded(candidate, 203) * 1.2,
+        scale: 0.34 + seeded(candidate, 204) * 0.28,
+        rotation: seeded(candidate, 205) * Math.PI,
+      });
+    }
+    return placements;
+  }, []);
 
   useFrame(({ clock }) => {
-    if (!trunksRef.current || !canopyRef.current) return;
-    const sway = Math.sin(clock.elapsedTime * 0.33) * 0.025;
+    if (!broadTrunksRef.current || !broadCanopyRef.current || !palmTrunksRef.current || !palmCrownsRef.current || !vinesRef.current || !understoryStemsRef.current || !understoryLeavesRef.current) return;
+    const sway = Math.sin(clock.elapsedTime * 0.38) * 0.022;
 
-    trees.forEach((tree, index) => {
+    broadleafTrees.forEach((tree, index) => {
       dummy.position.set(tree.x, tree.height * 0.5, tree.z);
-      dummy.rotation.set(tree.lean, 0, tree.lean * 0.6);
-      dummy.scale.set(0.65, tree.height, 0.65);
+      dummy.rotation.set(tree.lean, tree.rotation, tree.lean * 0.55);
+      dummy.scale.set(0.34 + tree.crown * 0.08, tree.height, 0.34 + tree.crown * 0.08);
       dummy.updateMatrix();
-      trunksRef.current!.setMatrixAt(index, dummy.matrix);
+      broadTrunksRef.current!.setMatrixAt(index, dummy.matrix);
 
-      dummy.position.set(tree.x, tree.height + tree.crown * 0.18, tree.z);
-      dummy.rotation.set(sway * (index % 3), seeded(index, 15) * Math.PI, -sway);
-      dummy.scale.set(tree.crown * 1.25, tree.crown * 0.82, tree.crown);
-      dummy.updateMatrix();
-      canopyRef.current!.setMatrixAt(index, dummy.matrix);
+      for (let lobe = 0; lobe < 3; lobe += 1) {
+        const lobeIndex = index * 3 + lobe;
+        const angle = tree.rotation + lobe * Math.PI * 2 / 3;
+        dummy.position.set(
+          tree.x + Math.cos(angle) * tree.crown * 0.7,
+          tree.height + (lobe === 0 ? tree.crown * 0.55 : 0),
+          tree.z + Math.sin(angle) * tree.crown * 0.7,
+        );
+        dummy.rotation.set(sway * (lobe + 1), angle, -sway * 0.65);
+        dummy.scale.set(tree.crown * 1.75, tree.crown * (lobe === 0 ? 1.25 : 1.05), tree.crown * 1.5);
+        dummy.updateMatrix();
+        broadCanopyRef.current!.setMatrixAt(lobeIndex, dummy.matrix);
+      }
     });
 
-    trunksRef.current.instanceMatrix.needsUpdate = true;
-    canopyRef.current.instanceMatrix.needsUpdate = true;
+    palmTrees.forEach((tree, index) => {
+      dummy.position.set(tree.x, tree.height * 0.5, tree.z);
+      dummy.rotation.set(tree.lean, tree.rotation, tree.lean * 0.5);
+      dummy.scale.set(0.27, tree.height, 0.27);
+      dummy.updateMatrix();
+      palmTrunksRef.current!.setMatrixAt(index, dummy.matrix);
+
+      dummy.position.set(tree.x, tree.height, tree.z);
+      dummy.rotation.set(sway, tree.rotation + sway, -sway * 0.7);
+      dummy.scale.set(tree.crown, tree.crown, tree.crown);
+      dummy.updateMatrix();
+      palmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    vineTrees.forEach((tree, index) => {
+      const vineLength = 1.4 + seeded(index, 33) * 2.8;
+      dummy.position.set(
+        tree.x + (seeded(index, 34) - 0.5) * tree.crown * 1.7,
+        tree.height - vineLength * 0.22,
+        tree.z + (seeded(index, 35) - 0.5) * tree.crown * 1.7,
+      );
+      dummy.rotation.set(sway * 0.7, seeded(index, 36) * Math.PI, sway);
+      dummy.scale.set(0.028, vineLength, 0.028);
+      dummy.updateMatrix();
+      vinesRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    understory.forEach((plant, index) => {
+      dummy.position.set(plant.x, plant.height * 0.5, plant.z);
+      dummy.rotation.set(0, plant.rotation, 0);
+      dummy.scale.set(0.09, plant.height, 0.09);
+      dummy.updateMatrix();
+      understoryStemsRef.current!.setMatrixAt(index, dummy.matrix);
+
+      dummy.position.set(plant.x, plant.height, plant.z);
+      dummy.rotation.set(sway * 1.8, plant.rotation + sway, -sway);
+      dummy.scale.set(plant.scale, plant.scale * 0.72, plant.scale);
+      dummy.updateMatrix();
+      understoryLeavesRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    broadTrunksRef.current.instanceMatrix.needsUpdate = true;
+    broadCanopyRef.current.instanceMatrix.needsUpdate = true;
+    palmTrunksRef.current.instanceMatrix.needsUpdate = true;
+    palmCrownsRef.current.instanceMatrix.needsUpdate = true;
+    vinesRef.current.instanceMatrix.needsUpdate = true;
+    understoryStemsRef.current.instanceMatrix.needsUpdate = true;
+    understoryLeavesRef.current.instanceMatrix.needsUpdate = true;
   });
 
   return (
     <>
-      <instancedMesh ref={trunksRef} args={[undefined, undefined, trees.length]}>
-        <cylinderGeometry args={[0.18, 0.34, 1, 5]} />
-        <meshStandardMaterial color="#403b22" roughness={1} />
+      <instancedMesh ref={broadTrunksRef} args={[undefined, undefined, broadleafTrees.length]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.28, 0.48, 1, 7]} />
+        <meshStandardMaterial color="#463b27" roughness={1} />
       </instancedMesh>
-      <instancedMesh ref={canopyRef} args={[undefined, undefined, trees.length]}>
-        <dodecahedronGeometry args={[1, 0]} />
-        <meshStandardMaterial color="#1d351c" emissive="#0e190d" emissiveIntensity={0.26} roughness={1} />
+      <instancedMesh ref={broadCanopyRef} args={[undefined, undefined, broadleafTrees.length * 3]} castShadow receiveShadow>
+        <icosahedronGeometry args={[1, 1]} />
+        <meshStandardMaterial color="#244525" emissive="#132713" emissiveIntensity={0.12} roughness={1} flatShading />
+      </instancedMesh>
+      <instancedMesh ref={palmTrunksRef} args={[undefined, undefined, palmTrees.length]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.24, 0.42, 1, 8]} />
+        <meshStandardMaterial color="#66583a" roughness={0.98} />
+      </instancedMesh>
+      <instancedMesh ref={palmCrownsRef} args={[palmGeometry, undefined, palmTrees.length]} castShadow>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.96} />
+      </instancedMesh>
+      <instancedMesh ref={vinesRef} args={[undefined, undefined, vineTrees.length]} castShadow>
+        <cylinderGeometry args={[1, 1.25, 1, 5]} />
+        <meshStandardMaterial color="#38552c" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={understoryStemsRef} args={[undefined, undefined, understory.length]} castShadow>
+        <cylinderGeometry args={[0.6, 1, 1, 6]} />
+        <meshStandardMaterial color="#50613b" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={understoryLeavesRef} args={[palmGeometry, undefined, understory.length]} castShadow>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.98} />
       </instancedMesh>
     </>
   );
@@ -402,6 +576,89 @@ function DistantHelicopter() {
   );
 }
 
+const PADDY_POSITIONS: Array<[number, number]> = [
+  [-4, -4],
+  [4, -4],
+  [-4, 4],
+  [4, 4],
+  [-12, -12],
+  [12, -12],
+  [-20, 4],
+  [20, 4],
+];
+
+function RicePaddies() {
+  const riceRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riceGeometry = useMemo(() => createGrassClumpGeometry(), []);
+  const seedlings = useMemo(() => PADDY_POSITIONS.flatMap(([paddyX, paddyZ], paddyIndex) => (
+    Array.from({ length: 36 }, (_, seedlingIndex) => {
+      const row = Math.floor(seedlingIndex / 6);
+      const column = seedlingIndex % 6;
+      return {
+        x: paddyX - 1.75 + column * 0.7 + (seeded(seedlingIndex, 150 + paddyIndex) - 0.5) * 0.1,
+        z: paddyZ - 1.75 + row * 0.7 + (seeded(seedlingIndex, 160 + paddyIndex) - 0.5) * 0.1,
+        rotation: seeded(seedlingIndex, 170 + paddyIndex) * Math.PI,
+        scale: 0.19 + seeded(seedlingIndex, 180 + paddyIndex) * 0.05,
+      };
+    })
+  )), []);
+
+  useEffect(() => {
+    if (!riceRef.current) return;
+    seedlings.forEach((seedling, index) => {
+      dummy.position.set(seedling.x, 0.015, seedling.z);
+      dummy.rotation.set(0, seedling.rotation, 0);
+      dummy.scale.set(seedling.scale, seedling.scale * 1.25, seedling.scale);
+      dummy.updateMatrix();
+      riceRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    riceRef.current.instanceMatrix.needsUpdate = true;
+  }, [dummy, seedlings]);
+
+  return (
+    <>
+      {PADDY_POSITIONS.map(([x, z], paddyIndex) => (
+        <group key={`${x}-${z}`} position={[x, 0, z]} rotation={[0, (paddyIndex % 3 - 1) * 0.018, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.018, 0]} receiveShadow>
+            <planeGeometry args={[4.55, 4.55, 1, 1]} />
+            <meshPhysicalMaterial
+              color="#4f6658"
+              emissive="#1b2821"
+              emissiveIntensity={0.12}
+              metalness={0.34}
+              roughness={0.18}
+              clearcoat={0.62}
+              clearcoatRoughness={0.18}
+              transparent
+              opacity={0.82}
+            />
+          </mesh>
+          {[-2.42, 2.42].map((edgeX) => (
+            <mesh key={`x-${edgeX}`} position={[edgeX, 0.07, 0]} castShadow receiveShadow>
+              <boxGeometry args={[0.32, 0.22, 5.18]} />
+              <meshStandardMaterial color="#665633" roughness={1} />
+            </mesh>
+          ))}
+          {[-2.42, 2.42].map((edgeZ) => (
+            <mesh key={`z-${edgeZ}`} position={[0, 0.07, edgeZ]} castShadow receiveShadow>
+              <boxGeometry args={[5.18, 0.22, 0.32]} />
+              <meshStandardMaterial color="#71613b" roughness={1} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.09, 0]} castShadow receiveShadow>
+            <boxGeometry args={[0.16, 0.15, 4.72]} />
+            <meshStandardMaterial color="#5f5132" roughness={1} />
+          </mesh>
+        </group>
+      ))}
+      <instancedMesh ref={riceRef} args={[riceGeometry, undefined, seedlings.length]} castShadow={false} receiveShadow={false}>
+        <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.92} emissive="#263c1d" emissiveIntensity={0.12} />
+      </instancedMesh>
+    </>
+  );
+}
+
 function MudAndPuddles() {
   const puddles = useMemo(() => Array.from({ length: 18 }, (_, index) => ({
     x: (Math.floor(seeded(index, 40) * 11) - 5) * ROAD_GRID_SPACING + (seeded(index, 41) - 0.5) * 2.5,
@@ -437,9 +694,10 @@ export function VietnamEnvironment() {
     <>
       <MudAndPuddles />
       <GroundPatches />
+      <RicePaddies />
       <TerrainRelief />
       <ElephantGrass />
-      <JunglePerimeter />
+      <LayeredJungle />
       <SmokeColumns />
       <FieldFortifications />
       <DistantHelicopter />

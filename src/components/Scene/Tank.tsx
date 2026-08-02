@@ -70,6 +70,19 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const tempWorldDir = useMemo(() => new THREE.Vector3(), []);
   const nextPosition = useMemo(() => new THREE.Vector3(), []);
   const slidePosition = useMemo(() => new THREE.Vector3(), []);
+  const usStarShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    for (let point = 0; point < 10; point += 1) {
+      const angle = Math.PI * 0.5 + point * Math.PI / 5;
+      const radius = point % 2 === 0 ? 1 : 0.42;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      if (point === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    }
+    shape.closePath();
+    return shape;
+  }, []);
 
   // Get keyboard controls (use transient reads with get() to avoid re-renders)
   const [, get] = useKeyboardControls<Controls>();
@@ -400,6 +413,14 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
         <cylinderGeometry args={[0.085, 0.085, 0.08, 10]} />
         <meshStandardMaterial color="#d6c98a" emissive="#cabd73" emissiveIntensity={0.28} />
       </mesh>
+      <mesh position={[0, 0.51, -1.165]} scale={0.115}>
+        <shapeGeometry args={[usStarShape]} />
+        <meshBasicMaterial color="#ded8b6" side={THREE.DoubleSide} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0.38, 1.115]} scale={0.09}>
+        <shapeGeometry args={[usStarShape]} />
+        <meshBasicMaterial color="#cfc8a5" side={THREE.DoubleSide} toneMapped={false} />
+      </mesh>
       {[-0.34, 0, 0.34].map((x) => (
         <mesh key={x} position={[x, 0.59, 0.58]} rotation={[-Math.PI / 2, 0, 0]}>
           <boxGeometry args={[0.23, 0.05, 0.33]} />
@@ -531,33 +552,65 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
           </group>
         </group>
 
-        {/* Commander/gunner seated behind the pintle mount. */}
-        <group ref={gunnerRef} position={[0.18, 0.64, 0.34]}>
-          <mesh position={[0, 0.04, 0]} scale={[0.24, 0.32, 0.18]} castShadow>
+        {/* Low-profile commander's cupola and open hatch anchor the gunner to the turret. */}
+        <mesh position={[0.18, 0.4, 0.33]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <torusGeometry args={[0.21, 0.045, 8, 18]} />
+          <meshStandardMaterial color="#313c2d" metalness={0.24} roughness={0.78} />
+        </mesh>
+        <mesh position={[0.18, 0.43, 0.53]} rotation={[Math.PI / 2.08, 0, 0]} castShadow>
+          <cylinderGeometry args={[0.17, 0.17, 0.05, 16]} />
+          <meshStandardMaterial color="#303b2d" metalness={0.24} roughness={0.84} />
+        </mesh>
+
+        {/* Correctly scaled U.S. crewman, half-emerged from the cupola in CVC gear. */}
+        <group ref={gunnerRef} position={[0.18, 0.36, 0.33]}>
+          <mesh position={[0, 0.1, 0]} scale={[0.16, 0.2, 0.13]} castShadow>
             <dodecahedronGeometry args={[1, 0]} />
-            <meshStandardMaterial color="#405437" roughness={0.94} />
+            <meshStandardMaterial color="#415337" roughness={0.96} />
           </mesh>
-          <mesh position={[0, 0.35, -0.03]} castShadow>
-            <sphereGeometry args={[0.15, 12, 8]} />
-            <meshStandardMaterial color="#8d6848" roughness={0.98} />
+          <mesh position={[-0.07, 0.14, -0.125]} rotation={[0.08, 0, -0.12]}>
+            <boxGeometry args={[0.025, 0.27, 0.018]} />
+            <meshStandardMaterial color="#8b8260" roughness={0.9} />
           </mesh>
-          <mesh position={[0, 0.43, -0.02]} scale={[1.18, 0.45, 1.16]} castShadow>
-            <sphereGeometry args={[0.17, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
-            <meshStandardMaterial color="#52613d" roughness={0.9} />
+          <mesh position={[0.07, 0.14, -0.125]} rotation={[0.08, 0, 0.12]}>
+            <boxGeometry args={[0.025, 0.27, 0.018]} />
+            <meshStandardMaterial color="#8b8260" roughness={0.9} />
           </mesh>
-          <mesh position={[0.03, 0.37, -0.16]} rotation={[0.1, 0, 0]}>
-            <boxGeometry args={[0.22, 0.045, 0.08]} />
-            <meshStandardMaterial color="#252d24" roughness={0.72} />
+          <mesh position={[0, 0.26, -0.01]} castShadow>
+            <cylinderGeometry args={[0.055, 0.065, 0.1, 8]} />
+            <meshStandardMaterial color="#835f43" roughness={1} />
           </mesh>
-          {[-0.13, 0.13].map((x) => (
-            <group key={x} position={[x, 0.12, -0.13]} rotation={[-0.72, 0, x < 0 ? -0.18 : 0.18]}>
+          <mesh position={[0, 0.36, -0.02]} castShadow>
+            <sphereGeometry args={[0.105, 12, 9]} />
+            <meshStandardMaterial color="#8a6548" roughness={1} />
+          </mesh>
+          <mesh position={[0, 0.43, -0.005]} scale={[1.16, 0.52, 1.12]} castShadow>
+            <sphereGeometry args={[0.13, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.66]} />
+            <meshStandardMaterial color="#4f5d3d" roughness={0.92} />
+          </mesh>
+          {[-0.11, 0.11].map((x) => (
+            <mesh key={`earcup-${x}`} position={[x, 0.37, -0.005]} scale={[0.42, 0.7, 0.32]} castShadow>
+              <sphereGeometry args={[0.085, 8, 6]} />
+              <meshStandardMaterial color="#30392d" roughness={0.88} />
+            </mesh>
+          ))}
+          <mesh position={[0.105, 0.33, -0.075]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.008, 0.008, 0.13, 6]} />
+            <meshStandardMaterial color="#202620" metalness={0.35} roughness={0.65} />
+          </mesh>
+          <mesh position={[0.055, 0.32, -0.13]}>
+            <sphereGeometry args={[0.014, 6, 4]} />
+            <meshBasicMaterial color="#181c18" />
+          </mesh>
+          {[-0.105, 0.115].map((x) => (
+            <group key={`arm-${x}`} position={[x, 0.17, -0.05]} rotation={[0.92, 0, x < 0 ? -0.22 : 0.2]}>
               <mesh position={[0, -0.12, 0]} castShadow>
-                <cylinderGeometry args={[0.055, 0.065, 0.34, 8]} />
-                <meshStandardMaterial color="#61724a" roughness={0.92} />
+                <cylinderGeometry args={[0.038, 0.047, 0.28, 8]} />
+                <meshStandardMaterial color="#506443" roughness={0.96} />
               </mesh>
-              <mesh position={[0, -0.31, -0.01]}>
-                <sphereGeometry args={[0.065, 8, 6]} />
-                <meshStandardMaterial color="#8d6848" roughness={1} />
+              <mesh position={[0, -0.27, -0.01]}>
+                <sphereGeometry args={[0.043, 8, 6]} />
+                <meshStandardMaterial color="#8a6548" roughness={1} />
               </mesh>
             </group>
           ))}
