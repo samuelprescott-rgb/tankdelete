@@ -44,6 +44,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Mud road grid, mottled ground cover, relief mounds, reflective puddles, blade-built elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
 - File targets rendered as huts, longhouses, bunkers, and radio structures while retaining category-colored outlines and labels
 - Continuous flamethrower stream, fuel/recharge meter, glowing high-visibility tracer streaks, and a small F-4 Phantom-inspired flyover that releases each napalm strike before impact
+- Integrated cannon, M37 burst, flamethrower, napalm-impact, engine-loop, and gear-shift sound effects
 - Two original polyphonic field-radio tracks generated with the Web Audio API
 - Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
 - Tactical tunnel portals for folder navigation

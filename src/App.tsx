@@ -31,6 +31,7 @@ import { useExplosionPool } from './hooks/useExplosionPool';
 import { ExplosionParticles } from './components/Scene/ExplosionParticles';
 import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
+import { useGameAudio } from './hooks/useGameAudio';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
 import {
   FLAMETHROWER_CONE_DOT,
@@ -103,6 +104,11 @@ function App() {
   useAchievements(totalBytesFreed);
   const { explosions, spawn: spawnExplosion, despawn: despawnExplosion } = useExplosionPool();
   const fieldRadio = useFieldRadio();
+  const gameAudio = useGameAudio();
+
+  useEffect(() => {
+    if (state !== 'ready') gameAudio.stopAllLoops();
+  }, [state, gameAudio.stopAllLoops]);
 
   // File block mesh refs for hit detection (populated by FileBlocks component)
   const fileBlockRefsRef = useRef<React.RefObject<THREE.InstancedMesh | null>[]>([]);
@@ -341,6 +347,7 @@ function App() {
 
   // Shoot handler for Tank component
   function handleShoot(position: THREE.Vector3, direction: THREE.Vector3) {
+    gameAudio.playCannon();
     spawn(position, direction, 'cannon');
   }
 
@@ -430,6 +437,8 @@ function App() {
 
     window.setTimeout(() => {
       if (worldSessionRef.current !== strikeSession) return;
+
+      gameAudio.playNapalmImpact();
 
       toast(
         targets.length > 0
@@ -789,6 +798,9 @@ function App() {
             onFlamethrower={handleFlamethrower}
             onFlameFuelChange={setFlameFuel}
             onNapalm={handleNapalm}
+            onMachineGunAudioChange={gameAudio.setMachineGunActive}
+            onFlamethrowerAudioChange={gameAudio.setFlamethrowerActive}
+            onMovementAudioChange={gameAudio.setMovementActive}
           />
           <CameraRig tankRef={tankRef} />
 

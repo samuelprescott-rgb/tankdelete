@@ -29,12 +29,15 @@ interface TankProps {
   onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
   onFlameFuelChange?: (fuel: number) => void;
   onNapalm?: (target: THREE.Vector3, direction: THREE.Vector3) => void;
+  onMachineGunAudioChange?: (active: boolean) => void;
+  onFlamethrowerAudioChange?: (active: boolean) => void;
+  onMovementAudioChange?: (active: boolean) => void;
   weaponMode?: WeaponMode;
   initialPosition?: [number, number, number];
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
 }
 
-export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
+export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
   const [flameActive, setFlameActive] = useState(false);
   const flameActiveRef = useRef(false);
@@ -46,6 +49,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const flameFuelRef = useRef(FLAMETHROWER_CAPACITY_SECONDS);
   const flameLockedRef = useRef(false);
   const lastFuelReportRef = useRef(1);
+  const movementAudioActiveRef = useRef(false);
 
   // Pre-allocate reusable objects to avoid GC pressure
   const direction = useMemo(() => new THREE.Vector3(), []);
@@ -70,7 +74,15 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     triggerHeldRef.current = false;
     flameActiveRef.current = false;
     setFlameActive(false);
-  }, [weaponMode]);
+    onMachineGunAudioChange?.(false);
+    onFlamethrowerAudioChange?.(false);
+  }, [weaponMode, onMachineGunAudioChange, onFlamethrowerAudioChange]);
+
+  useEffect(() => () => {
+    onMachineGunAudioChange?.(false);
+    onFlamethrowerAudioChange?.(false);
+    onMovementAudioChange?.(false);
+  }, [onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange]);
 
   // Mouse click handler for shooting
   useEffect(() => {
@@ -99,10 +111,12 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       if (weaponMode === 'cannon') {
         onShoot?.(spawnPosition, tempWorldDir.clone());
       } else if (weaponMode === 'machinegun') {
+        onMachineGunAudioChange?.(true);
         onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
       } else if (weaponMode === 'flamethrower' && !flameLockedRef.current && flameFuelRef.current > 0) {
         flameActiveRef.current = true;
         setFlameActive(true);
+        onFlamethrowerAudioChange?.(true);
         onFlamethrower?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
       } else if (weaponMode === 'napalm') {
         raycaster.setFromCamera(pointer, camera);
@@ -118,12 +132,16 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
       setFlameActive(false);
+      onMachineGunAudioChange?.(false);
+      onFlamethrowerAudioChange?.(false);
     }
 
     function handleWindowBlur() {
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
       setFlameActive(false);
+      onMachineGunAudioChange?.(false);
+      onFlamethrowerAudioChange?.(false);
     }
 
     // Use capture phase to ensure we receive the event before R3F Canvas
@@ -135,13 +153,19 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       document.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
+  }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
 
   useFrame((_state, delta) => {
     if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
 
     const tank = tankRef.current;
     const controls = get();
+    const movementActive = controls.forward || controls.backward;
+
+    if (movementAudioActiveRef.current !== movementActive) {
+      movementAudioActiveRef.current = movementActive;
+      onMovementAudioChange?.(movementActive);
+    }
 
     // Update tank state ref for minimap (if provided)
     if (tankStateRef?.current) {
@@ -212,6 +236,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       if (!flameActiveRef.current) {
         flameActiveRef.current = true;
         setFlameActive(true);
+        onFlamethrowerAudioChange?.(true);
       }
       flameHitClockRef.current += delta;
       if (flameHitClockRef.current >= FLAMETHROWER_HIT_INTERVAL) {
@@ -222,11 +247,13 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
         flameLockedRef.current = true;
         flameActiveRef.current = false;
         setFlameActive(false);
+        onFlamethrowerAudioChange?.(false);
       }
     } else {
       if (flameActiveRef.current) {
         flameActiveRef.current = false;
         setFlameActive(false);
+        onFlamethrowerAudioChange?.(false);
       }
       const rechargeRate = FLAMETHROWER_CAPACITY_SECONDS / FLAMETHROWER_RECHARGE_SECONDS;
       flameFuelRef.current = Math.min(
