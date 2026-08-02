@@ -7,6 +7,7 @@ const AUDIO_PATHS = {
   napalm: '/audio/sfx/napalm_strike.wav',
   engine: '/audio/sfx/old_tank_engine_continuous.wav',
   gearShift: '/audio/sfx/tank_gear_shift.wav',
+  battlefield: '/audio/ambience/battlefield_full.wav',
 } as const;
 
 function createAudio(src: string, volume: number, loop = false) {
@@ -24,10 +25,12 @@ export function useGameAudio() {
   const machineGunRef = useRef<HTMLAudioElement | null>(null);
   const flamethrowerRef = useRef<HTMLAudioElement | null>(null);
   const engineRef = useRef<HTMLAudioElement | null>(null);
+  const battlefieldRef = useRef<HTMLAudioElement | null>(null);
   const activeOneShotsRef = useRef(new Set<HTMLAudioElement>());
   const machineGunActiveRef = useRef(false);
   const flamethrowerActiveRef = useRef(false);
   const movementActiveRef = useRef(false);
+  const battlefieldActiveRef = useRef(false);
 
   useEffect(() => {
     cannonRef.current = createAudio(AUDIO_PATHS.cannon, 0.78);
@@ -36,6 +39,7 @@ export function useGameAudio() {
     machineGunRef.current = createAudio(AUDIO_PATHS.machineGun, 0.56, true);
     flamethrowerRef.current = createAudio(AUDIO_PATHS.flamethrower, 0.5, true);
     engineRef.current = createAudio(AUDIO_PATHS.engine, 0.26, true);
+    battlefieldRef.current = createAudio(AUDIO_PATHS.battlefield, 0.11, true);
 
     return () => {
       for (const audio of [
@@ -45,6 +49,7 @@ export function useGameAudio() {
         machineGunRef.current,
         flamethrowerRef.current,
         engineRef.current,
+        battlefieldRef.current,
       ]) {
         audio?.pause();
       }
@@ -83,29 +88,38 @@ export function useGameAudio() {
     audio.currentTime = 0;
   }, []);
 
+  const ensureBattlefieldAmbience = useCallback(() => {
+    if (battlefieldActiveRef.current) startLoop(battlefieldRef.current);
+  }, [startLoop]);
+
   const playCannon = useCallback(() => {
+    ensureBattlefieldAmbience();
     playOneShot(cannonRef.current);
-  }, [playOneShot]);
+  }, [ensureBattlefieldAmbience, playOneShot]);
 
   const playNapalmImpact = useCallback(() => {
+    ensureBattlefieldAmbience();
     playOneShot(napalmRef.current);
-  }, [playOneShot]);
+  }, [ensureBattlefieldAmbience, playOneShot]);
 
   const setMachineGunActive = useCallback((active: boolean) => {
+    if (active) ensureBattlefieldAmbience();
     if (machineGunActiveRef.current === active) return;
     machineGunActiveRef.current = active;
     if (active) startLoop(machineGunRef.current);
     else stopLoop(machineGunRef.current);
-  }, [startLoop, stopLoop]);
+  }, [ensureBattlefieldAmbience, startLoop, stopLoop]);
 
   const setFlamethrowerActive = useCallback((active: boolean) => {
+    if (active) ensureBattlefieldAmbience();
     if (flamethrowerActiveRef.current === active) return;
     flamethrowerActiveRef.current = active;
     if (active) startLoop(flamethrowerRef.current);
     else stopLoop(flamethrowerRef.current);
-  }, [startLoop, stopLoop]);
+  }, [ensureBattlefieldAmbience, startLoop, stopLoop]);
 
   const setMovementActive = useCallback((active: boolean) => {
+    if (active) ensureBattlefieldAmbience();
     if (movementActiveRef.current === active) return;
     movementActiveRef.current = active;
     if (active) {
@@ -114,15 +128,23 @@ export function useGameAudio() {
     } else {
       stopLoop(engineRef.current);
     }
-  }, [playOneShot, startLoop, stopLoop]);
+  }, [ensureBattlefieldAmbience, playOneShot, startLoop, stopLoop]);
+
+  const setBattlefieldActive = useCallback((active: boolean) => {
+    battlefieldActiveRef.current = active;
+    if (active) startLoop(battlefieldRef.current);
+    else stopLoop(battlefieldRef.current);
+  }, [startLoop, stopLoop]);
 
   const stopAllLoops = useCallback(() => {
     machineGunActiveRef.current = false;
     flamethrowerActiveRef.current = false;
     movementActiveRef.current = false;
+    battlefieldActiveRef.current = false;
     stopLoop(machineGunRef.current);
     stopLoop(flamethrowerRef.current);
     stopLoop(engineRef.current);
+    stopLoop(battlefieldRef.current);
   }, [stopLoop]);
 
   return {
@@ -131,6 +153,7 @@ export function useGameAudio() {
     setMachineGunActive,
     setFlamethrowerActive,
     setMovementActive,
+    setBattlefieldActive,
     stopAllLoops,
   };
 }

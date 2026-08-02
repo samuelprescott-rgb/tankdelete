@@ -264,7 +264,7 @@ export function useFieldRadio() {
       ?? (preferBundledTrack && bundledTrackAvailable ? BUNDLED_TRACK_NAME : TRACKS[trackIndex].name),
     sourceLabel: localTrackName === BUNDLED_TRACK_NAME
       || (preferBundledTrack && bundledTrackAvailable)
-      ? `${BUNDLED_TRACK_ARTIST} · local build`
+      ? `${BUNDLED_TRACK_ARTIST} · approved cover`
       : localTrackName
         ? 'Local device track · not bundled'
         : 'Original procedural transmission',

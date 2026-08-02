@@ -107,8 +107,9 @@ function App() {
   const gameAudio = useGameAudio();
 
   useEffect(() => {
-    if (state !== 'ready') gameAudio.stopAllLoops();
-  }, [state, gameAudio.stopAllLoops]);
+    if (state === 'ready') gameAudio.setBattlefieldActive(true);
+    else gameAudio.stopAllLoops();
+  }, [state, gameAudio.setBattlefieldActive, gameAudio.stopAllLoops]);
 
   // File block mesh refs for hit detection (populated by FileBlocks component)
   const fileBlockRefsRef = useRef<React.RefObject<THREE.InstancedMesh | null>[]>([]);
@@ -220,6 +221,7 @@ function App() {
   }
 
   function startTraining() {
+    gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
     automaticHitTriggerByPathRef.current.clear();
     setIsTraining(true);

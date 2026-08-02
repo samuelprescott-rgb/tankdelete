@@ -12,9 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Optional commercial field-radio recording (local builds only; do not publish without rights)
-public/audio/voodoo-child-srv.mp3
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

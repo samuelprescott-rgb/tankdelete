@@ -45,6 +45,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - File targets rendered as huts, longhouses, bunkers, and radio structures while retaining category-colored outlines and labels
 - Continuous flamethrower stream, fuel/recharge meter, glowing high-visibility tracer streaks, and a small F-4 Phantom-inspired flyover that releases each napalm strike before impact
 - Integrated cannon, M37 burst, flamethrower, napalm-impact, engine-loop, and gear-shift sound effects
+- Low-volume battlefield ambience mixed beneath vehicle, weapon, and radio audio
 - Two original polyphonic field-radio tracks generated with the Web Audio API
 - Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
 - Tactical tunnel portals for folder navigation
@@ -54,7 +55,7 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 - Files are sent to your system trash (recoverable)
 - Cross-platform: macOS, Windows, Linux
 
-Commercial recordings are intentionally excluded from the public repository. A local build will automatically use `public/audio/voodoo-child-srv.mp3` as its default radio track when that file is present; this path is gitignored. The current local asset is the Stevie Ray Vaughan and Double Trouble cover of **“Voodoo Child (Slight Return)”**, not the Jimi Hendrix recording. The **Load** button can select another legally obtained audio file without adding it to the repository.
+The approved Stevie Ray Vaughan and Double Trouble cover of **“Voodoo Child (Slight Return)”** is bundled as the default tank-radio track. It is not the Jimi Hendrix recording. The **Load** button can select another audio file without adding it to the repository.
 
 ## Download
 
