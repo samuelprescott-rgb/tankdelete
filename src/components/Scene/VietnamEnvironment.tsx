@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
+import { TERRAIN_MOUNDS } from '../../lib/terrain';
 
 function seeded(index: number, salt = 0) {
   const value = Math.sin(index * 91.719 + salt * 17.173) * 43758.5453;
@@ -113,42 +114,25 @@ function ElephantGrass() {
 
 function TerrainRelief() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const rocksRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const mounds = useMemo(() => {
-    const placements: Array<{ x: number; y: number; z: number; sx: number; sy: number; sz: number; rotation: number; color: number }> = [
-      { x: -15, y: -0.72, z: -5, sx: 4.8, sy: 1.35, sz: 3.4, rotation: 0.3, color: 0 },
-      { x: 15, y: -0.78, z: 5, sx: 4.2, sy: 1.25, sz: 4.8, rotation: 1.1, color: 1 },
-      { x: -16, y: -0.82, z: 15, sx: 5.4, sy: 1.4, sz: 4.2, rotation: 0.7, color: 3 },
-      { x: 16, y: -0.74, z: -5, sx: 4.5, sy: 1.3, sz: 3.8, rotation: 2.2, color: 2 },
-    ];
-    let candidate = 0;
-
-    while (placements.length < 42 && candidate < 1000) {
-      const x = (seeded(candidate, 80) - 0.5) * 176;
-      const z = (seeded(candidate, 81) - 0.5) * 176;
-      candidate += 1;
-      if (Math.hypot(x, z) < 24) continue;
-      if (distanceToRoad(x) < 2.7 || distanceToRoad(z) < 2.7) continue;
-      const sx = 3.5 + seeded(candidate, 82) * 6.5;
-      const sy = 0.7 + seeded(candidate, 83) * 2.2;
-      placements.push({
-        x,
-        y: -0.8 + sy * 0.12,
-        z,
-        sx,
-        sy,
-        sz: 3.5 + seeded(candidate, 84) * 6.5,
-        rotation: seeded(candidate, 85) * Math.PI,
-        color: Math.floor(seeded(candidate, 86) * 4),
-      });
-    }
-
-    return placements;
-  }, []);
+  const ridgeRocks = useMemo(() => TERRAIN_MOUNDS.slice(0, 24).flatMap((mound, moundIndex) => (
+    [0, 1].map((rockIndex) => {
+      const angle = mound.rotation + (rockIndex === 0 ? 0.75 : -1.05);
+      const distance = (rockIndex === 0 ? mound.sx : mound.sz) * (0.38 + seeded(moundIndex, 111 + rockIndex) * 0.2);
+      return {
+        x: mound.x + Math.cos(angle) * distance,
+        y: Math.max(0.03, mound.y + mound.sy * (0.56 + seeded(moundIndex, 115 + rockIndex) * 0.14)),
+        z: mound.z + Math.sin(angle) * distance,
+        rotation: seeded(moundIndex, 119 + rockIndex) * Math.PI,
+        scale: 0.28 + seeded(moundIndex, 123 + rockIndex) * 0.58,
+      };
+    })
+  )), []);
 
   useEffect(() => {
-    if (!meshRef.current) return;
-    mounds.forEach((mound, index) => {
+    if (!meshRef.current || !rocksRef.current) return;
+    TERRAIN_MOUNDS.forEach((mound, index) => {
       dummy.position.set(mound.x, mound.y, mound.z);
       dummy.rotation.set(0, mound.rotation, 0);
       dummy.scale.set(mound.sx, mound.sy, mound.sz);
@@ -156,13 +140,28 @@ function TerrainRelief() {
       meshRef.current!.setMatrixAt(index, dummy.matrix);
     });
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [dummy, mounds]);
+
+    ridgeRocks.forEach((rock, index) => {
+      dummy.position.set(rock.x, rock.y, rock.z);
+      dummy.rotation.set(0.12, rock.rotation, -0.08);
+      dummy.scale.set(rock.scale * 1.25, rock.scale * 0.76, rock.scale);
+      dummy.updateMatrix();
+      rocksRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    rocksRef.current.instanceMatrix.needsUpdate = true;
+  }, [dummy, ridgeRocks]);
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, mounds.length]} receiveShadow>
-      <sphereGeometry args={[1, 10, 6]} />
-      <meshStandardMaterial color="#46573a" emissive="#1e2c1a" emissiveIntensity={0.32} roughness={1} />
-    </instancedMesh>
+    <>
+      <instancedMesh ref={meshRef} args={[undefined, undefined, TERRAIN_MOUNDS.length]} castShadow receiveShadow>
+        <sphereGeometry args={[1, 10, 6]} />
+        <meshStandardMaterial color="#46573a" emissive="#1e2c1a" emissiveIntensity={0.22} roughness={1} flatShading />
+      </instancedMesh>
+      <instancedMesh ref={rocksRef} args={[undefined, undefined, ridgeRocks.length]} castShadow receiveShadow>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#3b4034" roughness={0.94} metalness={0.06} flatShading />
+      </instancedMesh>
+    </>
   );
 }
 

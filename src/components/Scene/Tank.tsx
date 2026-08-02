@@ -11,6 +11,7 @@ import {
   WeaponMode,
 } from '../../lib/weapons';
 import { FlameStream } from './FlameStream';
+import { intersectsTerrainMound } from '../../lib/terrain';
 
 const TANK_ARMOR_COLOR = '#a8bf78';
 const TANK_WEAPON_COLOR = '#e3b341';
@@ -39,6 +40,13 @@ interface TankProps {
 
 export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
+  const cannonBarrelRef = useRef<THREE.Group>(null);
+  const cannonMuzzleRef = useRef<THREE.Group>(null);
+  const machineGunRecoilRef = useRef<THREE.Group>(null);
+  const machineGunMuzzleRef = useRef<THREE.Group>(null);
+  const machineGunFlashRef = useRef<THREE.Mesh>(null);
+  const flameMuzzleRef = useRef<THREE.Group>(null);
+  const gunnerRef = useRef<THREE.Group>(null);
   const [flameActive, setFlameActive] = useState(false);
   const flameActiveRef = useRef(false);
   const { camera, pointer } = useThree();
@@ -50,6 +58,8 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const flameLockedRef = useRef(false);
   const lastFuelReportRef = useRef(1);
   const movementAudioActiveRef = useRef(false);
+  const machineGunVisualActiveRef = useRef(false);
+  const cannonRecoilRef = useRef(0);
 
   // Pre-allocate reusable objects to avoid GC pressure
   const direction = useMemo(() => new THREE.Vector3(), []);
@@ -58,6 +68,8 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const intersection = useMemo(() => new THREE.Vector3(), []);
   const tempWorldPos = useMemo(() => new THREE.Vector3(), []);
   const tempWorldDir = useMemo(() => new THREE.Vector3(), []);
+  const nextPosition = useMemo(() => new THREE.Vector3(), []);
+  const slidePosition = useMemo(() => new THREE.Vector3(), []);
 
   // Get keyboard controls (use transient reads with get() to avoid re-renders)
   const [, get] = useKeyboardControls<Controls>();
@@ -73,6 +85,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   useEffect(() => {
     triggerHeldRef.current = false;
     flameActiveRef.current = false;
+    machineGunVisualActiveRef.current = false;
     setFlameActive(false);
     onMachineGunAudioChange?.(false);
     onFlamethrowerAudioChange?.(false);
@@ -97,20 +110,29 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       machineGunClockRef.current = 0;
       flameHitClockRef.current = 0;
 
-      // Get turret world position and direction
-      turretRef.current.getWorldPosition(tempWorldPos);
-      turretRef.current.getWorldDirection(tempWorldDir);
+      const activeMuzzle = weaponMode === 'machinegun'
+        ? machineGunMuzzleRef.current
+        : weaponMode === 'flamethrower'
+          ? flameMuzzleRef.current
+          : weaponMode === 'cannon'
+            ? cannonMuzzleRef.current
+            : turretRef.current;
+      if (!activeMuzzle) return;
+
+      activeMuzzle.getWorldPosition(tempWorldPos);
+      activeMuzzle.getWorldDirection(tempWorldDir);
 
       // getWorldDirection returns -Z axis direction, but tank body is rotated PI
       // so we negate to get the actual barrel-forward direction in world space
       tempWorldDir.negate();
 
-      // Spawn position: slightly in front of barrel tip
-      const spawnPosition = tempWorldPos.clone().addScaledVector(tempWorldDir, 0.8);
+      const spawnPosition = tempWorldPos.clone();
 
       if (weaponMode === 'cannon') {
+        cannonRecoilRef.current = 1;
         onShoot?.(spawnPosition, tempWorldDir.clone());
       } else if (weaponMode === 'machinegun') {
+        machineGunVisualActiveRef.current = true;
         onMachineGunAudioChange?.(true);
         onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
       } else if (weaponMode === 'flamethrower' && !flameLockedRef.current && flameFuelRef.current > 0) {
@@ -131,6 +153,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       if (event.button !== 0) return;
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
+      machineGunVisualActiveRef.current = false;
       setFlameActive(false);
       onMachineGunAudioChange?.(false);
       onFlamethrowerAudioChange?.(false);
@@ -139,6 +162,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     function handleWindowBlur() {
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
+      machineGunVisualActiveRef.current = false;
       setFlameActive(false);
       onMachineGunAudioChange?.(false);
       onFlamethrowerAudioChange?.(false);
@@ -155,12 +179,32 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     };
   }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
 
-  useFrame((_state, delta) => {
+  useFrame(({ clock }, delta) => {
     if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
 
     const tank = tankRef.current;
     const controls = get();
     const movementActive = controls.forward || controls.backward;
+
+    cannonRecoilRef.current = Math.max(0, cannonRecoilRef.current - delta * 4.8);
+    if (cannonBarrelRef.current) {
+      cannonBarrelRef.current.position.z = cannonRecoilRef.current * 0.16;
+    }
+    if (machineGunRecoilRef.current) {
+      machineGunRecoilRef.current.position.z = machineGunVisualActiveRef.current
+        ? Math.sin(clock.elapsedTime * 95) * 0.022
+        : 0;
+    }
+    if (machineGunFlashRef.current) {
+      machineGunFlashRef.current.visible = machineGunVisualActiveRef.current
+        && Math.sin(clock.elapsedTime * 82) > -0.15;
+      machineGunFlashRef.current.scale.setScalar(0.75 + Math.sin(clock.elapsedTime * 117) * 0.2);
+    }
+    if (gunnerRef.current) {
+      gunnerRef.current.rotation.x = machineGunVisualActiveRef.current
+        ? -0.055 + Math.sin(clock.elapsedTime * 28) * 0.012
+        : 0;
+    }
 
     if (movementAudioActiveRef.current !== movementActive) {
       movementAudioActiveRef.current = movementActive;
@@ -189,11 +233,32 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       direction.applyQuaternion(tank.quaternion);
       direction.normalize();
 
-      if (controls.forward) {
-        tank.position.addScaledVector(direction, moveAmount);
-      }
-      if (controls.backward) {
-        tank.position.addScaledVector(direction, -moveAmount);
+      const signedMove = controls.forward && !controls.backward
+        ? moveAmount
+        : controls.backward && !controls.forward
+          ? -moveAmount
+          : 0;
+
+      if (signedMove !== 0) {
+        nextPosition.copy(tank.position).addScaledVector(direction, signedMove);
+        if (!intersectsTerrainMound(nextPosition.x, nextPosition.z, 0.65)) {
+          tank.position.copy(nextPosition);
+        } else {
+          const deltaX = direction.x * signedMove;
+          const deltaZ = direction.z * signedMove;
+          const canSlideX = !intersectsTerrainMound(tank.position.x + deltaX, tank.position.z, 0.65);
+          const canSlideZ = !intersectsTerrainMound(tank.position.x, tank.position.z + deltaZ, 0.65);
+
+          if (canSlideX && (!canSlideZ || Math.abs(deltaX) >= Math.abs(deltaZ))) {
+            slidePosition.copy(tank.position);
+            slidePosition.x += deltaX;
+            tank.position.copy(slidePosition);
+          } else if (canSlideZ) {
+            slidePosition.copy(tank.position);
+            slidePosition.z += deltaZ;
+            tank.position.copy(slidePosition);
+          }
+        }
       }
     }
 
@@ -213,10 +278,16 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       turretRef.current.rotation.y = angle;
     }
 
-    turretRef.current.getWorldPosition(tempWorldPos);
-    turretRef.current.getWorldDirection(tempWorldDir);
+    const continuousMuzzle = weaponMode === 'machinegun'
+      ? machineGunMuzzleRef.current
+      : weaponMode === 'flamethrower'
+        ? flameMuzzleRef.current
+        : cannonMuzzleRef.current;
+    if (!continuousMuzzle) return;
+    continuousMuzzle.getWorldPosition(tempWorldPos);
+    continuousMuzzle.getWorldDirection(tempWorldDir);
     tempWorldDir.negate();
-    const spawnPosition = tempWorldPos.clone().addScaledVector(tempWorldDir, 0.8);
+    const spawnPosition = tempWorldPos.clone();
 
     if (weaponMode === 'machinegun' && triggerHeldRef.current) {
       machineGunClockRef.current += delta;
@@ -272,156 +343,254 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     }
   });
 
+  const cannonSelected = weaponMode === 'cannon';
+  const machineGunSelected = weaponMode === 'machinegun';
+  const flameSelected = weaponMode === 'flamethrower';
+  const napalmSelected = weaponMode === 'napalm';
+
   return (
     <group ref={tankRef} position={[0, 0.2, 0]}>
-      {/* Tank body */}
-      <group>
-        {/* Main chassis - wireframe edges */}
-        <lineSegments>
-          <edgesGeometry args={[new THREE.BoxGeometry(1.2, 0.4, 1.8)]} />
-          <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
-        </lineSegments>
+      {/* M41 lower hull and running gear. */}
+      <mesh position={[0, 0.18, 0.04]} castShadow receiveShadow>
+        <boxGeometry args={[1.38, 0.44, 2.12]} />
+        <meshStandardMaterial color="#485638" roughness={0.82} metalness={0.18} />
+      </mesh>
+      <mesh position={[0, 0.46, -0.18]} rotation={[0.1, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.16, 0.28, 1.34]} />
+        <meshStandardMaterial color="#65734b" roughness={0.78} metalness={0.15} />
+      </mesh>
+      <mesh position={[0, 0.48, 0.63]} castShadow receiveShadow>
+        <boxGeometry args={[1.14, 0.18, 0.5]} />
+        <meshStandardMaterial color="#3d4a31" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.42, -0.93]} rotation={[0.44, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.18, 0.34, 0.44]} />
+        <meshStandardMaterial color="#748058" roughness={0.74} metalness={0.16} />
+      </mesh>
 
-        {/* Main chassis - transparent face fill */}
-        <mesh>
-          <boxGeometry args={[1.2, 0.4, 1.8]} />
-          <meshStandardMaterial
-            color={TANK_ARMOR_COLOR}
-            emissive={TANK_ARMOR_COLOR}
-            emissiveIntensity={0.5}
-            transparent
-            opacity={0.1}
-          />
+      {[-0.76, 0.76].map((trackX) => (
+        <group key={trackX} position={[trackX, 0.12, 0]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[0.25, 0.42, 2.2]} />
+            <meshStandardMaterial color="#242921" roughness={0.96} metalness={0.12} />
+          </mesh>
+          {[-0.76, -0.38, 0, 0.38, 0.76].map((wheelZ) => (
+            <mesh key={wheelZ} position={[trackX < 0 ? -0.14 : 0.14, -0.02, wheelZ]} rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[0.18, 0.18, 0.08, 12]} />
+              <meshStandardMaterial color="#566047" roughness={0.84} metalness={0.2} />
+            </mesh>
+          ))}
+          <mesh position={[trackX < 0 ? -0.14 : 0.14, 0.02, 0]}>
+            <boxGeometry args={[0.045, 0.3, 2.04]} />
+            <meshStandardMaterial color="#1e231c" roughness={1} />
+          </mesh>
+          <mesh position={[0, 0.28, 0]} castShadow>
+            <boxGeometry args={[0.3, 0.08, 2.26]} />
+            <meshStandardMaterial color="#66714d" roughness={0.82} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Tow cable, headlamps, and deck details add a readable front/rear silhouette. */}
+      <mesh position={[-0.43, 0.53, -1.02]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.085, 0.085, 0.08, 10]} />
+        <meshStandardMaterial color="#d6c98a" emissive="#cabd73" emissiveIntensity={0.28} />
+      </mesh>
+      <mesh position={[0.43, 0.53, -1.02]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.085, 0.085, 0.08, 10]} />
+        <meshStandardMaterial color="#d6c98a" emissive="#cabd73" emissiveIntensity={0.28} />
+      </mesh>
+      {[-0.34, 0, 0.34].map((x) => (
+        <mesh key={x} position={[x, 0.59, 0.58]} rotation={[-Math.PI / 2, 0, 0]}>
+          <boxGeometry args={[0.23, 0.05, 0.33]} />
+          <meshStandardMaterial color="#2d3726" roughness={0.92} />
+        </mesh>
+      ))}
+
+      {/* Unified turret: all weapon systems stay mounted while selection changes their readiness lights. */}
+      <group ref={turretRef} position={[0, 0.72, 0.02]}>
+        <mesh position={[0, -0.08, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[0.55, 0.61, 0.22, 12]} />
+          <meshStandardMaterial color="#4e5d3d" roughness={0.8} metalness={0.2} />
+        </mesh>
+        <mesh position={[0, 0.12, -0.05]} scale={[0.72, 0.38, 0.83]} castShadow receiveShadow>
+          <dodecahedronGeometry args={[0.78, 0]} />
+          <meshStandardMaterial color="#66754d" roughness={0.76} metalness={0.18} flatShading />
+        </mesh>
+        <mesh position={[0, 0.15, 0.47]} castShadow receiveShadow>
+          <boxGeometry args={[0.82, 0.28, 0.5]} />
+          <meshStandardMaterial color="#465438" roughness={0.88} metalness={0.15} />
+        </mesh>
+        <mesh position={[-0.17, 0.42, 0.12]} rotation={[0, 0, 0]} castShadow>
+          <cylinderGeometry args={[0.2, 0.23, 0.08, 12]} />
+          <meshStandardMaterial color="#35422e" roughness={0.86} />
         </mesh>
 
-        {/* Left tread */}
-        <group position={[-0.6, 0, 0]}>
-          <lineSegments>
-            <edgesGeometry args={[new THREE.BoxGeometry(0.15, 0.3, 1.6)]} />
-            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
-          </lineSegments>
-          <mesh>
-            <boxGeometry args={[0.15, 0.3, 1.6]} />
+        {/* M32 cannon and mantlet. */}
+        <mesh position={[0, 0.1, -0.57]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <cylinderGeometry args={[0.19, 0.23, 0.3, 12]} />
+          <meshStandardMaterial
+            color={cannonSelected ? TANK_ARMOR_COLOR : '#4b573d'}
+            emissive={cannonSelected ? '#70884f' : '#000000'}
+            emissiveIntensity={cannonSelected ? 0.34 : 0}
+            roughness={0.7}
+            metalness={0.25}
+          />
+        </mesh>
+        <group ref={cannonBarrelRef} position={[0, 0.1, -0.61]}>
+          <mesh position={[0, 0, -0.67]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.055, 0.078, 1.34, 10]} />
+            <meshStandardMaterial color="#394238" roughness={0.54} metalness={0.46} />
+          </mesh>
+          <mesh position={[0, 0, -1.34]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.085, 0.085, 0.2, 10]} />
             <meshStandardMaterial
-              color={TANK_ARMOR_COLOR}
-              emissive={TANK_ARMOR_COLOR}
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.1}
+              color={cannonSelected ? TANK_ARMOR_COLOR : '#3c4438'}
+              emissive={cannonSelected ? '#9eb56a' : '#000000'}
+              emissiveIntensity={cannonSelected ? 0.45 : 0}
+              metalness={0.45}
+              roughness={0.48}
             />
           </mesh>
+          <group ref={cannonMuzzleRef} position={[0, 0, -1.46]} />
         </group>
 
-        {/* Right tread */}
-        <group position={[0.6, 0, 0]}>
-          <lineSegments>
-            <edgesGeometry args={[new THREE.BoxGeometry(0.15, 0.3, 1.6)]} />
-            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
-          </lineSegments>
-          <mesh>
-            <boxGeometry args={[0.15, 0.3, 1.6]} />
+        {/* Coaxial flame projector and permanent armored fuel cells. */}
+        <group position={[-0.27, 0.02, -0.48]}>
+          <mesh position={[0, 0, -0.1]} castShadow>
+            <boxGeometry args={[0.22, 0.2, 0.38]} />
+            <meshStandardMaterial color="#3c4635" roughness={0.72} metalness={0.3} />
+          </mesh>
+          <mesh position={[0, 0, -0.53]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.075, 0.72, 9]} />
             <meshStandardMaterial
-              color={TANK_ARMOR_COLOR}
-              emissive={TANK_ARMOR_COLOR}
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.1}
+              color={flameSelected ? '#bd632f' : '#4b4e3b'}
+              emissive={flameSelected ? '#ff6a24' : '#000000'}
+              emissiveIntensity={flameSelected ? 1.15 : 0}
+              toneMapped={!flameSelected}
+              roughness={0.55}
+              metalness={0.3}
             />
           </mesh>
+          <group ref={flameMuzzleRef} position={[0, 0, -0.92]}>
+            <FlameStream active={flameActive} />
+          </group>
         </group>
-      </group>
-
-      {/* Turret */}
-      <group ref={turretRef} position={[0, 0.4, 0]}>
-        {/* Turret base - octagonal cylinder */}
-        <group>
-          <lineSegments>
-            <edgesGeometry args={[new THREE.CylinderGeometry(0.35, 0.35, 0.25, 8)]} />
-            <lineBasicMaterial color={TANK_ARMOR_COLOR} toneMapped={false} />
-          </lineSegments>
-          <mesh>
-            <cylinderGeometry args={[0.35, 0.35, 0.25, 8]} />
-            <meshStandardMaterial
-              color={TANK_ARMOR_COLOR}
-              emissive={TANK_ARMOR_COLOR}
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.1}
-            />
-          </mesh>
-        </group>
-
-        {/* Barrel */}
-        <group position={[0, 0, -0.5]}>
-          <lineSegments>
-            <edgesGeometry args={[new THREE.BoxGeometry(0.08, 0.08, 1.0)]} />
-            <lineBasicMaterial color={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR} toneMapped={false} />
-          </lineSegments>
-          <mesh>
-            <boxGeometry args={[0.08, 0.08, 1.0]} />
-            <meshStandardMaterial
-              color={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR}
-              emissive={weaponMode === 'cannon' ? TANK_ARMOR_COLOR : TANK_WEAPON_COLOR}
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.1}
-            />
-          </mesh>
-        </group>
-
-        {weaponMode === 'flamethrower' && (
-          <>
-            <group position={[0, 0.15, -1.12]}>
-              <mesh rotation={[Math.PI / 2, 0, 0]}>
-                <cylinderGeometry args={[0.12, 0.08, 0.75, 8]} />
-                <meshStandardMaterial color="#d46a2c" emissive="#ff6a24" emissiveIntensity={1.4} toneMapped={false} />
-              </mesh>
-            </group>
-            <group position={[0.42, -0.05, 0.2]} rotation={[0, 0, Math.PI / 2]}>
-              <mesh>
-                <cylinderGeometry args={[0.18, 0.18, 0.72, 10]} />
-                <meshStandardMaterial color="#69734f" metalness={0.5} roughness={0.65} />
-              </mesh>
-              <lineSegments>
-                <edgesGeometry args={[new THREE.CylinderGeometry(0.18, 0.18, 0.72, 10)]} />
-                <lineBasicMaterial color={TANK_WEAPON_COLOR} toneMapped={false} />
-              </lineSegments>
-            </group>
-            <group position={[0, 0.15, -1.5]}>
-              <FlameStream active={flameActive} />
-            </group>
-          </>
-        )}
-
-        {weaponMode === 'machinegun' && (
-          <group position={[0.23, 0.11, -0.66]}>
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.035, 0.05, 1.15, 8]} />
-              <meshStandardMaterial color="#7c805e" emissive="#e3b341" emissiveIntensity={0.35} />
+        {[-0.43, 0.43].map((x) => (
+          <group key={x} position={[x, 0.05, 0.48]}>
+            <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.14, 0.14, 0.56, 10]} />
+              <meshStandardMaterial color="#4d5a40" roughness={0.68} metalness={0.34} />
             </mesh>
-            <mesh position={[0.15, -0.08, 0.32]}>
-              <boxGeometry args={[0.24, 0.22, 0.34]} />
-              <meshStandardMaterial color="#676b4d" metalness={0.55} roughness={0.65} />
+            <mesh position={[0, 0, -0.28]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.14, 0.022, 6, 10]} />
+              <meshStandardMaterial color={flameSelected ? TANK_WEAPON_COLOR : '#32392c'} emissive={flameSelected ? '#8f6c25' : '#000000'} emissiveIntensity={0.5} />
             </mesh>
           </group>
-        )}
+        ))}
 
-        {weaponMode === 'napalm' && (
-          <group position={[0, 0.32, 0.15]}>
-            {[-0.34, 0.34].map(x => (
-              <group key={x} position={[x, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                <mesh>
-                  <cylinderGeometry args={[0.11, 0.11, 0.8, 8]} />
-                  <meshStandardMaterial color="#6b713f" emissive="#e3b341" emissiveIntensity={0.35} />
-                </mesh>
-                <lineSegments>
-                  <edgesGeometry args={[new THREE.CylinderGeometry(0.11, 0.11, 0.8, 8)]} />
-                  <lineBasicMaterial color={TANK_WEAPON_COLOR} toneMapped={false} />
-                </lineSegments>
-              </group>
-            ))}
+        {/* M37 pintle machine gun. */}
+        <group position={[0.42, 0.48, -0.02]}>
+          <mesh position={[0, -0.16, 0.02]} castShadow>
+            <cylinderGeometry args={[0.12, 0.15, 0.1, 10]} />
+            <meshStandardMaterial color="#30392e" metalness={0.35} roughness={0.68} />
+          </mesh>
+          <mesh position={[0, -0.04, 0.02]} castShadow>
+            <cylinderGeometry args={[0.035, 0.045, 0.25, 8]} />
+            <meshStandardMaterial color="#252b27" metalness={0.55} roughness={0.5} />
+          </mesh>
+          <group ref={machineGunRecoilRef}>
+            <mesh position={[0, 0.08, -0.1]} castShadow>
+              <boxGeometry args={[0.18, 0.18, 0.42]} />
+              <meshStandardMaterial
+                color={machineGunSelected ? '#75815f' : '#30372f'}
+                emissive={machineGunSelected ? '#7d8c5d' : '#000000'}
+                emissiveIntensity={machineGunSelected ? 0.34 : 0}
+                roughness={0.52}
+                metalness={0.45}
+              />
+            </mesh>
+            <mesh position={[0, 0.08, -0.58]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[0.026, 0.038, 0.72, 8]} />
+              <meshStandardMaterial color="#252b29" roughness={0.44} metalness={0.62} />
+            </mesh>
+            <mesh position={[-0.14, 0.02, -0.03]} castShadow>
+              <boxGeometry args={[0.18, 0.22, 0.28]} />
+              <meshStandardMaterial color="#5a6045" roughness={0.66} metalness={0.28} />
+            </mesh>
+            <mesh position={[0, 0.1, -0.95]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.055, 0.055, 0.13, 8]} />
+              <meshStandardMaterial color="#171c1a" metalness={0.68} roughness={0.35} />
+            </mesh>
+            <group ref={machineGunMuzzleRef} position={[0, 0.1, -1.04]}>
+              <mesh ref={machineGunFlashRef} position={[0, 0, -0.05]} rotation={[Math.PI / 2, 0, 0]} visible={false}>
+                <coneGeometry args={[0.11, 0.28, 7]} />
+                <meshBasicMaterial color="#fff3a1" toneMapped={false} />
+              </mesh>
+            </group>
           </group>
-        )}
+        </group>
+
+        {/* Commander/gunner seated behind the pintle mount. */}
+        <group ref={gunnerRef} position={[0.18, 0.64, 0.34]}>
+          <mesh position={[0, 0.04, 0]} scale={[0.24, 0.32, 0.18]} castShadow>
+            <dodecahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color="#405437" roughness={0.94} />
+          </mesh>
+          <mesh position={[0, 0.35, -0.03]} castShadow>
+            <sphereGeometry args={[0.15, 12, 8]} />
+            <meshStandardMaterial color="#8d6848" roughness={0.98} />
+          </mesh>
+          <mesh position={[0, 0.43, -0.02]} scale={[1.18, 0.45, 1.16]} castShadow>
+            <sphereGeometry args={[0.17, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.62]} />
+            <meshStandardMaterial color="#52613d" roughness={0.9} />
+          </mesh>
+          <mesh position={[0.03, 0.37, -0.16]} rotation={[0.1, 0, 0]}>
+            <boxGeometry args={[0.22, 0.045, 0.08]} />
+            <meshStandardMaterial color="#252d24" roughness={0.72} />
+          </mesh>
+          {[-0.13, 0.13].map((x) => (
+            <group key={x} position={[x, 0.12, -0.13]} rotation={[-0.72, 0, x < 0 ? -0.18 : 0.18]}>
+              <mesh position={[0, -0.12, 0]} castShadow>
+                <cylinderGeometry args={[0.055, 0.065, 0.34, 8]} />
+                <meshStandardMaterial color="#61724a" roughness={0.92} />
+              </mesh>
+              <mesh position={[0, -0.31, -0.01]}>
+                <sphereGeometry args={[0.065, 8, 6]} />
+                <meshStandardMaterial color="#8d6848" roughness={1} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+
+        {/* Radio/air-support station for the napalm strike. */}
+        <group position={[-0.42, 0.42, 0.38]}>
+          <mesh castShadow>
+            <boxGeometry args={[0.26, 0.22, 0.28]} />
+            <meshStandardMaterial color="#303a2d" roughness={0.7} metalness={0.28} />
+          </mesh>
+          <mesh position={[0, 0.14, -0.15]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.045, 0.045, 0.03, 10]} />
+            <meshBasicMaterial color={napalmSelected ? '#ffd457' : '#403c24'} toneMapped={false} />
+          </mesh>
+          <mesh position={[-0.08, 0.72, 0]} rotation={[0, 0, -0.055]}>
+            <cylinderGeometry args={[0.009, 0.016, 1.34, 6]} />
+            <meshStandardMaterial color="#242a24" metalness={0.7} roughness={0.34} />
+          </mesh>
+        </group>
+
+        {/* Four station lights make weapon switching legible without hiding the hardware. */}
+        {[
+          { x: -0.27, active: cannonSelected, color: '#dbe89b' },
+          { x: -0.09, active: machineGunSelected, color: '#ffe27b' },
+          { x: 0.09, active: flameSelected, color: '#ff7138' },
+          { x: 0.27, active: napalmSelected, color: '#e64832' },
+        ].map((light) => (
+          <mesh key={light.x} position={[light.x, 0.32, 0.67]}>
+            <sphereGeometry args={[0.035, 8, 6]} />
+            <meshBasicMaterial color={light.active ? light.color : '#252a21'} toneMapped={false} />
+          </mesh>
+        ))}
       </group>
     </group>
   );

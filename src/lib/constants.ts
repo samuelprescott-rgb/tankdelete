@@ -12,5 +12,5 @@ export const PROJECTILE_MAX_LIFETIME = 3.0; // seconds
 export const ROAD_GRID_SPACING = 8; // matches file layout spacing
 
 // Camera
-export const CAMERA_OFFSET = [0, 5, 8] as const; // [x, y, z] behind and above
+export const CAMERA_OFFSET = [0, 4.2, 6.8] as const; // [x, y, z] behind and above
 export const CAMERA_LERP_SPEED = 6; // smoothing factor
