@@ -4,9 +4,84 @@ import { Html, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BlockData } from '../../hooks/useFileBlocks';
-import { CATEGORY_SHAPES } from '../../lib/geometries';
 import { FileCategory } from '../../lib/colors';
 import { formatBytes } from '../../lib/format';
+
+const STRUCTURE_ACCENTS: Record<FileCategory, string> = {
+  media: '#b7a45e',
+  code: '#75906c',
+  archive: '#9a633f',
+  other: '#8a7b51',
+};
+
+function colorGeometry(geometry: THREE.BufferGeometry, color: string) {
+  const value = new THREE.Color(color);
+  const colors = new Float32Array(geometry.getAttribute('position').count * 3);
+  for (let index = 0; index < colors.length; index += 3) {
+    colors[index] = value.r;
+    colors[index + 1] = value.g;
+    colors[index + 2] = value.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+function createStructureGeometry(category: FileCategory) {
+  const parts: THREE.BufferGeometry[] = [];
+  const addPart = (
+    geometry: THREE.BufferGeometry,
+    color: string,
+    position: [number, number, number],
+    rotation: [number, number, number] = [0, 0, 0],
+    scale: [number, number, number] = [1, 1, 1],
+  ) => {
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation));
+    matrix.compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale));
+    geometry.applyMatrix4(matrix);
+    parts.push(colorGeometry(geometry, color));
+  };
+
+  const wood = '#59472d';
+  const darkWood = '#33291d';
+  const thatch = '#756a3f';
+  const earth = '#51452f';
+  const accent = STRUCTURE_ACCENTS[category];
+
+  if (category === 'media') {
+    addPart(new THREE.BoxGeometry(1.45, 0.62, 0.92), wood, [0, -0.08, 0]);
+    addPart(new THREE.ConeGeometry(0.95, 0.52, 4), thatch, [0, 0.49, 0], [0, Math.PI / 4, 0], [1.36, 1, 1]);
+    [[-0.52, -0.47], [0.52, -0.47], [-0.52, 0.47], [0.52, 0.47]].forEach(([x, z]) => {
+      addPart(new THREE.CylinderGeometry(0.045, 0.06, 0.42, 6), darkWood, [x, -0.47, z]);
+    });
+    addPart(new THREE.BoxGeometry(0.28, 0.42, 0.035), accent, [0, -0.12, -0.48]);
+  } else if (category === 'code') {
+    addPart(new THREE.BoxGeometry(0.9, 0.82, 0.82), wood, [0, -0.02, 0]);
+    addPart(new THREE.ConeGeometry(0.72, 0.5, 4), thatch, [0, 0.63, 0], [0, Math.PI / 4, 0]);
+    addPart(new THREE.CylinderGeometry(0.025, 0.035, 1.55, 6), accent, [0.27, 1.18, 0.12]);
+    addPart(new THREE.SphereGeometry(0.09, 6, 4), accent, [0.27, 1.97, 0.12]);
+    addPart(new THREE.BoxGeometry(0.24, 0.4, 0.035), darkWood, [0, -0.12, -0.43]);
+  } else if (category === 'archive') {
+    addPart(new THREE.BoxGeometry(1.25, 0.55, 1.0), earth, [0, -0.19, 0]);
+    addPart(new THREE.BoxGeometry(1.42, 0.18, 1.14), thatch, [0, 0.18, 0]);
+    [-0.52, 0, 0.52].forEach(x => {
+      addPart(new THREE.CylinderGeometry(0.11, 0.11, 0.92, 7), '#76684a', [x, -0.36, -0.56], [0, 0, Math.PI / 2]);
+    });
+    addPart(new THREE.BoxGeometry(0.34, 0.38, 0.05), accent, [0, -0.18, -0.53]);
+  } else {
+    addPart(new THREE.BoxGeometry(1.0, 0.7, 0.9), wood, [0, -0.11, 0]);
+    addPart(new THREE.ConeGeometry(0.82, 0.52, 4), thatch, [0, 0.47, 0], [0, Math.PI / 4, 0]);
+    addPart(new THREE.BoxGeometry(0.25, 0.42, 0.035), darkWood, [0, -0.17, -0.47]);
+    addPart(new THREE.BoxGeometry(0.18, 0.18, 0.035), accent, [0.3, 0.03, -0.47]);
+  }
+
+  const merged = mergeGeometries(parts, false);
+  parts.forEach(part => part.dispose());
+  merged.computeVertexNormals();
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
+}
 
 interface InstancedCategoryBlocksProps {
   blocks: BlockData[];
@@ -22,22 +97,13 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
   const internalMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const meshRef = externalMeshRef || internalMeshRef;
   const groupRef = useRef<THREE.Group>(null);
-  const shapeConfig = CATEGORY_SHAPES[category];
   const categoryColor = blocks[0]?.color || '#ffffff';
 
   // Track deletion animation progress for each deleting file
   const deletionProgressRef = useRef<Map<string, number>>(new Map());
   const DEREZ_DURATION = 0.8; // seconds
 
-  // Create base geometry based on shape config
-  const geometry = useMemo(() => {
-    if (shapeConfig.type === 'box') {
-      return new THREE.BoxGeometry(...(shapeConfig.args as [number, number, number]));
-    } else if (shapeConfig.type === 'octahedron') {
-      return new THREE.OctahedronGeometry(...(shapeConfig.args as [number, number]));
-    }
-    return new THREE.BoxGeometry(1, 1, 1);
-  }, [shapeConfig]);
+  const geometry = useMemo(() => createStructureGeometry(category), [category]);
 
   // Create merged wireframe geometry for all blocks in this category
   const mergedWireframe = useMemo(() => {
@@ -114,12 +180,9 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
       const isDeleting = deletingFiles.has(block.path);
       const deletionProgress = deletionProgressRef.current.get(block.path) || 0;
 
-      // Bob animation (unless deleting)
-      const bobOffset = isDeleting ? 0 : Math.sin(time * 1.5 + block.position[0] * 0.5) * 0.08;
-
       // De-rez animation: shrink and sink
       let scale = block.scale;
-      let yOffset = bobOffset;
+      let yOffset = 0;
       if (isDeleting) {
         scale = block.scale * (1 - deletionProgress);
         yOffset = -deletionProgress * 2; // Sink into ground
@@ -135,18 +198,15 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
     // Pulsing glow on material (stronger pulse for marked files)
     const material = meshRef.current.material as THREE.MeshStandardMaterial;
     if (material) {
-      // Check if any blocks in this category are marked
       const hasMarked = blocks.some(b => markedFiles.has(b.path));
       if (hasMarked) {
-        material.emissiveIntensity = 1.5 + Math.sin(time * 4) * 0.8; // Stronger, faster pulse
+        material.emissiveIntensity = 0.25 + Math.sin(time * 4) * 0.12;
       } else {
-        material.emissiveIntensity = 1.0 + Math.sin(time * 2) * 0.3;
+        material.emissiveIntensity = 0.08;
       }
     }
 
-    // Bob the wireframe group in sync
-    const categoryBobOffset = Math.sin(time * 1.5 + category.charCodeAt(0)) * 0.08;
-    groupRef.current.position.y = categoryBobOffset;
+    groupRef.current.position.y = 0;
   });
 
   // Hover detection
@@ -173,12 +233,12 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
         onPointerOut={handlePointerOut}
       >
         <meshStandardMaterial
-          color={categoryColor}
+          vertexColors
+          color="#ffffff"
           emissive={categoryColor}
-          emissiveIntensity={1.0}
-          transparent
-          opacity={0.15}
-          toneMapped={false}
+          emissiveIntensity={0.08}
+          roughness={0.9}
+          metalness={0.02}
         />
       </instancedMesh>
 
@@ -193,28 +253,23 @@ function InstancedCategoryBlocks({ blocks, category, onHover, meshRef: externalM
 
       {/* Marked file overlays - pulsing red-orange glow */}
       {blocks.filter(block => markedFiles.has(block.path)).map((block) => (
-        <mesh key={`marked-${block.path}`} position={block.position}>
-          {shapeConfig.type === 'box' ? (
-            <boxGeometry args={[block.scale * 1.1, block.scale * 1.1, block.scale * 1.1]} />
-          ) : (
-            <octahedronGeometry args={[block.scale * 0.6, 1]} />
-          )}
-          <meshStandardMaterial
-            color="#ff4400"
-            emissive="#ff4400"
-            emissiveIntensity={2.0}
-            transparent
-            opacity={0.3}
-            toneMapped={false}
-          />
-        </mesh>
+        <group key={`marked-${block.path}`} position={block.position}>
+          <mesh position={[0, block.scale * 0.1, 0]}>
+            <boxGeometry args={[block.scale * 1.55, block.scale * 1.55, block.scale * 1.35]} />
+            <meshBasicMaterial color="#ff4c1f" wireframe transparent opacity={0.65} toneMapped={false} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.48, 0]}>
+            <ringGeometry args={[block.scale * 0.72, block.scale * 0.88, 24]} />
+            <meshBasicMaterial color="#ff6a28" transparent opacity={0.72} depthWrite={false} toneMapped={false} />
+          </mesh>
+        </group>
       ))}
 
       {/* Floating filename labels */}
       {blocks.map((block) => (
         <Text
           key={block.path}
-          position={[block.position[0], block.position[1] + block.scale + 0.5, block.position[2]]}
+          position={[block.position[0], block.position[1] + block.scale * 1.65 + 0.45, block.position[2]]}
           rotation={[0, Math.PI, 0]}
           fontSize={0.2}
           color={block.color}
@@ -299,7 +354,7 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
         <Html
           position={[
             hoveredBlock.position[0],
-            hoveredBlock.position[1] + hoveredBlock.scale + 1.0,
+            hoveredBlock.position[1] + hoveredBlock.scale * 1.65 + 0.9,
             hoveredBlock.position[2],
           ]}
           center

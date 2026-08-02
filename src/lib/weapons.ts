@@ -20,3 +20,4 @@ export const FLAMETHROWER_HIT_INTERVAL = 0.12;
 export const MACHINE_GUN_FIRE_INTERVAL = 0.1;
 export const NAPALM_RADIUS = 7;
 export const NAPALM_COOLDOWN_SECONDS = 8;
+export const NAPALM_IMPACT_DELAY_MS = 2100;

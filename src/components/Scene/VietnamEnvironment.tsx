@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
@@ -13,6 +13,52 @@ function distanceToRoad(value: number) {
   return Math.abs(((value + half) % ROAD_GRID_SPACING + ROAD_GRID_SPACING) % ROAD_GRID_SPACING - half);
 }
 
+function createGrassClumpGeometry() {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const baseColor = new THREE.Color('#263918');
+  const tipColor = new THREE.Color('#82925a');
+  const bladeCount = 7;
+
+  const pushVertex = (x: number, y: number, z: number, color: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(color.r, color.g, color.b);
+  };
+
+  for (let blade = 0; blade < bladeCount; blade += 1) {
+    const angle = (blade / bladeCount) * Math.PI * 2 + seeded(blade, 70) * 0.5;
+    const offsetRadius = blade === 0 ? 0 : 0.14 + seeded(blade, 71) * 0.24;
+    const centerX = Math.cos(angle) * offsetRadius;
+    const centerZ = Math.sin(angle) * offsetRadius;
+    const sideX = Math.cos(angle + Math.PI * 0.5);
+    const sideZ = Math.sin(angle + Math.PI * 0.5);
+    const width = 0.045 + seeded(blade, 72) * 0.035;
+    const height = 0.68 + seeded(blade, 73) * 0.32;
+    const lean = 0.12 + seeded(blade, 74) * 0.24;
+    const tipX = centerX + Math.cos(angle) * lean;
+    const tipZ = centerZ + Math.sin(angle) * lean;
+
+    const leftBase: [number, number, number] = [centerX - sideX * width, 0, centerZ - sideZ * width];
+    const rightBase: [number, number, number] = [centerX + sideX * width, 0, centerZ + sideZ * width];
+    const rightTip: [number, number, number] = [tipX + sideX * width * 0.12, height, tipZ + sideZ * width * 0.12];
+    const leftTip: [number, number, number] = [tipX - sideX * width * 0.12, height, tipZ - sideZ * width * 0.12];
+
+    pushVertex(...leftBase, baseColor);
+    pushVertex(...rightBase, baseColor);
+    pushVertex(...rightTip, tipColor);
+    pushVertex(...leftBase, baseColor);
+    pushVertex(...rightTip, tipColor);
+    pushVertex(...leftTip, tipColor);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function ElephantGrass() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -20,23 +66,24 @@ function ElephantGrass() {
     const placements: Array<{ position: [number, number, number]; scale: [number, number, number]; rotation: number }> = [];
     let candidate = 0;
 
-    while (placements.length < 480 && candidate < 5200) {
+    while (placements.length < 620 && candidate < 7000) {
       const x = (seeded(candidate, 1) - 0.5) * 150;
       const z = (seeded(candidate, 2) - 0.5) * 150;
       candidate += 1;
       if (distanceToRoad(x) < 2.4 || distanceToRoad(z) < 2.4) continue;
       if (Math.abs(x) < 7 && z > -18 && z < 8) continue;
 
-      const height = 0.65 + seeded(candidate, 3) * 1.15;
+      const height = 0.9 + seeded(candidate, 3) * 1.3;
       placements.push({
-        position: [x, height * 0.5 - 0.02, z],
-        scale: [0.65 + seeded(candidate, 4) * 0.7, height, 0.65 + seeded(candidate, 5) * 0.7],
+        position: [x, -0.03, z],
+        scale: [0.95 + seeded(candidate, 4) * 1.0, height, 0.95 + seeded(candidate, 5) * 1.0],
         rotation: seeded(candidate, 6) * Math.PI,
       });
     }
 
     return placements;
   }, []);
+  const grassGeometry = useMemo(() => createGrassClumpGeometry(), []);
 
   useFrame(({ clock }) => {
     if (!meshRef.current) return;
@@ -52,9 +99,109 @@ function ElephantGrass() {
   });
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, grass.length]} castShadow={false} receiveShadow={false}>
-      <coneGeometry args={[0.17, 1, 5]} />
-      <meshStandardMaterial color="#607b42" emissive="#2b401d" emissiveIntensity={0.35} roughness={1} />
+    <instancedMesh ref={meshRef} args={[grassGeometry, undefined, grass.length]} castShadow={false} receiveShadow={false}>
+      <meshStandardMaterial
+        vertexColors
+        side={THREE.DoubleSide}
+        emissive="#1f3115"
+        emissiveIntensity={0.2}
+        roughness={1}
+      />
+    </instancedMesh>
+  );
+}
+
+function TerrainRelief() {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const mounds = useMemo(() => {
+    const placements: Array<{ x: number; y: number; z: number; sx: number; sy: number; sz: number; rotation: number; color: number }> = [
+      { x: -15, y: -0.72, z: -5, sx: 4.8, sy: 1.35, sz: 3.4, rotation: 0.3, color: 0 },
+      { x: 15, y: -0.78, z: 5, sx: 4.2, sy: 1.25, sz: 4.8, rotation: 1.1, color: 1 },
+      { x: -16, y: -0.82, z: 15, sx: 5.4, sy: 1.4, sz: 4.2, rotation: 0.7, color: 3 },
+      { x: 16, y: -0.74, z: -5, sx: 4.5, sy: 1.3, sz: 3.8, rotation: 2.2, color: 2 },
+    ];
+    let candidate = 0;
+
+    while (placements.length < 42 && candidate < 1000) {
+      const x = (seeded(candidate, 80) - 0.5) * 176;
+      const z = (seeded(candidate, 81) - 0.5) * 176;
+      candidate += 1;
+      if (Math.hypot(x, z) < 24) continue;
+      if (distanceToRoad(x) < 2.7 || distanceToRoad(z) < 2.7) continue;
+      const sx = 3.5 + seeded(candidate, 82) * 6.5;
+      const sy = 0.7 + seeded(candidate, 83) * 2.2;
+      placements.push({
+        x,
+        y: -0.8 + sy * 0.12,
+        z,
+        sx,
+        sy,
+        sz: 3.5 + seeded(candidate, 84) * 6.5,
+        rotation: seeded(candidate, 85) * Math.PI,
+        color: Math.floor(seeded(candidate, 86) * 4),
+      });
+    }
+
+    return placements;
+  }, []);
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    mounds.forEach((mound, index) => {
+      dummy.position.set(mound.x, mound.y, mound.z);
+      dummy.rotation.set(0, mound.rotation, 0);
+      dummy.scale.set(mound.sx, mound.sy, mound.sz);
+      dummy.updateMatrix();
+      meshRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+  }, [dummy, mounds]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, mounds.length]} receiveShadow>
+      <sphereGeometry args={[1, 10, 6]} />
+      <meshStandardMaterial color="#46573a" emissive="#1e2c1a" emissiveIntensity={0.32} roughness={1} />
+    </instancedMesh>
+  );
+}
+
+function GroundPatches() {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const colors = useMemo(() => [
+    new THREE.Color('#53603b'),
+    new THREE.Color('#353d27'),
+    new THREE.Color('#5a5131'),
+    new THREE.Color('#2b432d'),
+  ], []);
+  const patches = useMemo(() => Array.from({ length: 58 }, (_, index) => ({
+    x: (seeded(index, 90) - 0.5) * 150,
+    z: (seeded(index, 91) - 0.5) * 150,
+    sx: 2.2 + seeded(index, 92) * 6.5,
+    sz: 1.4 + seeded(index, 93) * 4.3,
+    rotation: seeded(index, 94) * Math.PI,
+    color: Math.floor(seeded(index, 95) * colors.length),
+  })), [colors.length]);
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    patches.forEach((patch, index) => {
+      dummy.position.set(patch.x, -0.072, patch.z);
+      dummy.rotation.set(-Math.PI / 2, 0, patch.rotation);
+      dummy.scale.set(patch.sx, patch.sz, 1);
+      dummy.updateMatrix();
+      meshRef.current!.setMatrixAt(index, dummy.matrix);
+      meshRef.current!.setColorAt(index, colors[patch.color]);
+    });
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+  }, [colors, dummy, patches]);
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, patches.length]}>
+      <circleGeometry args={[1, 7]} />
+      <meshBasicMaterial vertexColors transparent opacity={0.26} depthWrite={false} />
     </instancedMesh>
   );
 }
@@ -269,7 +416,7 @@ function MudAndPuddles() {
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow>
         <planeGeometry args={[260, 260]} />
-        <meshStandardMaterial color="#303722" roughness={1} metalness={0} />
+        <meshStandardMaterial color="#405036" roughness={1} metalness={0} />
       </mesh>
       {puddles.map((puddle, index) => (
         <mesh
@@ -290,6 +437,8 @@ export function VietnamEnvironment() {
   return (
     <>
       <MudAndPuddles />
+      <GroundPatches />
+      <TerrainRelief />
       <ElephantGrass />
       <JunglePerimeter />
       <SmokeColumns />

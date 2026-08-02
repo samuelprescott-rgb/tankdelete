@@ -23,17 +23,19 @@ export function ProjectileManager({
   allBlocks,
 }: ProjectileManagerProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const glowMeshRef = useRef<THREE.InstancedMesh>(null);
 
   // Pre-allocate temp vectors
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(1, 1, 1), []);
+  const tracerForward = useMemo(() => new THREE.Vector3(0, 0, 1), []);
   const cannonColor = useMemo(() => new THREE.Color('#e3b341'), []);
   const machineGunColor = useMemo(() => new THREE.Color('#ffe197'), []);
 
   useFrame((_state, delta) => {
-    if (!pool.current || !meshRef.current) return;
+    if (!pool.current || !meshRef.current || !glowMeshRef.current) return;
 
     let visibleCount = 0;
 
@@ -71,10 +73,23 @@ export function ProjectileManager({
       }
 
       // Update instance matrix for visible projectile
-      tempScale.setScalar(projectile.kind === 'machinegun' ? 0.48 : 1);
+      tempQuaternion.setFromUnitVectors(tracerForward, projectile.direction);
+      if (projectile.kind === 'machinegun') {
+        tempScale.set(0.9, 0.9, 1.15);
+      } else {
+        tempScale.set(1.25, 1.25, 0.85);
+      }
       tempMatrix.compose(projectile.position, tempQuaternion, tempScale);
       meshRef.current.setMatrixAt(visibleCount, tempMatrix);
       meshRef.current.setColorAt(
+        visibleCount,
+        projectile.kind === 'machinegun' ? machineGunColor : cannonColor,
+      );
+
+      tempScale.setScalar(projectile.kind === 'machinegun' ? 0.18 : 0.28);
+      tempMatrix.compose(projectile.position, tempQuaternion.identity(), tempScale);
+      glowMeshRef.current.setMatrixAt(visibleCount, tempMatrix);
+      glowMeshRef.current.setColorAt(
         visibleCount,
         projectile.kind === 'machinegun' ? machineGunColor : cannonColor,
       );
@@ -82,16 +97,39 @@ export function ProjectileManager({
     }
 
     meshRef.current.count = visibleCount;
+    glowMeshRef.current.count = visibleCount;
     if (visibleCount > 0) {
       meshRef.current.instanceMatrix.needsUpdate = true;
       if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+      glowMeshRef.current.instanceMatrix.needsUpdate = true;
+      if (glowMeshRef.current.instanceColor) glowMeshRef.current.instanceColor.needsUpdate = true;
     }
   });
 
   return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, MAX_PROJECTILES]}>
-      <sphereGeometry args={[0.12, 8, 8]} />
-      <meshBasicMaterial vertexColors toneMapped={false} />
-    </instancedMesh>
+    <>
+      <instancedMesh ref={meshRef} args={[undefined, undefined, MAX_PROJECTILES]} frustumCulled={false}>
+        <boxGeometry args={[0.16, 0.16, 3.2]} />
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.96}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={glowMeshRef} args={[undefined, undefined, MAX_PROJECTILES]} frustumCulled={false}>
+        <sphereGeometry args={[1, 6, 6]} />
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.95}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </instancedMesh>
+    </>
   );
 }

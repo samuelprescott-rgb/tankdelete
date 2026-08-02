@@ -37,6 +37,7 @@ import {
   FLAMETHROWER_RANGE,
   NapalmStrike,
   NAPALM_COOLDOWN_SECONDS,
+  NAPALM_IMPACT_DELAY_MS,
   NAPALM_RADIUS,
   WeaponMode,
 } from './lib/weapons';
@@ -411,20 +412,27 @@ function App() {
 
     toast(
       targets.length > 0
-        ? `Napalm impact · ${targets.length} targets in burn zone`
-        : 'Napalm impact · no targets in burn zone',
-      { duration: 2200 },
+        ? `Jet inbound · ${targets.length} targets in strike zone`
+        : 'Jet inbound · strike zone is clear',
+      { duration: 1800 },
     );
 
     window.setTimeout(() => {
       if (worldSessionRef.current !== strikeSession) return;
+
+      toast(
+        targets.length > 0
+          ? `Napalm impact · ${targets.length} targets in burn zone`
+          : 'Napalm impact · no targets in burn zone',
+        { duration: 2200 },
+      );
 
       void (async () => {
         for (const { block } of targets) {
           await handleProjectileHit(block.path);
         }
       })();
-    }, 350);
+    }, NAPALM_IMPACT_DELAY_MS);
   }
 
   function handleNapalmComplete(id: number) {

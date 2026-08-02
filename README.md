@@ -41,8 +41,9 @@ Drive a tank through your filesystem in a Vietnam-era-inspired field-operations 
 ## Features
 
 - `AO CLEAN SWEEP // 1968` weathered olive, amber, and field-map visual system
-- Mud road grid, reflective puddles, elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
-- Continuous flamethrower stream, fuel/recharge meter, machine-gun tracers, and napalm burn-zone effects
+- Mud road grid, mottled ground cover, relief mounds, reflective puddles, blade-built elephant grass, jungle perimeter, drifting smoke, field fortifications, and a distant UH-1-inspired flyover
+- File targets rendered as huts, longhouses, bunkers, and radio structures while retaining category-colored outlines and labels
+- Continuous flamethrower stream, fuel/recharge meter, high-visibility tracer streaks, and a camera-framed jet pass that releases each napalm strike before impact
 - Two original polyphonic field-radio tracks generated with the Web Audio API
 - Optional local-build radio slot for `Voodoo Child (Slight Return)` plus a loader for other legally obtained audio files
 - Tactical tunnel portals for folder navigation
