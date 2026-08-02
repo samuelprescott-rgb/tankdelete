@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+interface RiverAudioGraph {
+  context: AudioContext;
+  source: AudioBufferSourceNode;
+  filter: BiquadFilterNode;
+  gain: GainNode;
+}
+
 const AUDIO_PATHS = {
   cannon: '/audio/sfx/tank_cannon_fire.wav',
   machineGun: '/audio/sfx/machine_gun_burst_01.wav',
@@ -52,6 +59,7 @@ export function useGameAudio() {
   const flamethrowerActiveRef = useRef(false);
   const movementActiveRef = useRef(false);
   const battlefieldActiveRef = useRef(false);
+  const riverAudioRef = useRef<RiverAudioGraph | null>(null);
 
   useEffect(() => {
     cannonRef.current = createAudio(AUDIO_PATHS.cannon, 0.78);
@@ -92,7 +100,54 @@ export function useGameAudio() {
       }
       for (const audio of activeOneShotsRef.current) audio.pause();
       activeOneShotsRef.current.clear();
+      const riverAudio = riverAudioRef.current;
+      riverAudioRef.current = null;
+      if (riverAudio) {
+        try {
+          riverAudio.source.stop();
+        } catch {
+          // The source may already have stopped during WebView teardown.
+        }
+        void riverAudio.context.close().catch(() => {});
+      }
     };
+  }, []);
+
+  const ensureRiverAudio = useCallback(() => {
+    if (riverAudioRef.current) return riverAudioRef.current;
+    const AudioContextClass = window.AudioContext
+      ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    const context = new AudioContextClass();
+    const frameCount = Math.max(1, Math.floor(context.sampleRate * 2.4));
+    const buffer = context.createBuffer(1, frameCount, context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    let slowNoise = 0;
+    for (let index = 0; index < frameCount; index += 1) {
+      // Brown-ish noise reads as a muddy current and track churn after filtering,
+      // without borrowing an unrelated weapon or engine sample.
+      slowNoise = slowNoise * 0.985 + (Math.random() * 2 - 1) * 0.015;
+      channel[index] = slowNoise * 3.4;
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const filter = context.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 540;
+    filter.Q.value = 0.72;
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+    source.start();
+
+    const graph = { context, source, filter, gain };
+    riverAudioRef.current = graph;
+    return graph;
   }, []);
 
   const playOneShot = useCallback((
@@ -353,6 +408,26 @@ export function useGameAudio() {
     }
   }, [ensureBattlefieldAmbience, playOneShot, startLoop, stopLoop]);
 
+  const setRiverState = useCallback((proximity: number, movingInWater: boolean) => {
+    const clampedProximity = Math.min(1, Math.max(0, proximity));
+    const existing = riverAudioRef.current;
+    if (clampedProximity <= 0.01 && !movingInWater && !existing) return;
+
+    const graph = existing ?? ensureRiverAudio();
+    if (!graph) return;
+    if (graph.context.state === 'suspended') void graph.context.resume().catch(() => {});
+
+    const now = graph.context.currentTime;
+    const ambientGain = clampedProximity * 0.026;
+    const churnGain = movingInWater ? 0.052 : 0;
+    graph.gain.gain.cancelScheduledValues(now);
+    graph.gain.gain.setTargetAtTime(ambientGain + churnGain, now, movingInWater ? 0.08 : 0.34);
+    graph.filter.frequency.cancelScheduledValues(now);
+    graph.filter.frequency.setTargetAtTime(movingInWater ? 1_180 : 520, now, 0.16);
+    graph.filter.Q.cancelScheduledValues(now);
+    graph.filter.Q.setTargetAtTime(movingInWater ? 1.15 : 0.7, now, 0.2);
+  }, [ensureRiverAudio]);
+
   const setBattlefieldActive = useCallback((active: boolean) => {
     if (battlefieldActiveRef.current === active) {
       if (active) startLoop(battlefieldRef.current);
@@ -381,6 +456,12 @@ export function useGameAudio() {
     for (const timerId of napalmStartTimerIdsRef.current) window.clearTimeout(timerId);
     napalmStartTimerIdsRef.current.clear();
     for (const audio of napalmPoolRef.current) stopLoop(audio);
+    const riverAudio = riverAudioRef.current;
+    if (riverAudio) {
+      const now = riverAudio.context.currentTime;
+      riverAudio.gain.gain.cancelScheduledValues(now);
+      riverAudio.gain.gain.setTargetAtTime(0, now, 0.08);
+    }
     stopAmbientEvents();
   }, [stopAmbientEvents, stopLoop]);
 
@@ -391,6 +472,7 @@ export function useGameAudio() {
     setMachineGunActive,
     setFlamethrowerActive,
     setMovementActive,
+    setRiverState,
     setBattlefieldActive,
     stopAllLoops,
   };

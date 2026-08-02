@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { commands } from '../lib/tauri-commands';
 
 export function useMarkedFiles() {
   const [markedFiles, setMarkedFiles] = useState<Set<string>>(new Set());
   const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
+  // Keep a synchronous mirror so Undo can cancel an in-flight de-rez before
+  // React commits the next render. Animation callbacks can then distinguish a
+  // genuine completion from a file that was restored during the same frame.
+  const deletingFilesRef = useRef<Set<string>>(new Set());
 
   const markFile = (filePath: string) => {
     setMarkedFiles(prev => new Set(prev).add(filePath));
@@ -23,6 +27,7 @@ export function useMarkedFiles() {
 
   const resetMarkedState = () => {
     setMarkedFiles(new Set());
+    deletingFilesRef.current = new Set();
     setDeletingFiles(new Set());
   };
 
@@ -37,15 +42,18 @@ export function useMarkedFiles() {
       next.delete(filePath);
       return next;
     });
-    setDeletingFiles(prev => new Set(prev).add(filePath));
+    const nextDeleting = new Set(deletingFilesRef.current).add(filePath);
+    deletingFilesRef.current = nextDeleting;
+    setDeletingFiles(nextDeleting);
   };
 
   const finishDeletion = (filePath: string) => {
-    setDeletingFiles(prev => {
-      const next = new Set(prev);
-      next.delete(filePath);
-      return next;
-    });
+    if (!deletingFilesRef.current.has(filePath)) return false;
+    const nextDeleting = new Set(deletingFilesRef.current);
+    nextDeleting.delete(filePath);
+    deletingFilesRef.current = nextDeleting;
+    setDeletingFiles(nextDeleting);
+    return true;
   };
 
   const deleteAllMarked = async (
@@ -55,7 +63,9 @@ export function useMarkedFiles() {
 
     // Move all marked files to deleting state
     setMarkedFiles(new Set());
-    setDeletingFiles(prev => new Set([...prev, ...filesToDelete]));
+    const nextDeleting = new Set([...deletingFilesRef.current, ...filesToDelete]);
+    deletingFilesRef.current = nextDeleting;
+    setDeletingFiles(nextDeleting);
 
     // Delete all files in parallel
     const deletePromises = filesToDelete.map(async (filePath) => {
@@ -73,11 +83,10 @@ export function useMarkedFiles() {
     const failedPaths = results.filter(result => !result.success).map(result => result.path);
 
     if (failedPaths.length > 0) {
-      setDeletingFiles(prev => {
-        const next = new Set(prev);
-        failedPaths.forEach(path => next.delete(path));
-        return next;
-      });
+      const remainingDeletions = new Set(deletingFilesRef.current);
+      failedPaths.forEach(path => remainingDeletions.delete(path));
+      deletingFilesRef.current = remainingDeletions;
+      setDeletingFiles(remainingDeletions);
       setMarkedFiles(prev => new Set([...prev, ...failedPaths]));
     }
 

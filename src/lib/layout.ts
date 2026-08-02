@@ -8,6 +8,17 @@ export type BlockPosition = {
   z: number;
 };
 
+export interface ReservedLayoutZone {
+  centerX: number;
+  centerZ: number;
+  halfWidth: number;
+  halfDepth: number;
+}
+
+interface LayoutOptions {
+  reservedZones?: readonly ReservedLayoutZone[];
+}
+
 function coordinateNoise(value: string, salt: number) {
   let hash = 2166136261 ^ salt;
   for (let index = 0; index < value.length; index += 1) {
@@ -26,6 +37,7 @@ function coordinateNoise(value: string, salt: number) {
  */
 export function layoutFilesInGrid(
   files: FileEntry[],
+  options: LayoutOptions = {},
 ): Map<string, BlockPosition> {
   const positions = new Map<string, BlockPosition>();
   const S = ROAD_GRID_SPACING;
@@ -78,6 +90,11 @@ export function layoutFilesInGrid(
       const col = colStart + c;
       const blockCenterX = (col + 0.5) * S;
       const blockCenterZ = (row + 0.5) * S + S; // offset past folder row
+      const blockOverlapsReservedZone = options.reservedZones?.some(zone => (
+        Math.abs(blockCenterX - zone.centerX) <= zone.halfWidth + S * 0.5
+        && Math.abs(blockCenterZ - zone.centerZ) <= zone.halfDepth + S * 0.5
+      ));
+      if (blockOverlapsReservedZone) continue;
 
       // Place up to filesPerBlock in a 2x2 pattern inside the block
       const offsets = [

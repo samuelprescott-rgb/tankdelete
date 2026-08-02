@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, createRef } from 'react';
+import { useRef, useMemo, useEffect, useLayoutEffect, useState, createRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -546,6 +546,99 @@ function ProximityFileLabels({
   );
 }
 
+function ObjectiveFileMarkers({
+  blocks,
+  deletingFiles,
+}: {
+  blocks: BlockData[];
+  deletingFiles: Set<string>;
+}) {
+  const ringRef = useRef<THREE.InstancedMesh>(null);
+  const poleRef = useRef<THREE.InstancedMesh>(null);
+  const flagRef = useRef<THREE.InstancedMesh>(null);
+  const lastUpdateRef = useRef(-1);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const activeObjectives = useMemo(
+    () => blocks.filter(block => block.isObjective && !deletingFiles.has(block.path)),
+    [blocks, deletingFiles],
+  );
+
+  useLayoutEffect(() => {
+    if (!ringRef.current || !poleRef.current || !flagRef.current) return;
+    ringRef.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    poleRef.current.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    flagRef.current.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    ringRef.current.count = activeObjectives.length;
+    poleRef.current.count = activeObjectives.length;
+    flagRef.current.count = activeObjectives.length;
+
+    activeObjectives.forEach((block, index) => {
+      const markerX = block.position[0] + block.scale * 0.92;
+      const markerZ = block.position[2] - block.scale * 0.68;
+
+      dummy.position.set(block.position[0], 0.028, block.position[2]);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.scale.setScalar(block.scale * 1.08);
+      dummy.updateMatrix();
+      ringRef.current!.setMatrixAt(index, dummy.matrix);
+
+      dummy.position.set(markerX, 0.92, markerZ);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(0.025, 0.9, 0.025);
+      dummy.updateMatrix();
+      poleRef.current!.setMatrixAt(index, dummy.matrix);
+
+      dummy.position.set(markerX + 0.2, 1.62, markerZ);
+      dummy.rotation.set(0, 0, -0.08);
+      dummy.scale.set(0.42, 0.19, 1);
+      dummy.updateMatrix();
+      flagRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+
+    for (const mesh of [ringRef.current, poleRef.current, flagRef.current]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingBox();
+      mesh.computeBoundingSphere();
+    }
+  }, [activeObjectives, dummy]);
+
+  useFrame(({ clock }) => {
+    const rings = ringRef.current;
+    if (!rings || activeObjectives.length === 0) return;
+    const now = clock.elapsedTime;
+    if (now - lastUpdateRef.current < 1 / 15) return;
+    lastUpdateRef.current = now;
+
+    activeObjectives.forEach((block, index) => {
+      const pulse = 1 + Math.sin(now * 2.6 + index * 1.4) * 0.08;
+      dummy.position.set(block.position[0], 0.03, block.position[2]);
+      dummy.rotation.set(-Math.PI / 2, 0, now * 0.22 + index * 0.5);
+      dummy.scale.setScalar(block.scale * 1.08 * pulse);
+      dummy.updateMatrix();
+      rings.setMatrixAt(index, dummy.matrix);
+    });
+    rings.instanceMatrix.needsUpdate = true;
+  });
+
+  if (activeObjectives.length === 0) return null;
+  return (
+    <group>
+      <instancedMesh ref={ringRef} args={[undefined, undefined, activeObjectives.length]} renderOrder={72}>
+        <ringGeometry args={[0.82, 1, 28]} />
+        <meshBasicMaterial color="#ffca55" transparent opacity={0.78} depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />
+      </instancedMesh>
+      <instancedMesh ref={poleRef} args={[undefined, undefined, activeObjectives.length]}>
+        <cylinderGeometry args={[1, 1.18, 1, 6]} />
+        <meshStandardMaterial color="#574a2c" roughness={0.92} />
+      </instancedMesh>
+      <instancedMesh ref={flagRef} args={[undefined, undefined, activeObjectives.length]} renderOrder={71}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial color="#e55d2d" side={THREE.DoubleSide} toneMapped={false} />
+      </instancedMesh>
+    </group>
+  );
+}
+
 interface FileBlocksProps {
   blocks: Map<FileCategory, BlockData[]>;
   onHover: (block: BlockData | null) => void;
@@ -612,6 +705,7 @@ export function FileBlocks({ blocks, onHover, onMeshRefsReady, markedFiles = new
       })}
 
       <ProximityFileLabels blocks={allBlocks} markedFiles={markedFiles} />
+      <ObjectiveFileMarkers blocks={allBlocks} deletingFiles={deletingFiles} />
 
       {/* Hover tooltip */}
       {hoveredBlock && (

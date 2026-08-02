@@ -2,7 +2,12 @@ import { useRef, useEffect } from 'react';
 
 interface MinimapProps {
   tankStateRef: React.RefObject<{ position: [number, number, number]; rotation: number }>;
-  fileBlocks: Array<{ position: [number, number, number]; color: string; isMarked?: boolean }>;
+  fileBlocks: Array<{
+    position: [number, number, number];
+    color: string;
+    isMarked?: boolean;
+    isObjective?: boolean;
+  }>;
   folderPortals: Array<{ position: [number, number, number] }>;
   backPortalPosition: [number, number, number] | null;
   enemies: Array<{ position: [number, number, number] }>;
@@ -76,14 +81,18 @@ export function Minimap({
       ctx.restore();
 
       // Helper function to rotate point relative to tank
-      function rotateAndScale(worldX: number, worldZ: number): { x: number; y: number } | null {
+      function rotateAndScale(
+        worldX: number,
+        worldZ: number,
+        clampToEdge = false,
+      ): { x: number; y: number; clamped: boolean } | null {
         // Calculate relative position from tank
         const relX = worldX - tankPosition[0];
         const relZ = worldZ - tankPosition[2];
 
         // Check if within radar range
         const distance = Math.sqrt(relX * relX + relZ * relZ);
-        if (distance > WORLD_RADIUS) return null;
+        if (distance > WORLD_RADIUS && !clampToEdge) return null;
 
         // Rotate by negative tank rotation (so forward is always up on minimap)
         const cos = Math.cos(-tankRotation);
@@ -92,21 +101,45 @@ export function Minimap({
         const rotZ = relX * sin + relZ * cos;
 
         // Scale to canvas coordinates (note: Z maps to Y in 2D)
+        const contactScale = distance > WORLD_RADIUS
+          ? (RADAR_RADIUS - 7) / Math.max(distance, 0.0001)
+          : SCALE;
         return {
-          x: centerX + rotX * SCALE,
-          y: centerY + rotZ * SCALE,
+          x: centerX + rotX * contactScale,
+          y: centerY + rotZ * contactScale,
+          clamped: distance > WORLD_RADIUS,
         };
       }
 
       // Draw file blocks as colored dots
       for (const block of fileBlocks) {
-        const pos = rotateAndScale(block.position[0], block.position[2]);
+        const pos = rotateAndScale(block.position[0], block.position[2], block.isObjective);
         if (!pos) continue;
 
         ctx.fillStyle = block.isMarked ? '#e36d32' : block.color;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
         ctx.fill();
+
+        // Objective huts stay legible from the insertion point even when the
+        // compound lies beyond the normal 30 m radar sweep.
+        if (block.isObjective) {
+          ctx.strokeStyle = pos.clamped ? '#ffcc58' : '#e3b341';
+          ctx.lineWidth = pos.clamped ? 2 : 1.5;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, pos.clamped ? 5.5 : 5, 0, Math.PI * 2);
+          ctx.stroke();
+          if (pos.clamped) {
+            const angle = Math.atan2(pos.y - centerY, pos.x - centerX);
+            ctx.fillStyle = '#ffcc58';
+            ctx.beginPath();
+            ctx.moveTo(pos.x + Math.cos(angle) * 6, pos.y + Math.sin(angle) * 6);
+            ctx.lineTo(pos.x + Math.cos(angle + 2.45) * 4, pos.y + Math.sin(angle + 2.45) * 4);
+            ctx.lineTo(pos.x + Math.cos(angle - 2.45) * 4, pos.y + Math.sin(angle - 2.45) * 4);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
       }
 
       // Draw folder portals as magenta squares

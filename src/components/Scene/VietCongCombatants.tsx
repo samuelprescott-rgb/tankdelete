@@ -68,6 +68,16 @@ interface FighterRuntime {
   nextShotAt: number;
   shotIndex: number;
   flashUntil: number;
+  baseOffsetX: number;
+  baseOffsetZ: number;
+  moveFromX: number;
+  moveFromZ: number;
+  moveToX: number;
+  moveToZ: number;
+  moveStartedAt: number;
+  moveEndsAt: number;
+  moving: boolean;
+  atAlternate: boolean;
 }
 
 export interface VietCongCombatantsProps {
@@ -678,6 +688,9 @@ export function VietCongCombatants({
   const muzzleFlashRefs = useRef<Array<THREE.Mesh | null>>([]);
   const tracerMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const runtimeByEnemyRef = useRef(new Map<string, FighterRuntime>());
+  const activeBoundEnemyRef = useRef<string | null>(null);
+  const boundCursorRef = useRef(0);
+  const nextEnemyBoundAtRef = useRef(7.2);
 
   const projectilePool = useMemo<HostileProjectile[]>(() => (
     Array.from({ length: HOSTILE_PROJECTILE_CAPACITY }, () => ({
@@ -753,11 +766,74 @@ export function VietCongCombatants({
       tankCenter.y += 0.64;
     }
 
+    if (activeBoundEnemyRef.current !== null) {
+      let activeMoverStillAlive = false;
+      for (let index = 0; index < enemies.length; index += 1) {
+        const enemy = enemies[index];
+        if (enemy.id === activeBoundEnemyRef.current && enemy.alive) {
+          activeMoverStillAlive = true;
+          break;
+        }
+      }
+      if (!activeMoverStillAlive) {
+        activeBoundEnemyRef.current = null;
+        nextEnemyBoundAtRef.current = now + 1.2;
+      }
+    }
+
+    // Schedule at most one short foxhole-to-cover shift at a time. Runtime refs
+    // keep this cosmetic movement off React's render path and add no scene nodes.
+    if (enemies.length > 0
+      && activeBoundEnemyRef.current === null
+      && now >= nextEnemyBoundAtRef.current) {
+      let scheduled = false;
+      for (let attempt = 0; attempt < enemies.length; attempt += 1) {
+        const candidateIndex = (boundCursorRef.current + attempt) % enemies.length;
+        const candidate = enemies[candidateIndex];
+        if (!candidate.alive) continue;
+        const candidateRuntime = runtimeByEnemyRef.current.get(candidate.id);
+        if (!candidateRuntime) continue;
+
+        const seed = hashCombatSession(candidate.id);
+        const coverRotation = Math.atan2(candidate.position[0], candidate.position[2] + 12);
+        const side = candidateIndex % 2 === 0 ? -1 : 1;
+        const lateral = side * (0.24 + deterministicUnit(seed, 141) * 0.075);
+        const rearward = 0.055 + deterministicUnit(seed, 142) * 0.035;
+        const cosine = Math.cos(coverRotation);
+        const sine = Math.sin(coverRotation);
+        const alternateX = cosine * lateral + sine * rearward;
+        const alternateZ = -sine * lateral + cosine * rearward;
+
+        candidateRuntime.moveFromX = candidateRuntime.baseOffsetX;
+        candidateRuntime.moveFromZ = candidateRuntime.baseOffsetZ;
+        candidateRuntime.moveToX = candidateRuntime.atAlternate ? 0 : alternateX;
+        candidateRuntime.moveToZ = candidateRuntime.atAlternate ? 0 : alternateZ;
+        candidateRuntime.moveStartedAt = now;
+        candidateRuntime.moveEndsAt = now + 0.68 + deterministicUnit(seed, 143) * 0.2;
+        candidateRuntime.moving = true;
+        candidateRuntime.nextShotAt = Math.max(
+          candidateRuntime.nextShotAt,
+          candidateRuntime.moveEndsAt + 0.2,
+        );
+        activeBoundEnemyRef.current = candidate.id;
+        boundCursorRef.current = (candidateIndex + 1) % enemies.length;
+        scheduled = true;
+        break;
+      }
+      // A fresh encounter may not have initialized its runtime map until this
+      // frame. Retry shortly instead of allocating a second scheduling path.
+      if (!scheduled) nextEnemyBoundAtRef.current = now + 0.3;
+    }
+
     for (let index = 0; index < enemies.length; index += 1) {
       const enemy = enemies[index];
       const fighter = fighterRefs.current[index];
       const flash = muzzleFlashRefs.current[index];
       if (!enemy.alive) {
+        if (activeBoundEnemyRef.current === enemy.id) {
+          activeBoundEnemyRef.current = null;
+          nextEnemyBoundAtRef.current = now + 1.2;
+        }
         if (fighter) fighter.visible = false;
         if (flash) flash.visible = false;
         continue;
@@ -769,8 +845,43 @@ export function VietCongCombatants({
           nextShotAt: now + enemy.initialFireDelay,
           shotIndex: 0,
           flashUntil: 0,
+          baseOffsetX: 0,
+          baseOffsetZ: 0,
+          moveFromX: 0,
+          moveFromZ: 0,
+          moveToX: 0,
+          moveToZ: 0,
+          moveStartedAt: 0,
+          moveEndsAt: 0,
+          moving: false,
+          atAlternate: false,
         };
         runtimeByEnemyRef.current.set(enemy.id, runtime);
+      }
+
+      let movementProgress = 0;
+      if (runtime.moving) {
+        const movementDuration = Math.max(0.001, runtime.moveEndsAt - runtime.moveStartedAt);
+        movementProgress = THREE.MathUtils.clamp(
+          (now - runtime.moveStartedAt) / movementDuration,
+          0,
+          1,
+        );
+        const movementBlend = movementProgress * movementProgress * (3 - 2 * movementProgress);
+        runtime.baseOffsetX = THREE.MathUtils.lerp(runtime.moveFromX, runtime.moveToX, movementBlend);
+        runtime.baseOffsetZ = THREE.MathUtils.lerp(runtime.moveFromZ, runtime.moveToZ, movementBlend);
+
+        if (movementProgress >= 1) {
+          runtime.baseOffsetX = runtime.moveToX;
+          runtime.baseOffsetZ = runtime.moveToZ;
+          runtime.moving = false;
+          runtime.atAlternate = !runtime.atAlternate;
+          if (activeBoundEnemyRef.current === enemy.id) activeBoundEnemyRef.current = null;
+          nextEnemyBoundAtRef.current = now + 2.9 + deterministicUnit(
+            hashCombatSession(enemy.id),
+            144 + runtime.shotIndex,
+          ) * 1.8;
+        }
       }
 
       if (fighter) {
@@ -781,11 +892,19 @@ export function VietCongCombatants({
           fighter.rotation.y = Math.atan2(-dx, -dz);
         }
         const idlePhase = now * (0.48 + index * 0.014) + index * 1.67;
-        fighter.position.x = Math.sin(idlePhase) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
-        fighter.position.y = Math.sin(idlePhase * 1.7) * 0.006;
-        fighter.position.z = now < runtime.flashUntil ? 0.018 : 0;
-        fighter.rotation.x = Math.sin(now * 0.72 + index * 1.31) * 0.006;
-        fighter.rotation.z = Math.sin(idlePhase * 0.82) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
+        const boundStride = runtime.moving
+          ? Math.sin(movementProgress * Math.PI * 4)
+          : 0;
+        fighter.position.x = runtime.baseOffsetX
+          + Math.sin(idlePhase) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
+        fighter.position.y = Math.sin(idlePhase * 1.7) * 0.006
+          + (runtime.moving ? Math.abs(boundStride) * 0.018 : 0);
+        fighter.position.z = runtime.baseOffsetZ + (now < runtime.flashUntil ? 0.018 : 0);
+        fighter.rotation.x = Math.sin(now * 0.72 + index * 1.31) * 0.006
+          + (runtime.moving ? 0.055 : 0);
+        fighter.rotation.z = runtime.moving
+          ? boundStride * 0.045
+          : Math.sin(idlePhase * 0.82) * (enemy.stance === 'kneeling' ? 0.006 : 0.014);
       }
       if (flash) {
         flash.visible = now < runtime.flashUntil;
@@ -794,7 +913,7 @@ export function VietCongCombatants({
         }
       }
 
-      if (!tank || now < runtime.nextShotAt) continue;
+      if (!tank || runtime.moving || now < runtime.nextShotAt) continue;
 
       // Read the rendered muzzle after stance scaling, idle motion, and yaw.
       // This keeps the flash, tracer origin, and rifle crown on one transform.

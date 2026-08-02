@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import toast, { Toaster } from 'react-hot-toast';
 import { KeyboardControls } from '@react-three/drei';
@@ -33,11 +33,14 @@ import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
 import { useGameAudio } from './hooks/useGameAudio';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
+import { TankWaterEffects } from './components/Scene/TankWaterEffects';
 import { VietCongCombatants } from './components/Scene/VietCongCombatants';
 import {
   USInfantrySquad,
+  US_FIGHTING_POSITIONS,
   US_INFANTRY_MINIMAP_CONTACTS,
 } from './components/Scene/USInfantrySquad';
+import { CRASHED_HUEY_TRANSFORM } from './components/Scene/VietnamEnvironment';
 import { useEnemyCombat } from './hooks/useEnemyCombat';
 import {
   FLAMETHROWER_CONE_DOT,
@@ -49,6 +52,12 @@ import {
   WeaponMode,
 } from './lib/weapons';
 import { hashCombatSession } from './lib/combat';
+import {
+  createFileObjective,
+  getFileObjectiveProgress,
+  type FileObjective,
+} from './lib/mission';
+import type { TankCollider } from './lib/worldCollision';
 
 type AppState = 'checking' | 'picking' | 'scanning' | 'ready';
 
@@ -79,6 +88,7 @@ function App() {
   const [combatSessionKey, setCombatSessionKey] = useState(0);
   const [tankIntegrity, setTankIntegrity] = useState(100);
   const [damageFlash, setDamageFlash] = useState(false);
+  const [fileObjective, setFileObjective] = useState<FileObjective | null>(null);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
@@ -91,6 +101,7 @@ function App() {
   }>());
   const tankHitCooldownRef = useRef(0);
   const damageFlashTimeoutRef = useRef<number | null>(null);
+  const missionSnapshotRef = useRef({ id: null as string | null, remaining: 0 });
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -246,6 +257,7 @@ function App() {
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setIsTraining(false);
+    setFileObjective(null);
     setState('picking');
     setError(null);
 
@@ -277,7 +289,9 @@ function App() {
     setIsTraining(true);
     setCurrentDirectory(TRAINING_DIRECTORY);
     setLastDirectory(null);
-    setEntries(createTrainingEntries());
+    const trainingEntries = createTrainingEntries();
+    setEntries(trainingEntries);
+    setFileObjective(createFileObjective(trainingEntries, `${TRAINING_DIRECTORY}:${worldSessionRef.current}`));
     setDeletedCount(0);
     setDeletedBytes(0);
     setTankStartPosition([0, 0, -12]);
@@ -300,6 +314,7 @@ function App() {
     try {
       const result = await commands.scanDirectory(path);
       setEntries(result);
+      setFileObjective(createFileObjective(result, `${path}:${worldSessionRef.current}`));
       setState('ready');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -332,6 +347,7 @@ function App() {
     resetMarkedState();
     fieldRadio.stop();
     setIsTraining(false);
+    setFileObjective(null);
     setNapalmStrikes([]);
     setLastDirectory(null);
     setState('picking');
@@ -367,7 +383,12 @@ function App() {
       const restoredEntry = trainingUndoStackRef.current.pop();
       if (!restoredEntry) return;
 
-      setEntries(prev => [...prev, restoredEntry]);
+      // Cancel any active de-rez synchronously. If the hut is still present,
+      // keep that existing entry instead of introducing a duplicate.
+      finishDeletion(restoredEntry.path);
+      setEntries(prev => prev.some(entry => entry.path === restoredEntry.path)
+        ? prev
+        : [...prev, restoredEntry]);
       setDeletedCount(prev => Math.max(0, prev - 1));
       setDeletedBytes(prev => Math.max(0, prev - restoredEntry.size));
       removePoints(restoredEntry.size);
@@ -379,6 +400,7 @@ function App() {
       const action = await commands.undoLastTrash();
 
       if (action) {
+        finishDeletion(action.file_path);
         removePoints(action.original_size);
         // Show success toast
         toast.success(`Restored ${action.file_name}`, { duration: 3000 });
@@ -763,13 +785,140 @@ function App() {
 
   // Called when a file's de-rez animation completes
   function handleDeletionComplete(filePath: string) {
-    finishDeletion(filePath);
+    // Undo may have synchronously cancelled this animation in the same frame.
+    // Only a still-pending deletion is allowed to remove the live entry.
+    if (!finishDeletion(filePath)) return;
     // Remove file from entries
     setEntries(prev => prev.filter(e => e.path !== filePath));
   }
 
   // Prepare data for 3D scene (needs to be before early returns so handlers can reference allBlocks)
-  const { blocksByCategory, folders, allBlocks } = useFileBlocks(entries);
+  const { blocksByCategory, folders, allBlocks } = useFileBlocks(entries, fileObjective);
+  const environmentSeed = useMemo(
+    () => hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY),
+    [currentDirectory],
+  );
+  const missionProgress = useMemo(
+    () => getFileObjectiveProgress(fileObjective, entries),
+    [entries, fileObjective],
+  );
+  const missionTargetName = useMemo(() => {
+    const nextPath = missionProgress.remainingPaths[0];
+    return fileObjective?.targets.find(target => target.path === nextPath)?.name;
+  }, [fileObjective, missionProgress.remainingPaths]);
+  const tankColliders = useMemo<TankCollider[]>(() => {
+    const colliders: TankCollider[] = [];
+    const rotatePoint = (
+      originX: number,
+      originZ: number,
+      rotation: number,
+      localX: number,
+      localZ: number,
+    ) => ({
+      x: originX + Math.cos(rotation) * localX + Math.sin(rotation) * localZ,
+      z: originZ - Math.sin(rotation) * localX + Math.cos(rotation) * localZ,
+    });
+
+    // Mission huts are the only file structures that block the vehicle. Keeping
+    // this set bounded avoids turning a huge directory into a per-frame collision
+    // scan while ensuring the actual objective compound cannot be ghosted through.
+    for (const block of allBlocks) {
+      if (!block.isObjective) continue;
+      colliders.push({
+        kind: 'circle',
+        id: `objective-hut-${block.path}`,
+        x: block.position[0],
+        z: block.position[2],
+        radius: THREE.MathUtils.clamp(block.scale * 0.62, 0.48, 1.05),
+      });
+    }
+
+    for (const fightingPosition of US_FIGHTING_POSITIONS) {
+      const [originX, , originZ] = fightingPosition.position;
+      const halfWidth = fightingPosition.width * 0.5;
+      const left = rotatePoint(originX, originZ, fightingPosition.rotation, -halfWidth, 0);
+      const right = rotatePoint(originX, originZ, fightingPosition.rotation, halfWidth, 0);
+      colliders.push({
+        kind: 'capsule',
+        id: `us-${fightingPosition.id}-front`,
+        ax: left.x,
+        az: left.z,
+        bx: right.x,
+        bz: right.z,
+        radius: 0.25,
+      });
+      for (const side of [-1, 1]) {
+        const mouth = rotatePoint(originX, originZ, fightingPosition.rotation, side * halfWidth, -0.08);
+        const rear = rotatePoint(originX, originZ, fightingPosition.rotation, side * halfWidth, -1.12);
+        colliders.push({
+          kind: 'capsule',
+          id: `us-${fightingPosition.id}-wing-${side}`,
+          ax: mouth.x,
+          az: mouth.z,
+          bx: rear.x,
+          bz: rear.z,
+          radius: 0.23,
+        });
+      }
+    }
+
+    // Low VC fighting-position lips remain after casualties and provide genuine
+    // vehicle cover without making the surrounding brush an invisible wall.
+    for (const enemy of enemies) {
+      const approachX = -enemy.position[0];
+      const approachZ = -12 - enemy.position[2];
+      const approachLength = Math.hypot(approachX, approachZ) || 1;
+      const forwardX = approachX / approachLength;
+      const forwardZ = approachZ / approachLength;
+      const sideX = -forwardZ;
+      const sideZ = forwardX;
+      const centerX = enemy.position[0] + forwardX * 0.3;
+      const centerZ = enemy.position[2] + forwardZ * 0.3;
+      colliders.push({
+        kind: 'capsule',
+        id: `${enemy.id}-fighting-position`,
+        ax: centerX - sideX * 0.52,
+        az: centerZ - sideZ * 0.52,
+        bx: centerX + sideX * 0.52,
+        bz: centerZ + sideZ * 0.52,
+        radius: 0.2,
+      });
+    }
+
+    const [wreckX, , wreckZ] = CRASHED_HUEY_TRANSFORM.position;
+    const wreckYaw = CRASHED_HUEY_TRANSFORM.rotation[1];
+    const airframeYaw = wreckYaw + 0.18;
+    const cabin = rotatePoint(wreckX, wreckZ, airframeYaw, 0, -0.15);
+    const tailStart = rotatePoint(wreckX, wreckZ, airframeYaw, 0, 0.72);
+    const tailEnd = rotatePoint(wreckX, wreckZ, airframeYaw, 0, 4.18);
+    const rotorStart = rotatePoint(wreckX, wreckZ, wreckYaw, -5.35, 1.85);
+    const rotorEnd = rotatePoint(wreckX, wreckZ, wreckYaw, -2.25, 1.85);
+    colliders.push(
+      { kind: 'circle', id: 'crashed-huey-cabin', x: cabin.x, z: cabin.z, radius: 1.2 },
+      { kind: 'capsule', id: 'crashed-huey-tail', ax: tailStart.x, az: tailStart.z, bx: tailEnd.x, bz: tailEnd.z, radius: 0.36 },
+      { kind: 'capsule', id: 'crashed-huey-rotor', ax: rotorStart.x, az: rotorStart.z, bx: rotorEnd.x, bz: rotorEnd.z, radius: 0.13 },
+    );
+
+    return colliders;
+  }, [allBlocks, enemies]);
+
+  useEffect(() => {
+    const objectiveId = fileObjective?.id ?? null;
+    const previous = missionSnapshotRef.current;
+    if (previous.id === objectiveId
+      && previous.remaining > 0
+      && missionProgress.remaining === 0
+      && missionProgress.total > 0) {
+      toast.success('Objective destroyed · file cache eliminated', {
+        duration: 4200,
+        icon: '★',
+      });
+    }
+    missionSnapshotRef.current = {
+      id: objectiveId,
+      remaining: missionProgress.remaining,
+    };
+  }, [fileObjective?.id, missionProgress.remaining, missionProgress.total]);
   const combatObstacles = allBlocks.map(block => ({
     position: block.position,
     radius: Math.max(0.62, block.scale * 0.74),
@@ -822,6 +971,7 @@ function App() {
     position: block.position,
     color: block.color,
     isMarked: markedFiles.has(block.path),
+    isObjective: block.isObjective,
   }));
 
   const minimapFolderPortals = folderPortalData.map(portal => ({
@@ -913,6 +1063,9 @@ function App() {
         napalmCooldown={napalmCooldown}
         tankIntegrity={tankIntegrity}
         hostileCount={hostileCount}
+        missionTotal={missionProgress.total}
+        missionRemaining={missionProgress.remaining}
+        missionTargetName={missionTargetName}
         damageFlash={damageFlash}
         radioEnabled={fieldRadio.enabled}
         radioTrackName={fieldRadio.trackName}
@@ -951,7 +1104,7 @@ function App() {
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>
-        <Scene environmentSeed={hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY)}>
+        <Scene environmentSeed={environmentSeed} tankRef={tankRef}>
           <Tank
             ref={tankRef}
             initialPosition={tankStartPosition}
@@ -965,6 +1118,13 @@ function App() {
             onMachineGunAudioChange={gameAudio.setMachineGunActive}
             onFlamethrowerAudioChange={gameAudio.setFlamethrowerActive}
             onMovementAudioChange={gameAudio.setMovementActive}
+            environmentSeed={environmentSeed}
+            colliders={tankColliders}
+          />
+          <TankWaterEffects
+            tankRef={tankRef}
+            seed={environmentSeed}
+            onRiverStateChange={gameAudio.setRiverState}
           />
           <CameraRig
             tankRef={tankRef}

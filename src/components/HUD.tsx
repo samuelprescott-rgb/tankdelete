@@ -18,6 +18,9 @@ interface HUDProps {
   napalmCooldown: number;
   tankIntegrity: number;
   hostileCount: number;
+  missionTotal: number;
+  missionRemaining: number;
+  missionTargetName?: string;
   damageFlash: boolean;
   radioEnabled: boolean;
   radioTrackName: string;
@@ -42,6 +45,9 @@ export function HUD({
   napalmCooldown,
   tankIntegrity,
   hostileCount,
+  missionTotal,
+  missionRemaining,
+  missionTargetName,
   damageFlash,
   radioEnabled,
   radioTrackName,
@@ -94,6 +100,35 @@ export function HUD({
             <span><strong>{fileCount}</strong> files</span>
             <span><strong>{folderCount}</strong> portals</span>
           </div>
+        </div>
+
+        <div className={`mission-order ${missionTotal > 0 && missionRemaining === 0 ? 'is-complete' : ''}`}>
+          <div className="mission-order-heading">
+            <span className="hud-kicker">Mission order</span>
+            {missionTotal > 0 && (
+              <strong>{missionTotal - missionRemaining}/{missionTotal}</strong>
+            )}
+          </div>
+          {missionTotal === 0 ? (
+            <span>No file targets in this sector.</span>
+          ) : missionRemaining > 0 ? (
+            <>
+              <b>Destroy the objective file cache</b>
+              <span>{missionRemaining} file-hut{missionRemaining === 1 ? '' : 's'} remaining</span>
+              {missionTargetName && <small>Priority target · {missionTargetName}</small>}
+              <div className="mission-meter" aria-label={`${missionTotal - missionRemaining} of ${missionTotal} objective files destroyed`}>
+                <span style={{ width: `${((missionTotal - missionRemaining) / missionTotal) * 100}%` }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <b>Objective destroyed</b>
+              <span>File cache eliminated · sector secure</span>
+              <div className="mission-meter" aria-label="Mission objective complete">
+                <span style={{ width: '100%' }} />
+              </div>
+            </>
+          )}
         </div>
 
         <div className={`armor-status ${damageFlash ? 'is-hit' : ''}`}>

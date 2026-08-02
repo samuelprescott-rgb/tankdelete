@@ -35,6 +35,7 @@ interface FriendlyProjectile {
 interface SquadMember {
   id: string;
   position: [number, number, number];
+  alternatePosition?: [number, number, number];
   kneeling: boolean;
   radioOperator: boolean;
   fireInterval: number;
@@ -49,6 +50,16 @@ interface SoldierRuntime {
   flashUntil: number;
   recoilUntil: number;
   burstRemaining: number;
+  baseX: number;
+  baseZ: number;
+  moveFromX: number;
+  moveFromZ: number;
+  moveToX: number;
+  moveToZ: number;
+  moveStartedAt: number;
+  moveEndsAt: number;
+  moving: boolean;
+  atAlternate: boolean;
 }
 
 export interface USInfantrySquadProps {
@@ -60,14 +71,14 @@ export interface USInfantrySquadProps {
 }
 
 const SQUAD: readonly SquadMember[] = [
-  { id: 'us-rifle-1', position: [-5.65, 0.02, -5.35], kneeling: true, radioOperator: false, fireInterval: 1.42, initialDelay: 0.42, accuracy: 0.024, burstSize: 3 },
-  { id: 'us-rifle-2', position: [-4.12, 0.02, -5.18], kneeling: true, radioOperator: false, fireInterval: 1.55, initialDelay: 0.86, accuracy: 0.03, burstSize: 2 },
-  { id: 'us-rifle-3', position: [4.18, 0.02, -3.96], kneeling: true, radioOperator: false, fireInterval: 1.48, initialDelay: 1.16, accuracy: 0.026, burstSize: 3 },
+  { id: 'us-rifle-1', position: [-5.65, 0.02, -5.35], alternatePosition: [-5.3, 0.02, -5.7], kneeling: true, radioOperator: false, fireInterval: 1.42, initialDelay: 0.42, accuracy: 0.024, burstSize: 3 },
+  { id: 'us-rifle-2', position: [-4.12, 0.02, -5.18], alternatePosition: [-4.48, 0.02, -5.62], kneeling: true, radioOperator: false, fireInterval: 1.55, initialDelay: 0.86, accuracy: 0.03, burstSize: 2 },
+  { id: 'us-rifle-3', position: [4.18, 0.02, -3.96], alternatePosition: [4.53, 0.02, -4.33], kneeling: true, radioOperator: false, fireInterval: 1.48, initialDelay: 1.16, accuracy: 0.026, burstSize: 3 },
   { id: 'us-rto-4', position: [5.72, 0.02, -3.78], kneeling: false, radioOperator: true, fireInterval: 1.72, initialDelay: 1.48, accuracy: 0.032, burstSize: 2 },
-  { id: 'us-rifle-5', position: [0.25, 0.02, 1.82], kneeling: true, radioOperator: false, fireInterval: 1.62, initialDelay: 1.82, accuracy: 0.027, burstSize: 2 },
+  { id: 'us-rifle-5', position: [0.25, 0.02, 1.82], alternatePosition: [-0.3, 0.02, 1.76], kneeling: true, radioOperator: false, fireInterval: 1.62, initialDelay: 1.82, accuracy: 0.027, burstSize: 2 },
 ];
 
-const FIGHTING_POSITIONS = [
+export const US_FIGHTING_POSITIONS = [
   { id: 'left', position: [-4.9, 0.02, -4.7] as [number, number, number], rotation: -0.08, width: 3.15 },
   { id: 'right', position: [4.95, 0.02, -3.28] as [number, number, number], rotation: 0.08, width: 3.15 },
   { id: 'forward', position: [0.25, 0.02, 2.48] as [number, number, number], rotation: 0, width: 1.85 },
@@ -146,7 +157,7 @@ function buildCoverInstances() {
     });
   };
 
-  FIGHTING_POSITIONS.forEach(fightingPosition => {
+  US_FIGHTING_POSITIONS.forEach(fightingPosition => {
     const { position, rotation, width } = fightingPosition;
     const emplacement = composeMatrix(position, [0, rotation, 0]);
     const lowerCount = Math.max(3, Math.round(width / 0.5));
@@ -658,6 +669,9 @@ export function USInfantrySquad({
   const tracerTipRef = useRef<THREE.InstancedMesh>(null);
   const runtimeRef = useRef(new Map<string, SoldierRuntime>());
   const projectileCursorRef = useRef(0);
+  const activeBoundMemberRef = useRef(-1);
+  const boundCursorRef = useRef(0);
+  const nextSquadBoundAtRef = useRef(5.8);
 
   const projectilePool = useMemo<FriendlyProjectile[]>(() => (
     Array.from({ length: FRIENDLY_PROJECTILE_CAPACITY }, () => ({
@@ -727,28 +741,95 @@ export function USInfantrySquad({
           flashUntil: 0,
           recoilUntil: 0,
           burstRemaining: member.burstSize,
+          baseX: member.position[0],
+          baseZ: member.position[2],
+          moveFromX: member.position[0],
+          moveFromZ: member.position[2],
+          moveToX: member.position[0],
+          moveToZ: member.position[2],
+          moveStartedAt: 0,
+          moveEndsAt: 0,
+          moving: false,
+          atAlternate: false,
         };
         runtimeRef.current.set(member.id, runtime);
+      }
+
+      // One rifleman at a time makes a short, deterministic bound within the
+      // protection of his existing emplacement. The radio operator holds fast.
+      if (enabled
+        && enemies.length > 0
+        && activeBoundMemberRef.current < 0
+        && now >= nextSquadBoundAtRef.current) {
+        while (!SQUAD[boundCursorRef.current]?.alternatePosition) {
+          boundCursorRef.current = (boundCursorRef.current + 1) % SQUAD.length;
+        }
+        if (memberIndex === boundCursorRef.current && member.alternatePosition) {
+          runtime.moveFromX = runtime.baseX;
+          runtime.moveFromZ = runtime.baseZ;
+          runtime.moveToX = runtime.atAlternate
+            ? member.position[0]
+            : member.alternatePosition[0];
+          runtime.moveToZ = runtime.atAlternate
+            ? member.position[2]
+            : member.alternatePosition[2];
+          runtime.moveStartedAt = now;
+          runtime.moveEndsAt = now + 0.82
+            + deterministicNoise(member.id, runtime.shotIndex, 31) * 0.28;
+          runtime.moving = true;
+          activeBoundMemberRef.current = memberIndex;
+          runtime.nextShotAt = Math.max(runtime.nextShotAt, runtime.moveEndsAt + 0.22);
+        }
       }
 
       const soldier = soldierRefs.current[memberIndex];
       const body = bodyRefs.current[memberIndex];
       const flash = flashRefs.current[memberIndex];
+      let movementProgress = 0;
+      let movementBlend = 0;
+      if (runtime.moving) {
+        const movementDuration = Math.max(0.001, runtime.moveEndsAt - runtime.moveStartedAt);
+        movementProgress = THREE.MathUtils.clamp(
+          (now - runtime.moveStartedAt) / movementDuration,
+          0,
+          1,
+        );
+        movementBlend = movementProgress * movementProgress * (3 - 2 * movementProgress);
+        runtime.baseX = THREE.MathUtils.lerp(runtime.moveFromX, runtime.moveToX, movementBlend);
+        runtime.baseZ = THREE.MathUtils.lerp(runtime.moveFromZ, runtime.moveToZ, movementBlend);
+
+        if (movementProgress >= 1) {
+          runtime.baseX = runtime.moveToX;
+          runtime.baseZ = runtime.moveToZ;
+          runtime.moving = false;
+          runtime.atAlternate = !runtime.atAlternate;
+          activeBoundMemberRef.current = -1;
+          boundCursorRef.current = (memberIndex + 1) % SQUAD.length;
+          nextSquadBoundAtRef.current = now + 6.6
+            + deterministicNoise(member.id, runtime.shotIndex, 32) * 3.2;
+        }
+      }
       if (soldier) {
-        // Small foot/weight shifts stop the fire team reading as five static props,
-        // while staying tight enough to their fighting positions to preserve cover.
-        soldier.position.x = member.position[0]
+        // Add the established idle weight shift around the current cover slot.
+        soldier.position.x = runtime.baseX
           + Math.sin(now * (0.34 + memberIndex * 0.025) + memberIndex * 1.7) * 0.045;
-        soldier.position.z = member.position[2]
+        soldier.position.z = runtime.baseZ
           + Math.sin(now * 0.27 + memberIndex * 2.1) * 0.026;
       }
       if (body) {
         const recoil = now < runtime.recoilUntil
           ? Math.sin((runtime.recoilUntil - now) * 62) * 0.034
           : 0;
-        body.rotation.x = recoil + (member.kneeling ? -0.012 : 0.045);
-        body.rotation.z = Math.sin(now * 1.3 + memberIndex * 1.9) * 0.018;
-        body.position.y = Math.sin(now * 1.05 + memberIndex) * 0.009
+        const boundStride = runtime.moving
+          ? Math.sin(movementProgress * Math.PI * 4)
+          : 0;
+        body.rotation.x = recoil + (member.kneeling ? -0.012 : 0.045)
+          + (runtime.moving ? 0.075 : 0);
+        body.rotation.z = runtime.moving
+          ? boundStride * 0.055
+          : Math.sin(now * 1.3 + memberIndex * 1.9) * 0.018;
+        body.position.y = (runtime.moving ? Math.abs(boundStride) * 0.025 : 0)
+          + Math.sin(now * 1.05 + memberIndex) * 0.009
           - (member.kneeling ? (Math.sin(now * 0.42 + memberIndex) + 1) * 0.008 : 0);
         body.position.z = recoil * 0.6;
       }
@@ -774,8 +855,8 @@ export function USInfantrySquad({
       for (let enemyIndex = 0; enemyIndex < enemies.length; enemyIndex += 1) {
         const candidate = enemies[enemyIndex];
         if (!candidate.alive) continue;
-        const dx = candidate.position[0] - member.position[0];
-        const dz = candidate.position[2] - member.position[2];
+        const dx = candidate.position[0] - (soldier?.position.x ?? runtime.baseX);
+        const dz = candidate.position[2] - (soldier?.position.z ?? runtime.baseZ);
         const assignmentPenalty = ((enemyIndex + 3 - (memberIndex % 3)) % 3) * 12;
         const score = dx * dx + dz * dz + assignmentPenalty;
         if (score >= aimScore) continue;
@@ -785,7 +866,7 @@ export function USInfantrySquad({
       }
       if (!preferredTarget) continue;
 
-      if (now < runtime.nextShotAt) {
+      if (runtime.moving || now < runtime.nextShotAt) {
         if (soldier) {
           soldier.rotation.y = Math.atan2(
             -(preferredTarget.position[0] - soldier.position.x),

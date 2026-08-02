@@ -8,9 +8,10 @@ import { VietnamEnvironment } from './VietnamEnvironment';
 interface SceneProps {
   children?: React.ReactNode;
   environmentSeed?: number;
+  tankRef?: React.RefObject<THREE.Group | null>;
 }
 
-export function Scene({ children, environmentSeed = 1968 }: SceneProps) {
+export function Scene({ children, environmentSeed = 1968, tankRef }: SceneProps) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
       <Canvas
@@ -28,7 +29,7 @@ export function Scene({ children, environmentSeed = 1968 }: SceneProps) {
         <color attach="background" args={['#354b35']} />
         <fog attach="fog" args={['#68735a', 46, 142]} />
         <Lighting />
-        <VietnamEnvironment seed={environmentSeed} />
+        <VietnamEnvironment seed={environmentSeed} tankRef={tankRef} />
         <TronGrid />
         {children}
         <PostProcessing />
