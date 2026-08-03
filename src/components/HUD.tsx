@@ -24,12 +24,11 @@ interface HUDProps {
   missionTargetName?: string;
   missionOriginalName?: string;
   damageFlash: boolean;
-  radioEnabled: boolean;
+  radioMuted: boolean;
+  radioPlaying: boolean;
   radioTrackName: string;
   radioSourceLabel: string;
-  onToggleRadio: () => void;
-  onNextTrack: () => void;
-  onLoadLocalTrack: (file: File) => void;
+  onToggleRadioMute: () => void;
 }
 
 export function HUD({
@@ -53,12 +52,11 @@ export function HUD({
   missionTargetName,
   missionOriginalName,
   damageFlash,
-  radioEnabled,
+  radioMuted,
+  radioPlaying,
   radioTrackName,
   radioSourceLabel,
-  onToggleRadio,
-  onNextTrack,
-  onLoadLocalTrack,
+  onToggleRadioMute,
 }: HUDProps) {
   const weaponModes: WeaponMode[] = ['cannon', 'machinegun', 'flamethrower', 'napalm'];
 
@@ -69,6 +67,29 @@ export function HUD({
         <div className="hud-call-sign">
           <span>AO CLEAN SWEEP // 1968</span>
           <strong>TANKDELETE</strong>
+        </div>
+
+        <div className={`field-radio ${radioMuted ? 'is-muted' : ''}`}>
+          <div className="field-radio-portrait" aria-hidden="true">
+            <img src="/images/field-radio-sergeant.png" alt="" />
+            <span />
+          </div>
+          <div className="field-radio-copy">
+            <span className="hud-kicker">Field radio · Air Cav Actual</span>
+            <strong>{radioTrackName}</strong>
+            <small>
+              {radioMuted ? 'Muted' : radioPlaying ? 'Playing' : 'Ready to start'} · {radioSourceLabel}
+            </small>
+          </div>
+          <button
+            type="button"
+            className="field-radio-mute"
+            onClick={onToggleRadioMute}
+            aria-label={radioMuted ? 'Unmute music' : radioPlaying ? 'Mute music' : 'Start music'}
+            aria-pressed={radioMuted}
+          >
+            {radioMuted ? 'Unmute' : radioPlaying ? 'Mute' : 'Start'}
+          </button>
         </div>
 
         <div className="hud-section">
@@ -176,38 +197,6 @@ export function HUD({
           </div>
         </div>
 
-        <div className="field-radio">
-          <div className="field-radio-portrait" aria-hidden="true">
-            <img src="/images/field-radio-sergeant.png" alt="" />
-            <span />
-          </div>
-          <div className="field-radio-copy">
-            <span className="hud-kicker">Field radio</span>
-            <b>Air Cav Actual</b>
-            <strong>{radioTrackName}</strong>
-            <small>{radioSourceLabel}</small>
-          </div>
-          <div className="field-radio-actions">
-            <button type="button" onClick={onToggleRadio}>
-              {radioEnabled ? 'Mute' : 'Play'}
-            </button>
-            <button type="button" onClick={onNextTrack} title="Next original track">
-              Next
-            </button>
-            <label className="field-radio-load" title="Load a legally obtained local copy of Voodoo Child (Slight Return)">
-              Load
-              <input
-                type="file"
-                accept="audio/*"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  if (file) onLoadLocalTrack(file);
-                  event.currentTarget.value = '';
-                }}
-              />
-            </label>
-          </div>
-        </div>
       </div>
 
       <div className="controls-ribbon" aria-label="Game controls" data-game-ui>
@@ -218,7 +207,7 @@ export function HUD({
         <span><kbd>1/2/3/4</kbd> Weapons</span>
         <span><kbd>X</kbd> Purge armed</span>
         <span><kbd>Esc</kbd> Disarm</span>
-        <span><kbd>M</kbd> Radio</span>
+        <span><kbd>M</kbd> Mute music</span>
         <span><kbd>⌘/Ctrl Z</kbd> Undo</span>
       </div>
       <div className={`damage-vignette ${damageFlash ? 'is-visible' : ''}`} aria-hidden="true" />

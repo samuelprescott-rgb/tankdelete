@@ -148,9 +148,18 @@ function App() {
   } = useEnemyCombat({ sessionKey: combatSessionKey, count: 12 });
 
   useEffect(() => {
-    if (state === 'ready') gameAudio.setBattlefieldActive(true);
-    else gameAudio.stopAllLoops();
-  }, [state, gameAudio.setBattlefieldActive, gameAudio.stopAllLoops]);
+    if (state === 'ready') {
+      gameAudio.setBattlefieldActive(true);
+      void fieldRadio.start();
+    } else {
+      gameAudio.stopAllLoops();
+    }
+  }, [
+    state,
+    fieldRadio.start,
+    gameAudio.setBattlefieldActive,
+    gameAudio.stopAllLoops,
+  ]);
 
   useEffect(() => {
     setTankIntegrity(100);
@@ -251,14 +260,16 @@ function App() {
       if (e.key === '2') setWeaponMode('machinegun');
       if (e.key === '3') setWeaponMode('flamethrower');
       if (e.key === '4') setWeaponMode('napalm');
-      if (e.key === 'm' || e.key === 'M') fieldRadio.toggle();
+      if (e.key === 'm' || e.key === 'M') fieldRadio.toggleMute();
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDirectory, markedCount, fieldRadio.toggle]); // Re-attach when relevant controls change
+  }, [currentDirectory, markedCount, fieldRadio.toggleMute]); // Re-attach when relevant controls change
 
   async function pickDirectory() {
+    // Start inside the click gesture before the native directory dialog opens.
+    void fieldRadio.start();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
@@ -290,6 +301,8 @@ function App() {
   }
 
   function startTraining() {
+    // Boot Camp is a direct user gesture, so audible playback is permitted.
+    void fieldRadio.start();
     gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
@@ -340,6 +353,7 @@ function App() {
   async function reopenLastDirectory() {
     if (!lastDirectory) return;
 
+    void fieldRadio.start();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
@@ -356,7 +370,6 @@ function App() {
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
-    fieldRadio.stop();
     setIsTraining(false);
     setFileObjective(null);
     setSectorPageIndex(0);
@@ -1146,11 +1159,10 @@ function App() {
         missionTargetName={missionTarget?.name}
         missionOriginalName={missionTarget?.duplicateOfName}
         damageFlash={damageFlash}
-        radioEnabled={fieldRadio.enabled}
+        radioMuted={fieldRadio.muted}
+        radioPlaying={fieldRadio.playing}
         radioTrackName={fieldRadio.trackName}
-        onToggleRadio={fieldRadio.toggle}
-        onNextTrack={fieldRadio.nextTrack}
-        onLoadLocalTrack={fieldRadio.loadLocalTrack}
+        onToggleRadioMute={fieldRadio.toggleMute}
         radioSourceLabel={fieldRadio.sourceLabel}
       />
 
