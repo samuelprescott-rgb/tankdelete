@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import toast, { Toaster } from 'react-hot-toast';
 import { KeyboardControls } from '@react-three/drei';
@@ -33,11 +33,13 @@ import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
 import { useGameAudio } from './hooks/useGameAudio';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
+import { TankWaterEffects } from './components/Scene/TankWaterEffects';
 import { VietCongCombatants } from './components/Scene/VietCongCombatants';
 import {
   USInfantrySquad,
-  US_INFANTRY_MINIMAP_CONTACTS,
+  US_FIGHTING_POSITIONS,
 } from './components/Scene/USInfantrySquad';
+import { CRASHED_HUEY_TRANSFORM } from './components/Scene/VietnamEnvironment';
 import { useEnemyCombat } from './hooks/useEnemyCombat';
 import {
   FLAMETHROWER_CONE_DOT,
@@ -49,6 +51,13 @@ import {
   WeaponMode,
 } from './lib/weapons';
 import { hashCombatSession } from './lib/combat';
+import {
+  createFileObjective,
+  getFileObjectiveProgress,
+  type FileObjective,
+} from './lib/mission';
+import type { TankCollider } from './lib/worldCollision';
+import { createSectorPage } from './lib/sectorPaging';
 
 type AppState = 'checking' | 'picking' | 'scanning' | 'ready';
 
@@ -79,6 +88,8 @@ function App() {
   const [combatSessionKey, setCombatSessionKey] = useState(0);
   const [tankIntegrity, setTankIntegrity] = useState(100);
   const [damageFlash, setDamageFlash] = useState(false);
+  const [fileObjective, setFileObjective] = useState<FileObjective | null>(null);
+  const [sectorPageIndex, setSectorPageIndex] = useState(0);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
@@ -91,6 +102,7 @@ function App() {
   }>());
   const tankHitCooldownRef = useRef(0);
   const damageFlashTimeoutRef = useRef<number | null>(null);
+  const missionSnapshotRef = useRef({ id: null as string | null, remaining: 0 });
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -125,14 +137,33 @@ function App() {
     enemies,
     livingEnemies,
     aliveCount: hostileCount,
+    friendlies,
+    livingFriendlies,
+    friendliesRef,
+    friendlyPosesRef,
+    friendlyAliveCount,
     damageEnemy,
     killEnemy,
-  } = useEnemyCombat({ sessionKey: combatSessionKey, count: 8 });
+    damageFriendly,
+  } = useEnemyCombat({ sessionKey: combatSessionKey, count: 12 });
 
   useEffect(() => {
-    if (state === 'ready') gameAudio.setBattlefieldActive(true);
-    else gameAudio.stopAllLoops();
-  }, [state, gameAudio.setBattlefieldActive, gameAudio.stopAllLoops]);
+    if (state === 'ready') {
+      gameAudio.setBattlefieldActive(true);
+      void fieldRadio.launch();
+    } else {
+      gameAudio.stopAllLoops();
+      if (state === 'scanning') fieldRadio.suspend();
+      else fieldRadio.stop();
+    }
+  }, [
+    state,
+    fieldRadio.launch,
+    fieldRadio.stop,
+    fieldRadio.suspend,
+    gameAudio.setBattlefieldActive,
+    gameAudio.stopAllLoops,
+  ]);
 
   useEffect(() => {
     setTankIntegrity(100);
@@ -233,19 +264,22 @@ function App() {
       if (e.key === '2') setWeaponMode('machinegun');
       if (e.key === '3') setWeaponMode('flamethrower');
       if (e.key === '4') setWeaponMode('napalm');
-      if (e.key === 'm' || e.key === 'M') fieldRadio.toggle();
+      if (state === 'ready' && (e.key === 'm' || e.key === 'M')) fieldRadio.toggleMute();
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDirectory, markedCount, fieldRadio.toggle]); // Re-attach when relevant controls change
+  }, [currentDirectory, markedCount, state, fieldRadio.toggleMute]); // Re-attach when relevant controls change
 
   async function pickDirectory() {
+    void fieldRadio.prime();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
     setIsTraining(false);
+    setFileObjective(null);
+    setSectorPageIndex(0);
     setState('picking');
     setError(null);
 
@@ -254,6 +288,7 @@ function App() {
 
       if (result === null) {
         // User cancelled - remain on the picker screen.
+        fieldRadio.stop();
         return;
       }
 
@@ -265,11 +300,13 @@ function App() {
       await scanDirectory(result);
     } catch (err) {
       // System directory blocked or other error
+      fieldRadio.stop();
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   function startTraining() {
+    void fieldRadio.prime();
     gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
@@ -277,7 +314,10 @@ function App() {
     setIsTraining(true);
     setCurrentDirectory(TRAINING_DIRECTORY);
     setLastDirectory(null);
-    setEntries(createTrainingEntries());
+    const trainingEntries = createTrainingEntries();
+    setEntries(trainingEntries);
+    setFileObjective(createFileObjective(trainingEntries, `${TRAINING_DIRECTORY}:${worldSessionRef.current}`));
+    setSectorPageIndex(0);
     setDeletedCount(0);
     setDeletedBytes(0);
     setTankStartPosition([0, 0, -12]);
@@ -290,9 +330,11 @@ function App() {
     resetMarkedState();
     setError(null);
     setState('ready');
+    void fieldRadio.launch();
   }
 
   async function scanDirectory(path: string) {
+    setSectorPageIndex(0);
     setState('scanning');
     setScanProgress(null);
     setError(null);
@@ -300,6 +342,7 @@ function App() {
     try {
       const result = await commands.scanDirectory(path);
       setEntries(result);
+      setFileObjective(createFileObjective(result, `${path}:${worldSessionRef.current}`));
       setState('ready');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -315,10 +358,12 @@ function App() {
   async function reopenLastDirectory() {
     if (!lastDirectory) return;
 
+    void fieldRadio.prime();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
+    setSectorPageIndex(0);
     setCurrentDirectory(lastDirectory);
     setLastDirectory(null);
     setState('scanning');
@@ -330,8 +375,9 @@ function App() {
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
-    fieldRadio.stop();
     setIsTraining(false);
+    setFileObjective(null);
+    setSectorPageIndex(0);
     setNapalmStrikes([]);
     setLastDirectory(null);
     setState('picking');
@@ -342,6 +388,7 @@ function App() {
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
+    setSectorPageIndex(0);
     setCurrentDirectory(dirPath);
     await commands.saveLastDirectory(dirPath);
     // Reset tank position to spawn near back portal when entering new directory
@@ -367,7 +414,12 @@ function App() {
       const restoredEntry = trainingUndoStackRef.current.pop();
       if (!restoredEntry) return;
 
-      setEntries(prev => [...prev, restoredEntry]);
+      // Cancel any active de-rez synchronously. If the hut is still present,
+      // keep that existing entry instead of introducing a duplicate.
+      finishDeletion(restoredEntry.path);
+      setEntries(prev => prev.some(entry => entry.path === restoredEntry.path)
+        ? prev
+        : [...prev, restoredEntry]);
       setDeletedCount(prev => Math.max(0, prev - 1));
       setDeletedBytes(prev => Math.max(0, prev - restoredEntry.size));
       removePoints(restoredEntry.size);
@@ -379,6 +431,7 @@ function App() {
       const action = await commands.undoLastTrash();
 
       if (action) {
+        finishDeletion(action.file_path);
         removePoints(action.original_size);
         // Show success toast
         toast.success(`Restored ${action.file_name}`, { duration: 3000 });
@@ -404,14 +457,31 @@ function App() {
   function applyEnemyDamage(
     enemyId: string,
     amount: number,
-    source: 'cannon' | 'machinegun' | 'flamethrower' | 'napalm',
+    source: 'cannon' | 'machinegun' | 'flamethrower' | 'napalm' | 'friendly-rifle',
   ) {
     const result = damageEnemy(enemyId, amount, source);
     if (!result?.killed) return;
 
     const [x, y, z] = result.enemy.position;
+    if (source === 'friendly-rifle') {
+      spawnExplosion(new THREE.Vector3(x, y + 0.45, z), '#8b7454', 0.18);
+      return;
+    }
     spawnExplosion(new THREE.Vector3(x, y + 0.45, z), '#d75b32', 0.52);
     toast.success('Hostile position neutralized', { duration: 1500 });
+  }
+
+  function handleFriendlyInfantryHit(friendlyId: string, damage: number) {
+    const result = damageFriendly(friendlyId, damage);
+    if (!result?.killed) return;
+    const livePose = friendlyPosesRef.current.get(friendlyId)?.position;
+    const [x, y, z] = result.friendly.position;
+    spawnExplosion(
+      livePose?.clone().add(new THREE.Vector3(0, 0.5, 0))
+        ?? new THREE.Vector3(x, y + 0.5, z),
+      '#79654b',
+      0.18,
+    );
   }
 
   function handleEnemyProjectileHit(enemyId: string, projectile: Projectile) {
@@ -620,6 +690,10 @@ function App() {
       // Second hit: delete the file
       try {
         const trainingEntry = isTraining ? entries.find(entry => entry.path === filePath) : undefined;
+        const duplicateTarget = fileObjective?.targets.find(target => (
+          target.path === filePath
+          && entries.some(entry => entry.path === target.duplicateOfPath && !entry.is_dir)
+        ));
         const action = isTraining
           ? {
               file_path: filePath,
@@ -627,7 +701,7 @@ function App() {
               original_size: trainingEntry?.size || 0,
               trash_timestamp: Date.now(),
             }
-          : await commands.moveToTrash(filePath);
+          : await commands.moveToTrash(filePath, duplicateTarget?.duplicateOfPath);
 
         if (trainingEntry) {
           trainingUndoStackRef.current.push(trainingEntry);
@@ -725,7 +799,13 @@ function App() {
       ).filter(block => block !== undefined);
 
       // Delete all marked files and keep failed targets armed for another attempt.
-      const successfulPaths = await deleteAllMarked();
+      const successfulPaths = await deleteAllMarked(filePath => {
+        const duplicateTarget = fileObjective?.targets.find(target => (
+          target.path === filePath
+          && entries.some(entry => entry.path === target.duplicateOfPath && !entry.is_dir)
+        ));
+        return commands.moveToTrash(filePath, duplicateTarget?.duplicateOfPath);
+      });
       const successfulPathSet = new Set(successfulPaths);
       const successfulBlocks = fileBlocks.filter(block => successfulPathSet.has(block.path));
       const failedCount = filesToDelete.length - successfulPaths.length;
@@ -763,13 +843,177 @@ function App() {
 
   // Called when a file's de-rez animation completes
   function handleDeletionComplete(filePath: string) {
-    finishDeletion(filePath);
+    // Undo may have synchronously cancelled this animation in the same frame.
+    // Only a still-pending deletion is allowed to remove the live entry.
+    if (!finishDeletion(filePath)) return;
     // Remove file from entries
     setEntries(prev => prev.filter(e => e.path !== filePath));
   }
 
   // Prepare data for 3D scene (needs to be before early returns so handlers can reference allBlocks)
-  const { blocksByCategory, folders, allBlocks } = useFileBlocks(entries);
+  const environmentSeed = useMemo(
+    () => hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY),
+    [currentDirectory],
+  );
+  const missionProgress = useMemo(
+    () => getFileObjectiveProgress(fileObjective, entries),
+    [entries, fileObjective],
+  );
+  const visibleFileObjective = missionProgress.phase === 'unavailable'
+    ? null
+    : fileObjective;
+  const activeObjectivePath = missionProgress.phase === 'active'
+    ? missionProgress.remainingPaths[0]
+    : undefined;
+  const sectorPage = useMemo(
+    () => createSectorPage(entries, sectorPageIndex, activeObjectivePath),
+    [activeObjectivePath, entries, sectorPageIndex],
+  );
+  const { blocksByCategory, folders, allBlocks } = useFileBlocks(
+    sectorPage.entries,
+    visibleFileObjective,
+  );
+  const missionTarget = useMemo(() => {
+    const nextPath = missionProgress.remainingPaths[0];
+    return fileObjective?.targets.find(target => target.path === nextPath);
+  }, [fileObjective, missionProgress.remainingPaths]);
+  const tankColliders = useMemo<TankCollider[]>(() => {
+    const colliders: TankCollider[] = [];
+    const rotatePoint = (
+      originX: number,
+      originZ: number,
+      rotation: number,
+      localX: number,
+      localZ: number,
+    ) => ({
+      x: originX + Math.cos(rotation) * localX + Math.sin(rotation) * localZ,
+      z: originZ - Math.sin(rotation) * localX + Math.cos(rotation) * localZ,
+    });
+
+    // Mission huts are the only file structures that block the vehicle. Keeping
+    // this set bounded avoids turning a huge directory into a per-frame collision
+    // scan while ensuring the actual objective compound cannot be ghosted through.
+    for (const block of allBlocks) {
+      if (!block.isObjective) continue;
+      colliders.push({
+        kind: 'circle',
+        id: `objective-hut-${block.path}`,
+        x: block.position[0],
+        z: block.position[2],
+        radius: THREE.MathUtils.clamp(block.scale * 0.62, 0.48, 1.05),
+      });
+    }
+
+    for (const fightingPosition of US_FIGHTING_POSITIONS) {
+      const [originX, , originZ] = fightingPosition.position;
+      const halfWidth = fightingPosition.width * 0.5;
+      const left = rotatePoint(originX, originZ, fightingPosition.rotation, -halfWidth, 0);
+      const right = rotatePoint(originX, originZ, fightingPosition.rotation, halfWidth, 0);
+      colliders.push({
+        kind: 'capsule',
+        id: `us-${fightingPosition.id}-front`,
+        ax: left.x,
+        az: left.z,
+        bx: right.x,
+        bz: right.z,
+        radius: 0.25,
+      });
+      for (const side of [-1, 1]) {
+        const mouth = rotatePoint(originX, originZ, fightingPosition.rotation, side * halfWidth, -0.08);
+        const rear = rotatePoint(originX, originZ, fightingPosition.rotation, side * halfWidth, -1.12);
+        colliders.push({
+          kind: 'capsule',
+          id: `us-${fightingPosition.id}-wing-${side}`,
+          ax: mouth.x,
+          az: mouth.z,
+          bx: rear.x,
+          bz: rear.z,
+          radius: 0.23,
+        });
+      }
+    }
+
+    // Low VC fighting-position lips remain after casualties and provide genuine
+    // vehicle cover without making the surrounding brush an invisible wall.
+    for (const enemy of enemies) {
+      const approachX = -enemy.position[0];
+      const approachZ = -12 - enemy.position[2];
+      const approachLength = Math.hypot(approachX, approachZ) || 1;
+      const forwardX = approachX / approachLength;
+      const forwardZ = approachZ / approachLength;
+      const sideX = -forwardZ;
+      const sideZ = forwardX;
+      const centerX = enemy.position[0] + forwardX * 0.3;
+      const centerZ = enemy.position[2] + forwardZ * 0.3;
+      colliders.push({
+        kind: 'capsule',
+        id: `${enemy.id}-fighting-position`,
+        ax: centerX - sideX * 0.52,
+        az: centerZ - sideZ * 0.52,
+        bx: centerX + sideX * 0.52,
+        bz: centerZ + sideZ * 0.52,
+        radius: 0.2,
+      });
+    }
+
+    const [wreckX, , wreckZ] = CRASHED_HUEY_TRANSFORM.position;
+    const wreckYaw = CRASHED_HUEY_TRANSFORM.rotation[1];
+    const airframeYaw = wreckYaw + 0.18;
+    const cabin = rotatePoint(wreckX, wreckZ, airframeYaw, 0, -0.15);
+    const tailStart = rotatePoint(wreckX, wreckZ, airframeYaw, 0, 0.72);
+    const tailEnd = rotatePoint(wreckX, wreckZ, airframeYaw, 0, 4.18);
+    const rotorStart = rotatePoint(wreckX, wreckZ, wreckYaw, -5.35, 1.85);
+    const rotorEnd = rotatePoint(wreckX, wreckZ, wreckYaw, -2.25, 1.85);
+    colliders.push(
+      { kind: 'circle', id: 'crashed-huey-cabin', x: cabin.x, z: cabin.z, radius: 1.2 },
+      { kind: 'capsule', id: 'crashed-huey-tail', ax: tailStart.x, az: tailStart.z, bx: tailEnd.x, bz: tailEnd.z, radius: 0.36 },
+      { kind: 'capsule', id: 'crashed-huey-rotor', ax: rotorStart.x, az: rotorStart.z, bx: rotorEnd.x, bz: rotorEnd.z, radius: 0.13 },
+    );
+
+    return colliders;
+  }, [allBlocks, enemies]);
+
+  useEffect(() => {
+    const objectiveId = fileObjective?.id ?? null;
+    const previous = missionSnapshotRef.current;
+    if (previous.id === objectiveId
+      && previous.remaining > 0
+      && missionProgress.remaining === 0
+      && missionProgress.total > 0) {
+      toast.success('Bonus cleanup complete · confirmed duplicate eliminated', {
+        duration: 4200,
+        icon: '★',
+      });
+    }
+    missionSnapshotRef.current = {
+      id: objectiveId,
+      remaining: missionProgress.remaining,
+    };
+  }, [fileObjective?.id, missionProgress.remaining, missionProgress.total]);
+
+  useEffect(() => {
+    // Deleting the final item on the final page can shrink the grid count. The
+    // current rendered slice is already clamped; mirror it back into state so
+    // navigation remains monotonic after the de-rez animation completes.
+    setSectorPageIndex(current => (
+      current === sectorPage.pageIndex ? current : sectorPage.pageIndex
+    ));
+  }, [sectorPage.pageIndex]);
+
+  function changeSectorPage(direction: -1 | 1) {
+    // Avoid unmounting a hut during its short de-rez animation. Armed targets
+    // are deliberately cleared so a hidden page can never be purged by mistake.
+    if (deletingFiles.size > 0) return;
+    clearMarked();
+    // Folder portals are centered within each bounded page. Return the tank to
+    // the clear approach lane before swapping the slice so a newly materialized
+    // portal can never overlap the stationary vehicle and navigate immediately.
+    setTankStartPosition([0, 0, -12]);
+    setSectorPageIndex(current => Math.max(
+      0,
+      Math.min(sectorPage.pageCount - 1, current + direction),
+    ));
+  }
   const combatObstacles = allBlocks.map(block => ({
     position: block.position,
     radius: Math.max(0.62, block.scale * 0.74),
@@ -777,7 +1021,7 @@ function App() {
 
   // Calculate folder positions (folders get front rows in grid layout)
   const folderPositions = new Map<string, [number, number, number]>();
-  const folderEntries = entries.filter(e => e.is_dir);
+  const folderEntries = folders;
   const allPositions = layoutFilesInGrid(folderEntries);
 
   for (const folder of folderEntries) {
@@ -822,14 +1066,15 @@ function App() {
     position: block.position,
     color: block.color,
     isMarked: markedFiles.has(block.path),
+    isObjective: block.isObjective,
   }));
 
   const minimapFolderPortals = folderPortalData.map(portal => ({
     position: portal.position,
   }));
 
-  const markedBytes = allBlocks.reduce(
-    (total, block) => total + (markedFiles.has(block.path) ? block.size : 0),
+  const markedBytes = entries.reduce(
+    (total, entry) => total + (!entry.is_dir && markedFiles.has(entry.path) ? entry.size : 0),
     0,
   );
 
@@ -902,8 +1147,8 @@ function App() {
         deletedCount={deletedCount}
         deletedBytes={deletedBytes}
         score={score}
-        fileCount={allBlocks.length}
-        folderCount={folders.length}
+        fileCount={sectorPage.totalFiles}
+        folderCount={sectorPage.totalFolders}
         markedCount={markedCount}
         markedBytes={markedBytes}
         onClearMarked={clearMarked}
@@ -913,12 +1158,16 @@ function App() {
         napalmCooldown={napalmCooldown}
         tankIntegrity={tankIntegrity}
         hostileCount={hostileCount}
+        friendlyCount={friendlyAliveCount}
+        missionTotal={missionProgress.total}
+        missionRemaining={missionProgress.remaining}
+        missionTargetName={missionTarget?.name}
+        missionOriginalName={missionTarget?.duplicateOfName}
         damageFlash={damageFlash}
-        radioEnabled={fieldRadio.enabled}
+        radioMuted={fieldRadio.muted}
+        radioPlaying={fieldRadio.playing}
         radioTrackName={fieldRadio.trackName}
-        onToggleRadio={fieldRadio.toggle}
-        onNextTrack={fieldRadio.nextTrack}
-        onLoadLocalTrack={fieldRadio.loadLocalTrack}
+        onToggleRadioMute={fieldRadio.toggleMute}
         radioSourceLabel={fieldRadio.sourceLabel}
       />
 
@@ -930,7 +1179,7 @@ function App() {
         folderPortals={minimapFolderPortals}
         backPortalPosition={backPortalPosition}
         enemies={livingEnemies}
-        friendlies={US_INFANTRY_MINIMAP_CONTACTS}
+        friendlies={livingFriendlies}
       />
 
       <div className="header" data-game-ui>
@@ -945,13 +1194,36 @@ function App() {
           <h2>{currentDirectory}</h2>
           {isTraining && <span className="training-badge">Simulation</span>}
         </div>
-        <button onClick={changeDirectory} className="btn-secondary">
-          {isTraining ? 'Exit Training' : 'Change Directory'}
-        </button>
+        <div className="header-actions">
+          {sectorPage.pageCount > 1 && (
+            <nav className="sector-grid-controls" aria-label="Sector grid pages">
+              <button
+                type="button"
+                onClick={() => changeSectorPage(-1)}
+                disabled={sectorPage.pageIndex === 0 || deletingFiles.size > 0}
+                aria-label="Previous sector grid"
+              >
+                Prev
+              </button>
+              <span>Sector grid <b>{sectorPage.pageIndex + 1}/{sectorPage.pageCount}</b></span>
+              <button
+                type="button"
+                onClick={() => changeSectorPage(1)}
+                disabled={sectorPage.pageIndex === sectorPage.pageCount - 1 || deletingFiles.size > 0}
+                aria-label="Next sector grid"
+              >
+                Next
+              </button>
+            </nav>
+          )}
+          <button onClick={changeDirectory} className="btn-secondary">
+            {isTraining ? 'Exit Training' : 'Change Directory'}
+          </button>
+        </div>
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>
-        <Scene environmentSeed={hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY)}>
+        <Scene environmentSeed={environmentSeed} tankRef={tankRef}>
           <Tank
             ref={tankRef}
             initialPosition={tankStartPosition}
@@ -965,6 +1237,13 @@ function App() {
             onMachineGunAudioChange={gameAudio.setMachineGunActive}
             onFlamethrowerAudioChange={gameAudio.setFlamethrowerActive}
             onMovementAudioChange={gameAudio.setMovementActive}
+            environmentSeed={environmentSeed}
+            colliders={tankColliders}
+          />
+          <TankWaterEffects
+            tankRef={tankRef}
+            seed={environmentSeed}
+            onRiverStateChange={gameAudio.setRiverState}
           />
           <CameraRig
             tankRef={tankRef}
@@ -972,18 +1251,24 @@ function App() {
           />
 
           <USInfantrySquad
-            enemies={livingEnemies}
+            enemies={enemies}
+            friendlies={friendlies}
+            friendlyPosesRef={friendlyPosesRef}
             obstacles={combatObstacles}
-            enabled={livingEnemies.length > 0}
-            onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'machinegun')}
+            enabled={hostileCount > 0 && friendlyAliveCount > 0}
+            onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'friendly-rifle')}
           />
 
           <VietCongCombatants
             enemies={enemies}
+            friendliesRef={friendliesRef}
+            friendlyPosesRef={friendlyPosesRef}
             tankRef={tankRef}
             obstacles={combatObstacles}
-            enabled={tankIntegrity > 0}
+            enabled={hostileCount > 0 && (tankIntegrity > 0 || friendlyAliveCount > 0)}
+            tankTargetEnabled={tankIntegrity > 0}
             onTankHit={event => handleTankHit(event.damage)}
+            onFriendlyHit={event => handleFriendlyInfantryHit(event.friendlyId, event.damage)}
             onEnemyFire={gameAudio.playEnemyRifle}
           />
 

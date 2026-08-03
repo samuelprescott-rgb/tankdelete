@@ -5,6 +5,11 @@ import {
   CAMERA_OFFSET,
   CAMERA_LERP_SPEED,
 } from '../../lib/constants';
+import {
+  ARENA_TANK_PADDING,
+  clampArenaX,
+  clampArenaZ,
+} from '../../lib/arenaBounds';
 
 interface CameraRigProps {
   tankRef: React.RefObject<THREE.Group | null>;
@@ -102,8 +107,17 @@ export function CameraRig({ tankRef, napalmCinematic = false }: CameraRigProps) 
     desiredPosition.applyQuaternion(tank.quaternion);
     desiredPosition.add(tank.position);
 
+    // The chase offset can otherwise carry the camera through the perimeter
+    // when the tank turns near an edge. Clamp both the destination and the
+    // interpolated position so normal follow remains smooth along the berm,
+    // while long frames can never overshoot beyond the combat sector.
+    desiredPosition.x = clampArenaX(desiredPosition.x, ARENA_TANK_PADDING);
+    desiredPosition.z = clampArenaZ(desiredPosition.z, ARENA_TANK_PADDING);
+
     // Smoothly lerp camera position
     camera.position.lerp(desiredPosition, CAMERA_LERP_SPEED * delta);
+    camera.position.x = clampArenaX(camera.position.x, ARENA_TANK_PADDING);
+    camera.position.z = clampArenaZ(camera.position.z, ARENA_TANK_PADDING);
 
     // A subtle cinematic tilt reveals the horizon pass without taking control
     // away from the player. It eases back to the normal chase view afterward.

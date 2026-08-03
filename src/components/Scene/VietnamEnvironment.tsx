@@ -1,9 +1,19 @@
 import { useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { ARENA_DEPTH, ARENA_PERIMETER_DEPTH, ARENA_WIDTH } from '../../lib/arenaBounds';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
+import { FILE_OBJECTIVE_RESERVED_ZONE } from '../../lib/mission';
 import { TERRAIN_MOUNDS } from '../../lib/terrain';
 import { coordinateNoise, createDeterministicScatter } from './environmentGeneration';
+import {
+  RIVER_CROSSING_Z,
+  RIVER_MAX_Z,
+  RIVER_MIN_Z,
+  createRiverStations,
+  isInsideRiverCorridor,
+  type RiverStation,
+} from './riverLayout';
 
 const DEFAULT_ENVIRONMENT_SEED = 1968;
 
@@ -22,6 +32,15 @@ function seeded(index: number, salt = 0) {
 function distanceToRoad(value: number) {
   const half = ROAD_GRID_SPACING * 0.5;
   return Math.abs(((value + half) % ROAD_GRID_SPACING + ROAD_GRID_SPACING) % ROAD_GRID_SPACING - half);
+}
+
+// Preserve a readable approach and firing pocket around the rear-center file
+// objective while letting the jungle close in tightly around its perimeter.
+function isInsideObjectiveClearing(x: number, z: number, padding = 0) {
+  return Math.abs(x - FILE_OBJECTIVE_RESERVED_ZONE.centerX)
+      <= FILE_OBJECTIVE_RESERVED_ZONE.halfWidth + padding
+    && Math.abs(z - FILE_OBJECTIVE_RESERVED_ZONE.centerZ)
+      <= FILE_OBJECTIVE_RESERVED_ZONE.halfDepth + padding;
 }
 
 type PaddyDrainSide = 'north' | 'south' | 'east' | 'west';
@@ -160,22 +179,63 @@ function createGrassClumpGeometry() {
   return geometry;
 }
 
-function ElephantGrass({ seed }: { seed: number }) {
+function riverTerrainClearance(stations: RiverStation[]) {
+  const sampleCount = Math.ceil((RIVER_MAX_Z - RIVER_MIN_Z) / 0.2);
+  for (let sample = 0; sample <= sampleCount; sample += 1) {
+    const z = THREE.MathUtils.lerp(RIVER_MIN_Z, RIVER_MAX_Z, sample / sampleCount);
+    const progress = (z - RIVER_MIN_Z) / (RIVER_MAX_Z - RIVER_MIN_Z);
+    const scaledIndex = progress * (stations.length - 1);
+    const lowerIndex = Math.min(stations.length - 2, Math.floor(scaledIndex));
+    const mix = scaledIndex - lowerIndex;
+    const lower = stations[lowerIndex];
+    const upper = stations[lowerIndex + 1];
+    const centerX = THREE.MathUtils.lerp(lower.centerX, upper.centerX, mix);
+    const halfWidth = THREE.MathUtils.lerp(lower.mudHalfWidth, upper.mudHalfWidth, mix);
+
+    for (const mound of TERRAIN_MOUNDS) {
+      const dx = centerX - mound.x;
+      const dz = z - mound.z;
+      const cosine = Math.cos(mound.rotation);
+      const sine = Math.sin(mound.rotation);
+      const localX = cosine * dx + sine * dz;
+      const localZ = -sine * dx + cosine * dz;
+      // Expanding both radii by the entire bank width is intentionally
+      // conservative and guarantees neither water nor mud reaches the hill.
+      const radiusX = mound.sx + halfWidth + 0.45;
+      const radiusZ = mound.sz + halfWidth + 0.45;
+      if ((localX * localX) / (radiusX * radiusX)
+        + (localZ * localZ) / (radiusZ * radiusZ) < 1) return false;
+    }
+  }
+  return true;
+}
+
+interface ElephantGrassProps {
+  seed: number;
+  tankRef?: RefObject<THREE.Group | null>;
+}
+
+function ElephantGrass({ seed, tankRef }: ElephantGrassProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
+  const lastBendUpdateRef = useRef(-1);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const tankPosition = useMemo(() => new THREE.Vector3(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const grass = useMemo(() => {
     const points = createDeterministicScatter({
-      width: 150,
-      depth: 150,
+      width: ARENA_WIDTH,
+      depth: ARENA_DEPTH,
       cellSize: 2.5,
       minDistance: 1.7,
       seed: seed ^ 0x45a1,
-      maxPoints: 480,
+      maxPoints: 560,
       accept: (x, z) => (
         distanceToRoad(x) >= 2.4
         && distanceToRoad(z) >= 2.4
         && !(Math.abs(x) < 7 && z > -18 && z < 8)
+        && !isInsideObjectiveClearing(x, z, 1.1)
         && !isInsidePaddy(x, z, 0.7)
+        && !isInsideRiverCorridor(x, z, riverStations, 1.05)
       ),
     });
 
@@ -192,8 +252,12 @@ function ElephantGrass({ seed }: { seed: number }) {
         lean: (coordinateNoise(point.cellX, point.cellZ, seed, 15) - 0.5) * 0.055,
       };
     });
-  }, [seed]);
+  }, [riverStations, seed]);
   const grassGeometry = useMemo(() => createGrassClumpGeometry(), []);
+  const grassBends = useMemo(
+    () => new Float32Array(grass.length),
+    [grass.length, seed],
+  );
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
@@ -204,8 +268,58 @@ function ElephantGrass({ seed }: { seed: number }) {
       dummy.updateMatrix();
       meshRef.current!.setMatrixAt(index, dummy.matrix);
     });
-    finalizeInstanceMatrices(meshRef.current);
-  }, [dummy, grass]);
+    finalizeInstanceMatrices(meshRef.current, Boolean(tankRef));
+  }, [dummy, grass, tankRef]);
+
+  useFrame(({ clock }) => {
+    const mesh = meshRef.current;
+    const tank = tankRef?.current;
+    if (!mesh || !tank) return;
+    const time = clock.elapsedTime;
+    if (time - lastBendUpdateRef.current < 1 / 18) return;
+    const step = lastBendUpdateRef.current < 0
+      ? 1 / 18
+      : Math.min(0.12, time - lastBendUpdateRef.current);
+    lastBendUpdateRef.current = time;
+    tank.getWorldPosition(tankPosition);
+
+    let changed = false;
+    grass.forEach((blade, index) => {
+      const dx = blade.position[0] - tankPosition.x;
+      const dz = blade.position[2] - tankPosition.z;
+      const distanceSquared = dx * dx + dz * dz;
+      const targetBend = distanceSquared < 2.25
+        ? (1 - Math.sqrt(distanceSquared) / 1.5) * 0.76
+        : 0;
+      const currentBend = grassBends[index];
+      const response = targetBend > currentBend ? 12 : 1.15;
+      const nextBend = THREE.MathUtils.lerp(
+        currentBend,
+        targetBend,
+        1 - Math.exp(-response * step),
+      );
+      if (Math.abs(nextBend - currentBend) < 0.001 && nextBend < 0.001) return;
+      grassBends[index] = nextBend;
+      changed = true;
+
+      const awayAngle = Math.atan2(dx, dz);
+      dummy.position.set(...blade.position);
+      dummy.scale.set(
+        blade.scale[0],
+        blade.scale[1] * (1 - nextBend * 0.18),
+        blade.scale[2],
+      );
+      dummy.rotation.set(
+        blade.lean + Math.cos(awayAngle) * nextBend,
+        blade.rotation,
+        blade.lean * 0.35 - Math.sin(awayAngle) * nextBend,
+      );
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+    });
+
+    if (changed) mesh.instanceMatrix.needsUpdate = true;
+  });
 
   return (
     <instancedMesh ref={meshRef} args={[grassGeometry, undefined, grass.length]} castShadow={false} receiveShadow={false}>
@@ -276,6 +390,7 @@ function TerrainRelief() {
 function GroundPatches({ seed }: { seed: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const colors = useMemo(() => [
     new THREE.Color('#53603b'),
     new THREE.Color('#353d27'),
@@ -283,8 +398,8 @@ function GroundPatches({ seed }: { seed: number }) {
     new THREE.Color('#2b432d'),
   ], []);
   const patches = useMemo(() => createDeterministicScatter({
-    width: 150,
-    depth: 150,
+    width: ARENA_WIDTH,
+    depth: ARENA_DEPTH,
     cellSize: 9.2,
     minDistance: 6.4,
     seed: seed ^ 0x2b17,
@@ -296,7 +411,12 @@ function GroundPatches({ seed }: { seed: number }) {
     sz: 1.4 + coordinateNoise(point.cellX, point.cellZ, seed, 93) * 4.3,
     rotation: coordinateNoise(point.cellX, point.cellZ, seed, 94) * Math.PI,
     color: Math.floor(coordinateNoise(point.cellX, point.cellZ, seed, 95) * colors.length),
-  })), [colors.length, seed]);
+  })).filter(patch => !isInsideRiverCorridor(
+    patch.x,
+    patch.z,
+    riverStations,
+    Math.max(patch.sx, patch.sz) + 0.35,
+  )), [colors.length, riverStations, seed]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
@@ -317,6 +437,186 @@ function GroundPatches({ seed }: { seed: number }) {
       <circleGeometry args={[1, 7]} />
       <meshBasicMaterial vertexColors transparent opacity={0.26} depthWrite={false} />
     </instancedMesh>
+  );
+}
+
+function createRiverShape(
+  stations: RiverStation[],
+  widthAt: (station: RiverStation) => number,
+) {
+  const shape = new THREE.Shape();
+  stations.forEach((station, index) => {
+    const x = station.centerX - widthAt(station);
+    // ShapeGeometry is authored in XY, then rotated -90 degrees onto XZ.
+    // Negating here keeps its world-space Z aligned with reeds and crossing.
+    if (index === 0) shape.moveTo(x, -station.z);
+    else shape.lineTo(x, -station.z);
+  });
+  for (let index = stations.length - 1; index >= 0; index -= 1) {
+    const station = stations[index];
+    shape.lineTo(station.centerX + widthAt(station), -station.z);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function SmallRiver({ seed }: { seed: number }) {
+  const reedsRef = useRef<THREE.InstancedMesh>(null);
+  const bridgeRef = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const reedGeometry = useMemo(() => createGrassClumpGeometry(), []);
+  const stations = useMemo(() => createRiverStations(seed), [seed]);
+  const clearsTerrain = useMemo(() => riverTerrainClearance(stations), [stations]);
+  const mudShape = useMemo(() => createRiverShape(stations, station => station.mudHalfWidth), [stations]);
+  const waterShape = useMemo(() => createRiverShape(stations, station => station.waterHalfWidth), [stations]);
+  const crossing = useMemo(() => {
+    const stationIndex = stations.reduce((closest, station, index) => (
+      Math.abs(station.z - RIVER_CROSSING_Z) < Math.abs(stations[closest].z - RIVER_CROSSING_Z)
+        ? index
+        : closest
+    ), 0);
+    const station = stations[stationIndex];
+    const previous = stations[Math.max(0, stationIndex - 1)];
+    const next = stations[Math.min(stations.length - 1, stationIndex + 1)];
+    const tangentX = next.centerX - previous.centerX;
+    const tangentZ = next.z - previous.z;
+    const tangentLength = Math.hypot(tangentX, tangentZ) || 1;
+    const normalX = tangentZ / tangentLength;
+    const normalZ = -tangentX / tangentLength;
+    return {
+      centerX: station.centerX,
+      length: station.mudHalfWidth * 2 + 0.88,
+      rotation: Math.atan2(-normalZ, normalX),
+      z: station.z,
+    };
+  }, [stations]);
+  const reeds = useMemo(() => {
+    const placements: Array<{
+      x: number;
+      z: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+      scaleZ: number;
+    }> = [];
+
+    for (let stationIndex = 1; stationIndex < stations.length - 1; stationIndex += 1) {
+      const station = stations[stationIndex];
+      if (Math.abs(station.z - crossing.z) < 2.8) continue;
+      const previous = stations[stationIndex - 1];
+      const next = stations[stationIndex + 1];
+      const tangentX = next.centerX - previous.centerX;
+      const tangentZ = next.z - previous.z;
+      const tangentLength = Math.hypot(tangentX, tangentZ) || 1;
+      const normalX = tangentZ / tangentLength;
+      const normalZ = -tangentX / tangentLength;
+
+      for (const side of [-1, 1]) {
+        const clumpCount = coordinateNoise(stationIndex, side, seed, 820) > 0.48 ? 3 : 2;
+        for (let clumpIndex = 0; clumpIndex < clumpCount; clumpIndex += 1) {
+          const noiseKey = stationIndex * 3 + clumpIndex;
+          const bankOffset = station.waterHalfWidth + 0.38
+            + coordinateNoise(noiseKey, side, seed, 821) * 0.62;
+          const alongBank = (coordinateNoise(noiseKey, side, seed, 822) - 0.5) * 3.8;
+          const scale = 0.46 + coordinateNoise(noiseKey, side, seed, 823) * 0.38;
+          placements.push({
+            x: station.centerX + normalX * side * bankOffset
+              + tangentX / tangentLength * alongBank,
+            z: station.z + normalZ * side * bankOffset
+              + tangentZ / tangentLength * alongBank,
+            rotation: coordinateNoise(noiseKey, side, seed, 824) * Math.PI,
+            scaleX: scale * (0.82 + coordinateNoise(noiseKey, side, seed, 825) * 0.36),
+            scaleY: 0.88 + coordinateNoise(noiseKey, side, seed, 826) * 0.86,
+            scaleZ: scale,
+          });
+        }
+      }
+    }
+    return placements;
+  }, [crossing.z, seed, stations]);
+  const bridgePlanks = useMemo(() => {
+    const plankCount = Math.max(7, Math.ceil(crossing.length / 0.58));
+    const plankSpacing = crossing.length / plankCount;
+    const planks = Array.from({ length: plankCount }, (_, index) => ({
+      x: -crossing.length * 0.5 + (index + 0.5) * plankSpacing,
+      y: coordinateNoise(index, 0, seed, 830) * 0.025,
+      z: (coordinateNoise(index, 0, seed, 831) - 0.5) * 0.08,
+      rotation: (coordinateNoise(index, 0, seed, 832) - 0.5) * 0.045,
+      scaleX: plankSpacing * 0.52,
+      scaleY: 0.07 + coordinateNoise(index, 0, seed, 833) * 0.018,
+      scaleZ: 0.66 + coordinateNoise(index, 0, seed, 834) * 0.08,
+    }));
+    planks.push(
+      { x: 0, y: -0.105, z: -0.43, rotation: 0, scaleX: crossing.length * 0.5, scaleY: 0.06, scaleZ: 0.075 },
+      { x: 0, y: -0.105, z: 0.43, rotation: 0, scaleX: crossing.length * 0.5, scaleY: 0.06, scaleZ: 0.075 },
+    );
+    return planks;
+  }, [crossing.length, seed]);
+
+  useLayoutEffect(() => {
+    if (!reedsRef.current || !bridgeRef.current) return;
+    reeds.forEach((reed, index) => {
+      dummy.position.set(reed.x, -0.015, reed.z);
+      dummy.rotation.set(0, reed.rotation, 0);
+      dummy.scale.set(reed.scaleX, reed.scaleY, reed.scaleZ);
+      dummy.updateMatrix();
+      reedsRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(reedsRef.current);
+
+    bridgePlanks.forEach((plank, index) => {
+      dummy.position.set(plank.x, plank.y, plank.z);
+      dummy.rotation.set(0, plank.rotation, 0);
+      dummy.scale.set(plank.scaleX, plank.scaleY, plank.scaleZ);
+      dummy.updateMatrix();
+      bridgeRef.current!.setMatrixAt(index, dummy.matrix);
+    });
+    finalizeInstanceMatrices(bridgeRef.current);
+  }, [bridgePlanks, dummy, reeds]);
+
+  // Never lay a flat water sheet across a terrain mound if the route is
+  // changed later without updating its west-side safety envelope.
+  if (!clearsTerrain) return null;
+
+  return (
+    <>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.036, 0]} receiveShadow>
+        <shapeGeometry args={[mudShape]} />
+        <meshStandardMaterial color="#42321f" emissive="#171009" emissiveIntensity={0.08} roughness={1} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.012, 0]} renderOrder={3}>
+        <shapeGeometry args={[waterShape]} />
+        <meshPhysicalMaterial
+          color="#315a53"
+          emissive="#122923"
+          emissiveIntensity={0.12}
+          metalness={0.28}
+          roughness={0.2}
+          clearcoat={0.84}
+          clearcoatRoughness={0.16}
+          transparent
+          opacity={0.82}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <instancedMesh ref={reedsRef} args={[reedGeometry, undefined, reeds.length]}>
+        <meshStandardMaterial
+          color="#6c8046"
+          emissive="#26391d"
+          emissiveIntensity={0.15}
+          side={THREE.DoubleSide}
+          roughness={1}
+          vertexColors
+        />
+      </instancedMesh>
+      <group position={[crossing.centerX, 0.12, crossing.z]} rotation={[0, crossing.rotation, 0]}>
+        <instancedMesh ref={bridgeRef} args={[undefined, undefined, bridgePlanks.length]} receiveShadow>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#6b4d2e" emissive="#21140a" emissiveIntensity={0.06} roughness={0.96} />
+        </instancedMesh>
+      </group>
+    </>
   );
 }
 
@@ -357,6 +657,18 @@ function createPalmCrownGeometry() {
   return geometry;
 }
 
+function createHangingVineGeometry() {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.5, 0),
+    new THREE.Vector3(0.06, 0.19, 0.015),
+    new THREE.Vector3(-0.045, -0.14, 0.055),
+    new THREE.Vector3(0.035, -0.5, 0.11),
+  ]);
+  const geometry = new THREE.TubeGeometry(curve, 6, 0.022, 4, false);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function LayeredJungle({ seed }: { seed: number }) {
   const broadTrunksRef = useRef<THREE.InstancedMesh>(null);
   const broadCanopyRef = useRef<THREE.InstancedMesh>(null);
@@ -369,6 +681,8 @@ function LayeredJungle({ seed }: { seed: number }) {
   const lastWindUpdateRef = useRef(-1);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const palmGeometry = useMemo(() => createPalmCrownGeometry(), []);
+  const vineGeometry = useMemo(() => createHangingVineGeometry(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const trees = useMemo(() => {
     const placements: Array<{
       x: number;
@@ -382,14 +696,17 @@ function LayeredJungle({ seed }: { seed: number }) {
 
     // A jittered perimeter supplies a dense horizon without placing hundreds
     // of trees in the active combat corridor.
-    const perimeterCount = 96;
+    const perimeterCount = 108;
     for (let index = 0; index < perimeterCount; index += 1) {
       const angle = (index / perimeterCount) * Math.PI * 2
         + (coordinateNoise(index, 0, seed, 10) - 0.5) * 0.12;
       const radius = 55 + coordinateNoise(index, 0, seed, 11) * 31;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (isInsideRiverCorridor(x, z, riverStations, 1.4)) continue;
       placements.push({
-        x: Math.cos(angle) * radius,
-        z: Math.sin(angle) * radius,
+        x,
+        z,
         height: 5.8 + coordinateNoise(index, 0, seed, 12) * 8.8,
         crown: 1.05 + coordinateNoise(index, 0, seed, 13) * 0.7,
         lean: (coordinateNoise(index, 0, seed, 14) - 0.5) * 0.12,
@@ -404,13 +721,15 @@ function LayeredJungle({ seed }: { seed: number }) {
       cellSize: 5.15,
       minDistance: 4.35,
       seed: seed ^ 0x1c6d,
-      maxPoints: 86,
+      maxPoints: 112,
       accept: (x, z) => (
         distanceToRoad(x) >= 2.45
         && distanceToRoad(z) >= 2.45
         && !(Math.abs(x) < 12 && z > -22 && z < 18)
         && !(Math.abs(x) < 22 && z > 7 && z < 26)
+        && !isInsideObjectiveClearing(x, z, 1.7)
         && !isInsidePaddy(x, z, 1.35)
+        && !isInsideRiverCorridor(x, z, riverStations, 1.4)
       ),
     });
     innerTrees.forEach(point => {
@@ -426,12 +745,38 @@ function LayeredJungle({ seed }: { seed: number }) {
     });
 
     return placements;
-  }, [seed]);
+  }, [riverStations, seed]);
   const broadleafTrees = useMemo(() => trees.filter(tree => !tree.palm), [trees]);
   const palmTrees = useMemo(() => trees.filter(tree => tree.palm), [trees]);
   const windPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 === 0), [palmTrees]);
   const staticPalmTrees = useMemo(() => palmTrees.filter((_, index) => index % 9 !== 0), [palmTrees]);
-  const vineTrees = useMemo(() => broadleafTrees.filter((_, index) => index % 3 === 0), [broadleafTrees]);
+  const hangingVines = useMemo(() => broadleafTrees.flatMap((tree, treeIndex) => {
+    const keyX = Math.round(tree.x * 4);
+    const keyZ = Math.round(tree.z * 4);
+    if (coordinateNoise(keyX, keyZ, seed, 31) < 0.15) return [];
+    const strandCount = 3 + (coordinateNoise(keyX, keyZ, seed, 32) > 0.62 ? 1 : 0);
+    return Array.from({ length: strandCount }, (_, strandIndex) => {
+      const angle = coordinateNoise(keyX + strandIndex, keyZ, seed, 33) * Math.PI * 2;
+      const anchorRadius = tree.crown
+        * (0.48 + coordinateNoise(keyX, keyZ + strandIndex, seed, 34) * 0.92);
+      const length = Math.min(
+        5.2,
+        1.65 + coordinateNoise(keyX + strandIndex, keyZ - strandIndex, seed, 35) * 3.55,
+      );
+      const anchorHeight = tree.height
+        + tree.crown * (0.12 + coordinateNoise(keyX, keyZ, seed, 36 + strandIndex) * 0.42);
+      return {
+        x: tree.x + Math.cos(angle) * anchorRadius,
+        y: Math.max(0.65 + length * 0.5, anchorHeight - length * 0.5),
+        z: tree.z + Math.sin(angle) * anchorRadius,
+        length,
+        rotation: coordinateNoise(treeIndex, strandIndex, seed, 40) * Math.PI * 2,
+        radiusScale: 0.78 + coordinateNoise(keyX, keyZ, seed, 43 + strandIndex) * 0.55,
+        tiltX: (coordinateNoise(keyX, strandIndex, seed, 47) - 0.5) * 0.08,
+        tiltZ: (coordinateNoise(keyZ, strandIndex, seed, 48) - 0.5) * 0.08,
+      };
+    });
+  }), [broadleafTrees, seed]);
   const understory = useMemo(() => {
     return createDeterministicScatter({
       width: 122,
@@ -439,13 +784,15 @@ function LayeredJungle({ seed }: { seed: number }) {
       cellSize: 3.75,
       minDistance: 2.75,
       seed: seed ^ 0x6f31,
-      maxPoints: 96,
+      maxPoints: 140,
       accept: (x, z) => (
         distanceToRoad(x) >= 2.05
         && distanceToRoad(z) >= 2.05
         && !(Math.abs(x) < 8 && z > -20 && z < 12)
         && !(Math.abs(x) < 22 && z > 7 && z < 26)
+        && !isInsideObjectiveClearing(x, z, 0.9)
         && !isInsidePaddy(x, z, 0.85)
+        && !isInsideRiverCorridor(x, z, riverStations, 0.9)
       ),
     }).map(point => ({
       x: point.x,
@@ -454,7 +801,7 @@ function LayeredJungle({ seed }: { seed: number }) {
       scale: 0.34 + coordinateNoise(point.cellX, point.cellZ, seed, 204) * 0.28,
       rotation: coordinateNoise(point.cellX, point.cellZ, seed, 205) * Math.PI,
     }));
-  }, [seed]);
+  }, [riverStations, seed]);
 
   useLayoutEffect(() => {
     if (
@@ -514,15 +861,10 @@ function LayeredJungle({ seed }: { seed: number }) {
       windPalmCrownsRef.current!.setMatrixAt(index, dummy.matrix);
     });
 
-    vineTrees.forEach((tree, index) => {
-      const vineLength = 1.4 + seeded(index, 33) * 2.8;
-      dummy.position.set(
-        tree.x + (seeded(index, 34) - 0.5) * tree.crown * 1.7,
-        tree.height - vineLength * 0.22,
-        tree.z + (seeded(index, 35) - 0.5) * tree.crown * 1.7,
-      );
-      dummy.rotation.set(tree.lean * 0.45, seeded(index, 36) * Math.PI, tree.lean * 0.55);
-      dummy.scale.set(0.028, vineLength, 0.028);
+    hangingVines.forEach((vine, index) => {
+      dummy.position.set(vine.x, vine.y, vine.z);
+      dummy.rotation.set(vine.tiltX, vine.rotation, vine.tiltZ);
+      dummy.scale.set(vine.radiusScale, vine.length, vine.radiusScale);
       dummy.updateMatrix();
       vinesRef.current!.setMatrixAt(index, dummy.matrix);
     });
@@ -549,7 +891,7 @@ function LayeredJungle({ seed }: { seed: number }) {
     finalizeInstanceMatrices(vinesRef.current);
     finalizeInstanceMatrices(understoryStemsRef.current);
     finalizeInstanceMatrices(understoryLeavesRef.current);
-  }, [broadleafTrees, dummy, palmTrees, staticPalmTrees, understory, vineTrees, windPalmTrees]);
+  }, [broadleafTrees, dummy, hangingVines, palmTrees, staticPalmTrees, understory, windPalmTrees]);
 
   useFrame(({ clock }) => {
     if (!windPalmCrownsRef.current) return;
@@ -589,9 +931,8 @@ function LayeredJungle({ seed }: { seed: number }) {
       <instancedMesh ref={windPalmCrownsRef} args={[palmGeometry, undefined, windPalmTrees.length]}>
         <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.96} />
       </instancedMesh>
-      <instancedMesh ref={vinesRef} args={[undefined, undefined, vineTrees.length]}>
-        <cylinderGeometry args={[1, 1.25, 1, 5]} />
-        <meshStandardMaterial color="#38552c" roughness={1} />
+      <instancedMesh ref={vinesRef} args={[vineGeometry, undefined, hangingVines.length]}>
+        <meshStandardMaterial color="#49683a" emissive="#172b15" emissiveIntensity={0.12} roughness={1} />
       </instancedMesh>
       <instancedMesh ref={understoryStemsRef} args={[undefined, undefined, understory.length]}>
         <cylinderGeometry args={[0.6, 1, 1, 6]} />
@@ -604,10 +945,33 @@ function LayeredJungle({ seed }: { seed: number }) {
   );
 }
 
-const SMOKE_SOURCES: Array<[number, number, number]> = [
-  [-38, 0, 22],
-  [34, 0, 45],
-  [52, 0, -30],
+interface SmokeSource {
+  x: number;
+  y: number;
+  z: number;
+  rise: number;
+  spread: number;
+  scale: number;
+}
+
+export const CRASHED_HUEY_TRANSFORM = Object.freeze({
+  position: [-9, 0, -17] as [number, number, number],
+  rotation: [0, 0.18, 0] as [number, number, number],
+});
+
+const SMOKE_SOURCES: SmokeSource[] = [
+  { x: -38, y: 0, z: 22, rise: 18, spread: 1, scale: 1 },
+  { x: 34, y: 0, z: 45, rise: 18, spread: 1, scale: 1 },
+  { x: 52, y: 0, z: -30, rise: 18, spread: 1, scale: 1 },
+  // The wreck shares this batch, so its smaller smoke column costs no draw call.
+  {
+    x: CRASHED_HUEY_TRANSFORM.position[0],
+    y: CRASHED_HUEY_TRANSFORM.position[1] + 1.05,
+    z: CRASHED_HUEY_TRANSFORM.position[2],
+    rise: 9.5,
+    spread: 0.48,
+    scale: 0.52,
+  },
 ];
 
 function SmokeColumns() {
@@ -633,13 +997,15 @@ function SmokeColumns() {
       for (let particleIndex = 0; particleIndex < countPerSource; particleIndex += 1) {
         const index = sourceIndex * countPerSource + particleIndex;
         const phase = (particleIndex / countPerSource + time * (0.035 + sourceIndex * 0.006)) % 1;
-        const drift = Math.sin(time * 0.42 + particleIndex * 0.9) * phase * 2.2;
+        const drift = Math.sin(time * 0.42 + particleIndex * 0.9)
+          * phase * 2.2 * source.spread;
         position.set(
-          source[0] + drift + (seeded(index, 30) - 0.5) * phase * 2,
-          0.5 + phase * 18,
-          source[2] + phase * 3 + (seeded(index, 31) - 0.5) * phase * 1.5,
+          source.x + drift + (seeded(index, 30) - 0.5) * phase * 2 * source.spread,
+          source.y + 0.5 + phase * source.rise,
+          source.z + phase * 3 * source.spread
+            + (seeded(index, 31) - 0.5) * phase * 1.5 * source.spread,
         );
-        const particleScale = 0.35 + phase * 2.8;
+        const particleScale = (0.35 + phase * 2.8) * source.scale;
         scale.set(particleScale, particleScale * 0.8, particleScale);
         matrix.compose(position, quaternion, scale);
         meshRef.current!.setMatrixAt(index, matrix);
@@ -976,6 +1342,10 @@ const WRECK_BUSHES = [
   [1.25, 0.3, 0.92],
   [-0.45, 3.05, 1.14],
   [0.55, 4.15, 1.06],
+  [-2.75, 2.55, 1.12],
+  [2.72, 2.34, 1.24],
+  [-2.05, 3.75, 0.98],
+  [2.08, 3.42, 1.08],
 ] as const;
 
 const WRECK_VINES = [
@@ -983,7 +1353,123 @@ const WRECK_VINES = [
   [0.66, 0.48, 1.1, 0.74],
   [-0.18, 2.45, 1.25, 1.08],
   [0.35, 3.5, 0.92, 0.78],
+  [-0.7, 1.62, 1.18, 0.86],
+  [0.84, 1.82, 1.34, 0.96],
+  [-1.12, 3.08, 0.88, 0.72],
+  [0.92, 3.72, 1.06, 0.84],
 ] as const;
+
+const WRECK_FIRE_PARTICLE_COUNT = 30;
+
+function BurningWreckFire() {
+  const flameRef = useRef<THREE.InstancedMesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
+  const lastUpdateRef = useRef(-1);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const flameColors = useMemo(() => [
+    new THREE.Color('#ffd36a'),
+    new THREE.Color('#ff8a2c'),
+    new THREE.Color('#e8451d'),
+  ], []);
+  const particles = useMemo(() => Array.from(
+    { length: WRECK_FIRE_PARTICLE_COUNT },
+    (_, index) => {
+      const hotspot = index % 3;
+      const base = hotspot === 0
+        ? { x: -0.08, y: 1.08, z: 0.18, radius: 0.54 }
+        : hotspot === 1
+          ? { x: 0.5, y: 0.42, z: -0.5, radius: 0.42 }
+          : { x: -0.42, y: 0.52, z: 0.72, radius: 0.34 };
+      const angle = seeded(index, 850) * Math.PI * 2;
+      const radius = seeded(index, 851) * base.radius;
+      return {
+        x: base.x + Math.cos(angle) * radius,
+        y: base.y + seeded(index, 852) * 0.24,
+        z: base.z + Math.sin(angle) * radius,
+        phase: seeded(index, 853),
+        speed: 0.58 + seeded(index, 854) * 0.7,
+        rise: 0.72 + seeded(index, 855) * 1.12,
+        size: 0.11 + seeded(index, 856) * 0.16,
+        sway: (seeded(index, 857) - 0.5) * 0.38,
+        color: index % 7 === 0 ? 0 : index % 2 === 0 ? 1 : 2,
+      };
+    },
+  ), []);
+
+  useLayoutEffect(() => {
+    const flames = flameRef.current;
+    if (!flames) return;
+    flames.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    particles.forEach((particle, index) => {
+      dummy.position.set(particle.x, particle.y, particle.z);
+      dummy.scale.setScalar(0.001);
+      dummy.updateMatrix();
+      flames.setMatrixAt(index, dummy.matrix);
+      flames.setColorAt(index, flameColors[particle.color]);
+    });
+    flames.instanceMatrix.needsUpdate = true;
+    if (flames.instanceColor) flames.instanceColor.needsUpdate = true;
+    flames.computeBoundingSphere();
+  }, [dummy, flameColors, particles]);
+
+  useFrame(({ clock }) => {
+    const flames = flameRef.current;
+    if (!flames) return;
+    const time = clock.elapsedTime;
+    if (time - lastUpdateRef.current < 1 / 24) return;
+    lastUpdateRef.current = time;
+
+    particles.forEach((particle, index) => {
+      const life = (particle.phase + time * particle.speed) % 1;
+      const envelope = Math.sin(life * Math.PI);
+      const flicker = 0.78 + Math.sin(time * 13.5 + particle.phase * 17) * 0.22;
+      const size = Math.max(0.001, particle.size * envelope * flicker);
+      dummy.position.set(
+        particle.x + Math.sin(time * 5.1 + index) * particle.sway * life,
+        particle.y + life * particle.rise,
+        particle.z + Math.cos(time * 4.4 + index * 0.7) * particle.sway * life * 0.45,
+      );
+      dummy.rotation.set(life * 0.16, particle.phase * Math.PI * 2, particle.sway * life);
+      dummy.scale.set(size, size * (1.8 + particle.rise * 0.34), size * 0.88);
+      dummy.updateMatrix();
+      flames.setMatrixAt(index, dummy.matrix);
+    });
+    flames.instanceMatrix.needsUpdate = true;
+
+    if (lightRef.current) {
+      lightRef.current.intensity = 1.45 + Math.sin(time * 11.8) * 0.16
+        + Math.sin(time * 17.3) * 0.09;
+    }
+  });
+
+  return (
+    <>
+      <instancedMesh
+        ref={flameRef}
+        args={[undefined, undefined, WRECK_FIRE_PARTICLE_COUNT]}
+        frustumCulled={false}
+      >
+        <sphereGeometry args={[1, 5, 4]} />
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.86}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <pointLight
+        ref={lightRef}
+        position={[0.12, 1.28, -0.08]}
+        color="#ff742b"
+        intensity={1.45}
+        distance={7.5}
+        decay={2}
+      />
+    </>
+  );
+}
 
 function CrashedHuey() {
   const debrisRef = useRef<THREE.InstancedMesh>(null);
@@ -1058,7 +1544,13 @@ function CrashedHuey() {
   }, [bushColors, debris, dummy]);
 
   return (
-    <group position={[13.2, 0, 33.4]} rotation={[0, -0.5, 0]}>
+    // Centered behind the left/forward US fighting positions. Its conservative
+    // 6.2m wreck footprint clears every mound's conservative bounding circle
+    // by at least 2.4m and sits over 10m from the tank spawn.
+    <group
+      position={CRASHED_HUEY_TRANSFORM.position}
+      rotation={CRASHED_HUEY_TRANSFORM.rotation}
+    >
       <mesh position={[0.2, -0.045, 0.1]} rotation={[-Math.PI / 2, 0, 0]} scale={[4.7, 2.15, 1]} receiveShadow>
         <circleGeometry args={[1, 12]} />
         <meshBasicMaterial color="#15130e" transparent opacity={0.52} depthWrite={false} />
@@ -1067,6 +1559,7 @@ function CrashedHuey() {
       <group position={[0, 0.95, 0]} rotation={[-0.09, 0.18, -0.27]} scale={0.78}>
         <HueyAirframe wrecked />
       </group>
+      <BurningWreckFire />
 
       {/* A blade and door torn clear of the airframe make the damage readable at tank speed. */}
       <mesh position={[-3.85, 0.12, 1.85]} rotation={[0.09, -0.42, -0.05]} scale={[3.2, 0.045, 0.13]}>
@@ -1571,9 +2064,10 @@ function RicePaddies({ seed }: { seed: number }) {
 function MudAndPuddles({ seed }: { seed: number }) {
   const puddlesRef = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const puddles = useMemo(() => createDeterministicScatter({
-    width: 148,
-    depth: 148,
+    width: ARENA_WIDTH,
+    depth: ARENA_DEPTH,
     cellSize: 9.4,
     minDistance: 6.2,
     seed: seed ^ 0x7a2f,
@@ -1585,7 +2079,12 @@ function MudAndPuddles({ seed }: { seed: number }) {
     scaleX: 0.45 + coordinateNoise(point.cellX, point.cellZ, seed, 44) * 1.35,
     scaleZ: 0.22 + coordinateNoise(point.cellX, point.cellZ, seed, 45) * 0.65,
     rotation: coordinateNoise(point.cellX, point.cellZ, seed, 46) * Math.PI,
-  })), [seed]);
+  })).filter(puddle => !isInsideRiverCorridor(
+    puddle.x,
+    puddle.z,
+    riverStations,
+    Math.max(puddle.scaleX, puddle.scaleZ) + 0.18,
+  )), [riverStations, seed]);
 
   useLayoutEffect(() => {
     if (!puddlesRef.current) return;
@@ -1602,7 +2101,10 @@ function MudAndPuddles({ seed }: { seed: number }) {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow>
-        <planeGeometry args={[260, 260]} />
+        <planeGeometry args={[
+          ARENA_WIDTH + ARENA_PERIMETER_DEPTH * 4,
+          ARENA_DEPTH + ARENA_PERIMETER_DEPTH * 4,
+        ]} />
         <meshStandardMaterial color="#405036" roughness={1} metalness={0} />
       </mesh>
       <instancedMesh ref={puddlesRef} args={[undefined, undefined, puddles.length]}>
@@ -1615,18 +2117,23 @@ function MudAndPuddles({ seed }: { seed: number }) {
 
 interface VietnamEnvironmentProps {
   seed?: number;
+  tankRef?: RefObject<THREE.Group | null>;
 }
 
-export function VietnamEnvironment({ seed = DEFAULT_ENVIRONMENT_SEED }: VietnamEnvironmentProps) {
+export function VietnamEnvironment({
+  seed = DEFAULT_ENVIRONMENT_SEED,
+  tankRef,
+}: VietnamEnvironmentProps) {
   const environmentSeed = Number.isFinite(seed) ? Math.trunc(seed) : DEFAULT_ENVIRONMENT_SEED;
 
   return (
     <>
       <MudAndPuddles seed={environmentSeed} />
       <GroundPatches seed={environmentSeed} />
+      <SmallRiver seed={environmentSeed} />
       <RicePaddies seed={environmentSeed} />
       <TerrainRelief />
-      <ElephantGrass seed={environmentSeed} />
+      <ElephantGrass seed={environmentSeed} tankRef={tankRef} />
       <LayeredJungle seed={environmentSeed} />
       <SmokeColumns />
       <FieldFortifications />

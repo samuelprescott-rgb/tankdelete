@@ -1,277 +1,167 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-interface RadioTrack {
-  name: string;
-  lead: number[];
-  bass: number[];
-  harmony: Array<number[] | null>;
-}
-
-const TRACKS: RadioTrack[] = [
-  {
-    name: 'Dustoff Signal',
-    lead: [329.63, 392, 440, 392, 329.63, 293.66, 261.63, 293.66, 329.63, 392, 493.88, 440, 392, 329.63, 293.66, 261.63],
-    bass: [82.41, 82.41, 98, 98, 110, 110, 98, 98, 82.41, 82.41, 73.42, 73.42, 65.41, 65.41, 73.42, 73.42],
-    harmony: [[164.81, 196], null, null, null, [220, 261.63], null, null, null, [164.81, 196], null, null, null, [146.83, 174.61], null, null, null],
-  },
-  {
-    name: 'River Static',
-    lead: [293.66, 349.23, 392, 440, 392, 349.23, 293.66, 261.63, 293.66, 349.23, 392, 349.23, 293.66, 261.63, 246.94, 261.63],
-    bass: [73.42, 73.42, 87.31, 87.31, 98, 98, 87.31, 87.31, 73.42, 73.42, 65.41, 65.41, 73.42, 73.42, 65.41, 65.41],
-    harmony: [[146.83, 174.61], null, null, null, [196, 246.94], null, null, null, [146.83, 174.61], null, null, null, [130.81, 164.81], null, null, null],
-  },
-];
-
-const STEP_MS = 250;
 const BUNDLED_TRACK_URL = '/audio/voodoo-child-srv.mp3';
 const BUNDLED_TRACK_NAME = 'Voodoo Child (Slight Return)';
 const BUNDLED_TRACK_ARTIST = 'Stevie Ray Vaughan and Double Trouble';
+const RADIO_VOLUME = 0.38;
 
-function playTone(
-  context: AudioContext,
-  destination: AudioNode,
-  frequency: number,
-  duration: number,
-  gainValue: number,
-  type: OscillatorType,
-) {
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const now = context.currentTime;
-
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, now);
-  oscillator.detune.setValueAtTime((Math.random() - 0.5) * 7, now);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(gainValue, now + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-  oscillator.connect(gain);
-  gain.connect(destination);
-  oscillator.start(now);
-  oscillator.stop(now + duration + 0.03);
-}
-
+/**
+ * Owns one persistent soundtrack element for the lifetime of the app.
+ * Muting never pauses or rewinds it, so returning to the radio cannot restart
+ * the track or create the impression that the recording was cut short.
+ */
 export function useFieldRadio() {
-  const [enabled, setEnabled] = useState(false);
-  const [trackIndex, setTrackIndex] = useState(0);
-  const [localTrackName, setLocalTrackName] = useState<string | null>(null);
-  const [bundledTrackAvailable, setBundledTrackAvailable] = useState(false);
-  const [preferBundledTrack, setPreferBundledTrack] = useState(true);
-  const contextRef = useRef<AudioContext | null>(null);
-  const masterRef = useRef<GainNode | null>(null);
-  const staticSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const intervalRef = useRef<number | null>(null);
-  const stepRef = useRef(0);
-  const trackIndexRef = useRef(0);
-  const localAudioRef = useRef<HTMLAudioElement | null>(null);
-  const localObjectUrlRef = useRef<string | null>(null);
+  const [muted, setMuted] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const mutedRef = useRef(false);
+  const playingRef = useRef(false);
+  const pendingFirstLaunchRef = useRef(false);
+  const primingPromiseRef = useRef<Promise<boolean> | null>(null);
+  const lifecycleTokenRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const stopProcedural = useCallback(() => {
-    if (intervalRef.current !== null) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    staticSourceRef.current?.stop();
-    staticSourceRef.current = null;
-    masterRef.current?.disconnect();
-    masterRef.current = null;
-    void contextRef.current?.close();
-    contextRef.current = null;
+  const updatePlaying = useCallback((next: boolean) => {
+    playingRef.current = next;
+    setPlaying(next);
   }, []);
+
+  const ensureAudio = useCallback(() => {
+    if (audioRef.current) return audioRef.current;
+
+    const audio = new Audio(BUNDLED_TRACK_URL);
+    audio.preload = 'auto';
+    audio.loop = true;
+    audio.volume = RADIO_VOLUME;
+    audio.muted = mutedRef.current;
+    audio.onplaying = () => updatePlaying(!audio.muted);
+    audio.onpause = () => updatePlaying(false);
+    audio.onerror = () => updatePlaying(false);
+    audioRef.current = audio;
+    audio.load();
+    return audio;
+  }, [updatePlaying]);
+
+  const prime = useCallback(() => {
+    const audio = ensureAudio();
+    const lifecycleToken = lifecycleTokenRef.current + 1;
+    lifecycleTokenRef.current = lifecycleToken;
+    pendingFirstLaunchRef.current = true;
+    audio.currentTime = 0;
+    audio.muted = true;
+    updatePlaying(false);
+    if (!audio.paused) {
+      const alreadyPlaying = Promise.resolve(true);
+      primingPromiseRef.current = alreadyPlaying;
+      return alreadyPlaying;
+    }
+
+    const primingPromise = audio.play().then(() => {
+      // Begin silently inside the entry gesture. This retains autoplay
+      // permission through a native picker and an arbitrarily long scan.
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
+      return true;
+    }).catch(() => {
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
+      return false;
+    });
+    primingPromiseRef.current = primingPromise;
+    return primingPromise;
+  }, [ensureAudio, updatePlaying]);
+
+  const suspend = useCallback(() => {
+    // Portal/directory scans stay silent without surrendering the already
+    // unlocked media element or rewinding an established transmission.
+    const audio = audioRef.current;
+    lifecycleTokenRef.current += 1;
+    if (audio) audio.muted = true;
+    updatePlaying(false);
+  }, [updatePlaying]);
+
+  const launch = useCallback(async () => {
+    const audio = ensureAudio();
+    const lifecycleToken = lifecycleTokenRef.current;
+    if (pendingFirstLaunchRef.current) {
+      const primingPromise = primingPromiseRef.current;
+      await primingPromise;
+      if (lifecycleTokenRef.current !== lifecycleToken) return false;
+      audio.currentTime = 0;
+      pendingFirstLaunchRef.current = false;
+      primingPromiseRef.current = null;
+    }
+    audio.muted = mutedRef.current;
+
+    if (!audio.paused) {
+      updatePlaying(!mutedRef.current);
+      return true;
+    }
+
+    try {
+      await audio.play();
+      if (lifecycleTokenRef.current !== lifecycleToken) return false;
+      updatePlaying(!mutedRef.current);
+      return true;
+    } catch {
+      // Keep the element intact. A policy rejection is recoverable from the
+      // visible Start control once the playable scene has mounted.
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
+      return false;
+    }
+  }, [ensureAudio, updatePlaying]);
 
   const stop = useCallback(() => {
-    stopProcedural();
-    localAudioRef.current?.pause();
-    setEnabled(false);
-  }, [stopProcedural]);
-
-  const startProcedural = useCallback(async () => {
-    if (contextRef.current) return;
-
-    const AudioContextClass = window.AudioContext
-      || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-
-    const context = new AudioContextClass();
-    await context.resume();
-
-    const master = context.createGain();
-    const filter = context.createBiquadFilter();
-    master.gain.value = 0.11;
-    filter.type = 'lowpass';
-    filter.frequency.value = 2800;
-    filter.Q.value = 0.7;
-    master.connect(filter);
-    filter.connect(context.destination);
-
-    const noiseBuffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
-    const noiseData = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < noiseData.length; i++) {
-      noiseData[i] = (Math.random() * 2 - 1) * 0.045;
+    const audio = audioRef.current;
+    lifecycleTokenRef.current += 1;
+    pendingFirstLaunchRef.current = false;
+    primingPromiseRef.current = null;
+    if (audio) {
+      audio.muted = true;
+      audio.pause();
+      audio.currentTime = 0;
     }
-    const staticSource = context.createBufferSource();
-    const staticGain = context.createGain();
-    staticSource.buffer = noiseBuffer;
-    staticSource.loop = true;
-    staticGain.gain.value = 0.045;
-    staticSource.connect(staticGain);
-    staticGain.connect(master);
-    staticSource.start();
+    updatePlaying(false);
+  }, [updatePlaying]);
 
-    contextRef.current = context;
-    masterRef.current = master;
-    staticSourceRef.current = staticSource;
-    stepRef.current = 0;
-
-    const tick = () => {
-      const activeContext = contextRef.current;
-      const activeMaster = masterRef.current;
-      if (!activeContext || !activeMaster) return;
-
-      const track = TRACKS[trackIndexRef.current];
-      const step = stepRef.current % track.lead.length;
-      playTone(activeContext, activeMaster, track.bass[step], 0.2, 0.17, 'triangle');
-      playTone(activeContext, activeMaster, track.lead[step], 0.16, 0.075, 'square');
-
-      const chord = track.harmony[step];
-      chord?.forEach(frequency => playTone(activeContext, activeMaster, frequency, 0.45, 0.035, 'sine'));
-
-      if (step % 4 === 0) {
-        playTone(activeContext, activeMaster, 48, 0.08, 0.22, 'sine');
-      }
-
-      stepRef.current += 1;
-    };
-
-    tick();
-    intervalRef.current = window.setInterval(tick, STEP_MS);
-    setEnabled(true);
-  }, []);
-
-  const start = useCallback(async () => {
-    if (localAudioRef.current) {
-      try {
-        await localAudioRef.current.play();
-        setEnabled(true);
-      } catch {
-        setEnabled(false);
-      }
+  const toggleMute = useCallback(() => {
+    // This is a recovery path for a browser that rejected the best-effort
+    // automatic start. Under normal game entry the only states are Mute/Unmute.
+    if (!playingRef.current && !mutedRef.current) {
+      void launch();
       return;
     }
 
-    if (preferBundledTrack && bundledTrackAvailable) {
-      const audio = new Audio(BUNDLED_TRACK_URL);
-      audio.loop = true;
-      audio.volume = 0.38;
-      localAudioRef.current = audio;
-      setLocalTrackName(BUNDLED_TRACK_NAME);
-      try {
-        await audio.play();
-        setEnabled(true);
-      } catch {
-        localAudioRef.current = null;
-        setLocalTrackName(null);
-        setBundledTrackAvailable(false);
-        await startProcedural();
-      }
-      return;
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    setMuted(next);
+    if (audioRef.current) {
+      audioRef.current.muted = next;
+      updatePlaying(!next && !audioRef.current.paused);
     }
 
-    await startProcedural();
-  }, [bundledTrackAvailable, preferBundledTrack, startProcedural]);
-
-  const toggle = useCallback(() => {
-    if (enabled) {
-      stop();
-    } else {
-      void start();
-    }
-  }, [enabled, start, stop]);
-
-  const loadLocalTrack = useCallback((file: File) => {
-    stopProcedural();
-    localAudioRef.current?.pause();
-    if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
-
-    const objectUrl = URL.createObjectURL(file);
-    const audio = new Audio(objectUrl);
-    audio.loop = true;
-    audio.volume = 0.38;
-    localObjectUrlRef.current = objectUrl;
-    localAudioRef.current = audio;
-    setPreferBundledTrack(false);
-    setLocalTrackName(file.name.replace(/\.[^.]+$/, ''));
-    setEnabled(true);
-    void audio.play().catch(() => setEnabled(false));
-  }, [stopProcedural]);
-
-  const nextTrack = useCallback(() => {
-    const resumeAfterSwitch = enabled;
-    const leavingBundledOrUploadedTrack = Boolean(localAudioRef.current)
-      || (preferBundledTrack && bundledTrackAvailable);
-    if (localAudioRef.current) {
-      localAudioRef.current.pause();
-      localAudioRef.current = null;
-      if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
-      localObjectUrlRef.current = null;
-      setLocalTrackName(null);
-    }
-
-    if (leavingBundledOrUploadedTrack) {
-      setPreferBundledTrack(false);
-      stepRef.current = 0;
-      if (resumeAfterSwitch) void startProcedural();
-      return;
-    }
-
-    setTrackIndex(prev => {
-      const next = (prev + 1) % TRACKS.length;
-      trackIndexRef.current = next;
-      stepRef.current = 0;
-      return next;
-    });
-  }, [bundledTrackAvailable, enabled, preferBundledTrack, startProcedural]);
-
-  useEffect(() => {
-    const probe = new Audio();
-    probe.preload = 'metadata';
-    const handleLoaded = () => setBundledTrackAvailable(true);
-    const handleError = () => setBundledTrackAvailable(false);
-    probe.addEventListener('loadedmetadata', handleLoaded);
-    probe.addEventListener('error', handleError);
-    probe.src = BUNDLED_TRACK_URL;
-    probe.load();
-
-    return () => {
-      probe.pause();
-      probe.removeEventListener('loadedmetadata', handleLoaded);
-      probe.removeEventListener('error', handleError);
-      probe.removeAttribute('src');
-      probe.load();
-    };
-  }, []);
+    if (!next && audioRef.current?.paused) void launch();
+  }, [launch, updatePlaying]);
 
   useEffect(() => () => {
-    stopProcedural();
-    localAudioRef.current?.pause();
-    if (localObjectUrlRef.current) URL.revokeObjectURL(localObjectUrlRef.current);
-  }, [stopProcedural]);
+    lifecycleTokenRef.current += 1;
+    const audio = audioRef.current;
+    audioRef.current = null;
+    if (!audio) return;
+    audio.onplaying = null;
+    audio.onpause = null;
+    audio.onerror = null;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }, []);
 
   return {
-    enabled,
-    trackName: localTrackName
-      ?? (preferBundledTrack && bundledTrackAvailable ? BUNDLED_TRACK_NAME : TRACKS[trackIndex].name),
-    sourceLabel: localTrackName === BUNDLED_TRACK_NAME
-      || (preferBundledTrack && bundledTrackAvailable)
-      ? `${BUNDLED_TRACK_ARTIST} · approved cover`
-      : localTrackName
-        ? 'Local device track · not bundled'
-        : 'Original procedural transmission',
-    bundledTrackAvailable,
-    toggle,
-    nextTrack,
-    loadLocalTrack,
+    muted,
+    playing,
+    trackName: BUNDLED_TRACK_NAME,
+    sourceLabel: `${BUNDLED_TRACK_ARTIST} · approved cover`,
+    prime,
+    suspend,
+    launch,
     stop,
+    toggleMute,
   };
 }

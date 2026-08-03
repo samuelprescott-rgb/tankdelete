@@ -3,6 +3,7 @@ import { FileEntry } from '../lib/types';
 import { layoutFilesInGrid } from '../lib/layout';
 import { fileToScale } from '../lib/scale';
 import { getFileCategory, getCategoryColor, FileCategory } from '../lib/colors';
+import { FILE_OBJECTIVE_RESERVED_ZONE, type FileObjective } from '../lib/mission';
 
 export interface BlockData {
   path: string;
@@ -14,6 +15,7 @@ export interface BlockData {
   color: string;
   category: FileCategory;
   is_dir: boolean;
+  isObjective: boolean;
 }
 
 export interface FileBlocksData {
@@ -22,18 +24,30 @@ export interface FileBlocksData {
   allBlocks: BlockData[];
 }
 
-export function useFileBlocks(entries: FileEntry[]): FileBlocksData {
+export function useFileBlocks(
+  entries: FileEntry[],
+  objective: FileObjective | null = null,
+): FileBlocksData {
   return useMemo(() => {
     // Separate folders and files
     const folders = entries.filter(e => e.is_dir);
     const files = entries.filter(e => !e.is_dir);
 
-    // Get layout positions for files only
-    const positions = layoutFilesInGrid(files);
+    const objectivePositions = new Map(
+      objective?.targets.map(target => [target.path, target.position]) ?? [],
+    );
+    // Objective huts are literal files, but they live in a reserved rear compound.
+    // Excluding them from the village pass avoids leaving ghost gaps or allowing a
+    // large directory to build ordinary huts through the mission target area.
+    const positions = layoutFilesInGrid(
+      files.filter(file => !objectivePositions.has(file.path)),
+      objective ? { reservedZones: [FILE_OBJECTIVE_RESERVED_ZONE] } : undefined,
+    );
 
     // Transform files into block data
     const allBlocks: BlockData[] = files.map(file => {
-      const position = positions.get(file.path);
+      const objectivePosition = objectivePositions.get(file.path);
+      const position = objectivePosition ?? positions.get(file.path);
       const scale = fileToScale(file.size);
       const category = getFileCategory(file.extension);
       const color = getCategoryColor(file.extension);
@@ -48,6 +62,7 @@ export function useFileBlocks(entries: FileEntry[]): FileBlocksData {
         color,
         category,
         is_dir: file.is_dir,
+        isObjective: objectivePosition !== undefined,
       };
     });
 
@@ -65,5 +80,5 @@ export function useFileBlocks(entries: FileEntry[]): FileBlocksData {
       folders,
       allBlocks,
     };
-  }, [entries]);
+  }, [entries, objective]);
 }

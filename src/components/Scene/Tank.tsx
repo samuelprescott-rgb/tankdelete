@@ -12,9 +12,27 @@ import {
 } from '../../lib/weapons';
 import { FlameStream } from './FlameStream';
 import { intersectsTerrainMound } from '../../lib/terrain';
+import { intersectsTankColliders } from '../../lib/worldCollision';
+import type { TankCollider } from '../../lib/worldCollision';
+import {
+  ARENA_TANK_PADDING,
+  clampArenaX,
+  clampArenaZ,
+  isInsideArena,
+} from '../../lib/arenaBounds';
+import { createRiverStations, riverWaterImmersion } from './riverLayout';
 
 const TANK_ARMOR_COLOR = '#a8bf78';
 const TANK_WEAPON_COLOR = '#e3b341';
+const TANK_COLLISION_RADIUS = 0.65;
+const MAX_MOVEMENT_SUBSTEP = 0.28;
+const MAX_MOVEMENT_DELTA = 0.25;
+
+function isTankPositionBlocked(x: number, z: number, colliders: readonly TankCollider[]) {
+  return !isInsideArena(x, z, ARENA_TANK_PADDING)
+    || intersectsTerrainMound(x, z, TANK_COLLISION_RADIUS)
+    || intersectsTankColliders(x, z, TANK_COLLISION_RADIUS, colliders);
+}
 
 // Controls enum
 export enum Controls {
@@ -36,9 +54,11 @@ interface TankProps {
   weaponMode?: WeaponMode;
   initialPosition?: [number, number, number];
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
+  colliders?: readonly TankCollider[];
+  environmentSeed?: number;
 }
 
-export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef }, tankRef) => {
+export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef, colliders = [], environmentSeed = 1968 }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
   const cannonBarrelRef = useRef<THREE.Group>(null);
   const cannonMuzzleRef = useRef<THREE.Group>(null);
@@ -70,6 +90,10 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const tempWorldDir = useMemo(() => new THREE.Vector3(), []);
   const nextPosition = useMemo(() => new THREE.Vector3(), []);
   const slidePosition = useMemo(() => new THREE.Vector3(), []);
+  const riverStations = useMemo(
+    () => createRiverStations(Number.isFinite(environmentSeed) ? Math.trunc(environmentSeed) : 1968),
+    [environmentSeed],
+  );
   const usStarShape = useMemo(() => {
     const shape = new THREE.Shape();
     for (let point = 0; point < 10; point += 1) {
@@ -156,6 +180,10 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       } else if (weaponMode === 'napalm') {
         raycaster.setFromCamera(pointer, camera);
         if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
+          // Keep air support inside the authored combat sector even if the
+          // pointer ray lands on the procedural horizon beyond the perimeter.
+          intersection.x = clampArenaX(intersection.x, ARENA_TANK_PADDING);
+          intersection.z = clampArenaZ(intersection.z, ARENA_TANK_PADDING);
           onNapalm?.(intersection.clone(), tempWorldDir.clone());
         }
         triggerHeldRef.current = false;
@@ -198,6 +226,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     const tank = tankRef.current;
     const controls = get();
     const movementActive = controls.forward || controls.backward;
+    const riverImmersion = riverWaterImmersion(tank.position.x, tank.position.z, riverStations);
 
     cannonRecoilRef.current = Math.max(0, cannonRecoilRef.current - delta * 4.8);
     if (cannonBarrelRef.current) {
@@ -231,20 +260,40 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     }
 
     // Tank body rotation (A/D keys)
+    const waterTurnFactor = THREE.MathUtils.lerp(1, 0.72, riverImmersion);
     if (controls.left) {
-      tank.rotation.y += TANK_ROTATION_SPEED * delta;
+      tank.rotation.y += TANK_ROTATION_SPEED * delta * waterTurnFactor;
     }
     if (controls.right) {
-      tank.rotation.y -= TANK_ROTATION_SPEED * delta;
+      tank.rotation.y -= TANK_ROTATION_SPEED * delta * waterTurnFactor;
     }
 
     // Tank body movement (W/S keys)
-    const moveAmount = TANK_SPEED * delta;
+    // Cap resume-from-background deltas, then use short substeps. This prevents
+    // a low-frame-rate tank from tunnelling through a narrow sandbag or wreck.
     if (controls.forward || controls.backward) {
       // Get forward direction based on tank body rotation
       direction.set(0, 0, -1);
       direction.applyQuaternion(tank.quaternion);
       direction.normalize();
+
+      const directionSign = controls.forward && !controls.backward
+        ? 1
+        : controls.backward && !controls.forward
+          ? -1
+          : 0;
+      const unclampedMove = TANK_SPEED * Math.min(delta, MAX_MOVEMENT_DELTA);
+      const candidateImmersion = riverWaterImmersion(
+        tank.position.x + direction.x * unclampedMove * directionSign,
+        tank.position.z + direction.z * unclampedMove * directionSign,
+        riverStations,
+      );
+      const waterDrag = THREE.MathUtils.lerp(
+        1,
+        0.58,
+        Math.max(riverImmersion, candidateImmersion),
+      );
+      const moveAmount = unclampedMove * waterDrag;
 
       const signedMove = controls.forward && !controls.backward
         ? moveAmount
@@ -253,22 +302,33 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
           : 0;
 
       if (signedMove !== 0) {
-        nextPosition.copy(tank.position).addScaledVector(direction, signedMove);
-        if (!intersectsTerrainMound(nextPosition.x, nextPosition.z, 0.65)) {
-          tank.position.copy(nextPosition);
-        } else {
-          const deltaX = direction.x * signedMove;
-          const deltaZ = direction.z * signedMove;
-          const canSlideX = !intersectsTerrainMound(tank.position.x + deltaX, tank.position.z, 0.65);
-          const canSlideZ = !intersectsTerrainMound(tank.position.x, tank.position.z + deltaZ, 0.65);
+        const substepCount = Math.max(1, Math.ceil(Math.abs(signedMove) / MAX_MOVEMENT_SUBSTEP));
+        const substepMove = signedMove / substepCount;
+        const deltaX = direction.x * substepMove;
+        const deltaZ = direction.z * substepMove;
 
+        for (let substep = 0; substep < substepCount; substep += 1) {
+          nextPosition.set(tank.position.x + deltaX, tank.position.y, tank.position.z + deltaZ);
+          if (!isTankPositionBlocked(nextPosition.x, nextPosition.z, colliders)) {
+            tank.position.copy(nextPosition);
+            continue;
+          }
+
+          const canSlideX = !isTankPositionBlocked(
+            tank.position.x + deltaX,
+            tank.position.z,
+            colliders,
+          );
+          const canSlideZ = !isTankPositionBlocked(
+            tank.position.x,
+            tank.position.z + deltaZ,
+            colliders,
+          );
           if (canSlideX && (!canSlideZ || Math.abs(deltaX) >= Math.abs(deltaZ))) {
-            slidePosition.copy(tank.position);
-            slidePosition.x += deltaX;
+            slidePosition.set(tank.position.x + deltaX, tank.position.y, tank.position.z);
             tank.position.copy(slidePosition);
           } else if (canSlideZ) {
-            slidePosition.copy(tank.position);
-            slidePosition.z += deltaZ;
+            slidePosition.set(tank.position.x, tank.position.y, tank.position.z + deltaZ);
             tank.position.copy(slidePosition);
           }
         }

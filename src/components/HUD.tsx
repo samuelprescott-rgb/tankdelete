@@ -18,13 +18,17 @@ interface HUDProps {
   napalmCooldown: number;
   tankIntegrity: number;
   hostileCount: number;
+  friendlyCount: number;
+  missionTotal: number;
+  missionRemaining: number;
+  missionTargetName?: string;
+  missionOriginalName?: string;
   damageFlash: boolean;
-  radioEnabled: boolean;
+  radioMuted: boolean;
+  radioPlaying: boolean;
   radioTrackName: string;
   radioSourceLabel: string;
-  onToggleRadio: () => void;
-  onNextTrack: () => void;
-  onLoadLocalTrack: (file: File) => void;
+  onToggleRadioMute: () => void;
 }
 
 export function HUD({
@@ -42,13 +46,17 @@ export function HUD({
   napalmCooldown,
   tankIntegrity,
   hostileCount,
+  friendlyCount,
+  missionTotal,
+  missionRemaining,
+  missionTargetName,
+  missionOriginalName,
   damageFlash,
-  radioEnabled,
+  radioMuted,
+  radioPlaying,
   radioTrackName,
   radioSourceLabel,
-  onToggleRadio,
-  onNextTrack,
-  onLoadLocalTrack,
+  onToggleRadioMute,
 }: HUDProps) {
   const weaponModes: WeaponMode[] = ['cannon', 'machinegun', 'flamethrower', 'napalm'];
 
@@ -59,6 +67,29 @@ export function HUD({
         <div className="hud-call-sign">
           <span>AO CLEAN SWEEP // 1968</span>
           <strong>TANKDELETE</strong>
+        </div>
+
+        <div className={`field-radio ${radioMuted ? 'is-muted' : ''}`}>
+          <div className="field-radio-portrait" aria-hidden="true">
+            <img src="/images/field-radio-sergeant.png" alt="" />
+            <span />
+          </div>
+          <div className="field-radio-copy">
+            <span className="hud-kicker">Field radio · Air Cav Actual</span>
+            <strong>{radioTrackName}</strong>
+            <small>
+              {radioMuted ? 'Muted' : radioPlaying ? 'Playing' : 'Ready to start'} · {radioSourceLabel}
+            </small>
+          </div>
+          <button
+            type="button"
+            className="field-radio-mute"
+            onClick={onToggleRadioMute}
+            aria-label={radioMuted ? 'Unmute music' : radioPlaying ? 'Mute music' : 'Start music'}
+            aria-pressed={radioMuted}
+          >
+            {radioMuted ? 'Unmute' : radioPlaying ? 'Mute' : 'Start'}
+          </button>
         </div>
 
         <div className="hud-section">
@@ -96,6 +127,39 @@ export function HUD({
           </div>
         </div>
 
+        <div className={`mission-order ${missionTotal > 0 && missionRemaining === 0 ? 'is-complete' : ''}`}>
+          <div className="mission-order-heading">
+            <span className="hud-kicker">Bonus cleanup</span>
+            {missionTotal > 0 && (
+              <strong>{missionTotal - missionRemaining}/{missionTotal}</strong>
+            )}
+          </div>
+          {missionTotal === 0 ? (
+            <>
+              <b>No safe bonus target</b>
+              <span>No byte-confirmed duplicate in this sector.</span>
+            </>
+          ) : missionRemaining > 0 ? (
+            <>
+              <b>Destroy the confirmed duplicate</b>
+              <span>One redundant copy · byte-for-byte match confirmed</span>
+              {missionTargetName && <small>Duplicate · {missionTargetName}</small>}
+              {missionOriginalName && <small>Matched original · {missionOriginalName}</small>}
+              <div className="mission-meter" aria-label={`${missionTotal - missionRemaining} of ${missionTotal} confirmed duplicates destroyed`}>
+                <span style={{ width: `${((missionTotal - missionRemaining) / missionTotal) * 100}%` }} />
+              </div>
+            </>
+          ) : (
+            <>
+              <b>Bonus cleanup complete</b>
+              <span>Confirmed duplicate moved to Trash</span>
+              <div className="mission-meter" aria-label="Bonus duplicate cleanup complete">
+                <span style={{ width: '100%' }} />
+              </div>
+            </>
+          )}
+        </div>
+
         <div className={`armor-status ${damageFlash ? 'is-hit' : ''}`}>
           <div className="armor-status-copy">
             <span className="hud-kicker">Armor integrity</span>
@@ -104,7 +168,10 @@ export function HUD({
           <div className="armor-meter" aria-label={`Tank armor integrity ${Math.round(tankIntegrity)} percent`}>
             <span style={{ width: `${tankIntegrity}%` }} />
           </div>
-          <small>{hostileCount} hostile{hostileCount === 1 ? '' : 's'} active</small>
+          <small>
+            {hostileCount} hostile{hostileCount === 1 ? '' : 's'} · {friendlyCount}{' '}
+            {friendlyCount === 1 ? 'friendly' : 'friendlies'} active
+          </small>
         </div>
 
         <div className={`hud-targets ${markedCount > 0 ? 'is-armed' : ''}`}>
@@ -130,38 +197,6 @@ export function HUD({
           </div>
         </div>
 
-        <div className="field-radio">
-          <div className="field-radio-portrait" aria-hidden="true">
-            <img src="/images/field-radio-sergeant.png" alt="" />
-            <span />
-          </div>
-          <div className="field-radio-copy">
-            <span className="hud-kicker">Field radio</span>
-            <b>Air Cav Actual</b>
-            <strong>{radioTrackName}</strong>
-            <small>{radioSourceLabel}</small>
-          </div>
-          <div className="field-radio-actions">
-            <button type="button" onClick={onToggleRadio}>
-              {radioEnabled ? 'Mute' : 'Play'}
-            </button>
-            <button type="button" onClick={onNextTrack} title="Next original track">
-              Next
-            </button>
-            <label className="field-radio-load" title="Load a legally obtained local copy of Voodoo Child (Slight Return)">
-              Load
-              <input
-                type="file"
-                accept="audio/*"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  if (file) onLoadLocalTrack(file);
-                  event.currentTarget.value = '';
-                }}
-              />
-            </label>
-          </div>
-        </div>
       </div>
 
       <div className="controls-ribbon" aria-label="Game controls" data-game-ui>
@@ -172,7 +207,7 @@ export function HUD({
         <span><kbd>1/2/3/4</kbd> Weapons</span>
         <span><kbd>X</kbd> Purge armed</span>
         <span><kbd>Esc</kbd> Disarm</span>
-        <span><kbd>M</kbd> Radio</span>
+        <span><kbd>M</kbd> Mute music</span>
         <span><kbd>⌘/Ctrl Z</kbd> Undo</span>
       </div>
       <div className={`damage-vignette ${damageFlash ? 'is-visible' : ''}`} aria-hidden="true" />

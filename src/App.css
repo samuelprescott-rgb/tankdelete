@@ -294,6 +294,73 @@ button:active {
   flex: 1;
 }
 
+.header-actions,
+.sector-grid-controls {
+  display: flex;
+  align-items: center;
+}
+
+.header-actions {
+  flex-shrink: 0;
+  gap: 12px;
+  margin-left: 16px;
+}
+
+.sector-grid-controls {
+  gap: 6px;
+  border: 1px solid rgba(135, 155, 99, 0.4);
+  padding: 3px;
+  color: #979979;
+  background: rgba(17, 24, 12, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sector-grid-controls span {
+  min-width: 104px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sector-grid-controls b {
+  color: #e3b341;
+}
+
+.sector-grid-controls button {
+  border-width: 1px;
+  padding: 4px 7px;
+  color: #bdc895;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.sector-grid-controls button:disabled {
+  cursor: default;
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+@media (max-width: 880px) {
+  .header {
+    padding-inline: 12px;
+  }
+
+  .header-actions {
+    gap: 7px;
+    margin-left: 8px;
+  }
+
+  .header-actions > .btn-secondary {
+    padding-inline: 10px;
+    font-size: 10px;
+  }
+
+  .sector-grid-controls span {
+    min-width: auto;
+  }
+}
+
 .header h2 {
   margin: 0;
   color: #d8cf9b;

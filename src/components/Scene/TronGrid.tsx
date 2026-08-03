@@ -1,6 +1,12 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import {
+  ARENA_DEPTH,
+  ARENA_HALF_DEPTH,
+  ARENA_HALF_WIDTH,
+  ARENA_WIDTH,
+} from '../../lib/arenaBounds';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
 import { GRID_COLOR } from '../../lib/colors';
 
@@ -18,6 +24,7 @@ const fragmentShader = /* glsl */ `
   uniform float uTime;
   uniform float uGridSpacing;
   uniform vec3 uColor;
+  uniform vec2 uArenaHalfSize;
 
   varying vec2 vWorldPos;
 
@@ -48,7 +55,12 @@ const fragmentShader = /* glsl */ `
     // Distance fade
     float dist = length(vWorldPos) / 120.0;
     float fade = 1.0 - smoothstep(0.55, 1.0, dist);
-    float alpha = max(road * 0.72, shoulder * 0.06) * fade;
+    float edgeDistance = min(
+      uArenaHalfSize.x - abs(vWorldPos.x),
+      uArenaHalfSize.y - abs(vWorldPos.y)
+    );
+    float perimeterFade = smoothstep(0.0, 5.5, edgeDistance);
+    float alpha = max(road * 0.72, shoulder * 0.06) * fade * perimeterFade;
 
     if (alpha < 0.005) discard;
     gl_FragColor = vec4(roadColor, alpha);
@@ -62,6 +74,7 @@ export function TronGrid() {
     uTime: { value: 0 },
     uGridSpacing: { value: ROAD_GRID_SPACING },
     uColor: { value: new THREE.Color(GRID_COLOR) },
+    uArenaHalfSize: { value: new THREE.Vector2(ARENA_HALF_WIDTH, ARENA_HALF_DEPTH) },
   }), []);
 
   useFrame(({ clock }) => {
@@ -72,7 +85,7 @@ export function TronGrid() {
 
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-      <planeGeometry args={[250, 250]} />
+      <planeGeometry args={[ARENA_WIDTH, ARENA_DEPTH]} />
       <shaderMaterial
         ref={materialRef}
         vertexShader={vertexShader}

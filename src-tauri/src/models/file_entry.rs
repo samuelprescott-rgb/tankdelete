@@ -7,6 +7,11 @@ pub struct FileEntry {
     pub size: u64,
     pub is_dir: bool,
     pub extension: Option<String>,
+    /// Set only after the scanner has byte-compared this explicit copy with
+    /// the original. A null value means the app must not present a deletion
+    /// mission for this entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safe_duplicate_of: Option<String>,
 }
 
 impl FileEntry {
@@ -23,6 +28,7 @@ impl FileEntry {
             size,
             is_dir,
             extension,
+            safe_duplicate_of: None,
         }
     }
 }

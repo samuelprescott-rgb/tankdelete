@@ -4,6 +4,8 @@ export interface FileEntry {
   size: number;
   is_dir: boolean;
   extension: string | null;
+  /** Original file retained when this byte-confirmed duplicate is trashed. */
+  safe_duplicate_of?: string | null;
 }
 
 export interface ScanProgress {

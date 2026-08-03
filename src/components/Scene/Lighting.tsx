@@ -1,13 +1,13 @@
 export function Lighting() {
   return (
     <>
-      <ambientLight intensity={0.42} color="#a6b997" />
-      <hemisphereLight args={['#d3ddc3', '#283820', 0.9]} />
+      <ambientLight intensity={0.38} color="#96aa9a" />
+      <hemisphereLight args={['#aebeb4', '#26351f', 0.78]} />
       <directionalLight
         castShadow
         position={[-28, 38, 14]}
-        intensity={1.62}
-        color="#ffd69a"
+        intensity={1.28}
+        color="#d5d8c5"
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
         shadow-camera-near={1}
@@ -18,10 +18,10 @@ export function Lighting() {
         shadow-camera-bottom={-72}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[20, 18, -26]} intensity={0.52} color="#9fc4ad" />
-      <directionalLight position={[-12, 16, -6]} intensity={0.34} color="#c9d5a5" />
-      <directionalLight position={[8, 10, 30]} intensity={0.28} color="#efb873" />
-      <pointLight position={[0, 15, -8]} intensity={0.34} color="#ebc27c" distance={68} />
+      <directionalLight position={[20, 18, -26]} intensity={0.42} color="#8fb4aa" />
+      <directionalLight position={[-12, 16, -6]} intensity={0.29} color="#b7c7af" />
+      <directionalLight position={[8, 10, 30]} intensity={0.22} color="#c6b38a" />
+      <pointLight position={[0, 15, -8]} intensity={0.28} color="#c8b684" distance={68} />
     </>
   );
 }
