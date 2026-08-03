@@ -10,6 +10,12 @@ import {
   findNearestLivingEnemyHit,
   segmentSphereIntersection,
 } from '../../lib/combat';
+import {
+  findNearestLivingZombieHit,
+  type ZombieCombatant,
+  type ZombieCombatPose,
+  ZOMBIE_HIT_RADIUS,
+} from '../../lib/zombieEpilogue';
 
 const MAX_PROJECTILES = 48;
 const HIT_RADIUS = 1.5;
@@ -20,8 +26,15 @@ interface ProjectileManagerProps {
   despawn: (index: number) => void;
   onHit: (filePath: string, projectile: Projectile) => void;
   onEnemyHit: (enemyId: string, projectile: Projectile) => void;
+  onZombieHit?: (
+    zombieId: string,
+    projectile: Projectile,
+    hitPoint: THREE.Vector3,
+  ) => void;
   allBlocks: BlockData[];
   enemies: readonly EnemyCombatant[];
+  zombies?: readonly ZombieCombatant[];
+  zombiePosesRef?: React.RefObject<Map<string, ZombieCombatPose>>;
 }
 
 export function ProjectileManager({
@@ -29,8 +42,11 @@ export function ProjectileManager({
   despawn,
   onHit,
   onEnemyHit,
+  onZombieHit,
   allBlocks,
   enemies,
+  zombies = [],
+  zombiePosesRef,
 }: ProjectileManagerProps) {
   const tracerRefs = useRef<Array<THREE.Group | null>>([]);
   const coreRefs = useRef<Array<THREE.Mesh | null>>([]);
@@ -67,6 +83,7 @@ export function ProjectileManager({
 
       let hitBlock: BlockData | null = null;
       let hitEnemyId: string | null = null;
+      let hitZombieId: string | null = null;
       let nearestHitT = Infinity;
 
       for (const block of allBlocks) {
@@ -81,6 +98,7 @@ export function ProjectileManager({
           nearestHitT = hitT;
           hitBlock = block;
           hitEnemyId = null;
+          hitZombieId = null;
         }
       }
 
@@ -94,6 +112,29 @@ export function ProjectileManager({
         nearestHitT = enemyHit.t;
         hitEnemyId = enemyHit.enemy.id;
         hitBlock = null;
+        hitZombieId = null;
+      }
+
+      const zombieHit = zombiePosesRef?.current
+        ? findNearestLivingZombieHit(
+          previousPosition,
+          projectile.position,
+          zombies,
+          zombiePosesRef.current,
+          projectile.kind === 'machinegun' ? ZOMBIE_HIT_RADIUS * 1.16 : ZOMBIE_HIT_RADIUS,
+        )
+        : null;
+      if (zombieHit && zombieHit.t < nearestHitT) {
+        nearestHitT = zombieHit.t;
+        hitZombieId = zombieHit.zombie.id;
+        hitEnemyId = null;
+        hitBlock = null;
+      }
+
+      if (hitZombieId) {
+        onZombieHit?.(hitZombieId, projectile, zombieHit?.point.clone() ?? projectile.position.clone());
+        despawn(i);
+        continue;
       }
 
       if (hitEnemyId) {

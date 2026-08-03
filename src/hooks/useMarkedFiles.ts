@@ -21,8 +21,11 @@ export function useMarkedFiles() {
     });
   };
 
-  const clearMarked = () => {
-    setMarkedFiles(new Set());
+  const clearMarked = (preservePaths: Iterable<string> = []) => {
+    const preserved = new Set(preservePaths);
+    setMarkedFiles(previous => new Set(
+      Array.from(previous).filter(path => preserved.has(path)),
+    ));
   };
 
   const resetMarkedState = () => {
@@ -58,10 +61,13 @@ export function useMarkedFiles() {
 
   const deleteAllMarked = async (
     deleteFile: (filePath: string) => Promise<unknown> = commands.moveToTrash,
+    excludedPaths: Iterable<string> = [],
   ): Promise<string[]> => {
-    const filesToDelete = Array.from(markedFiles);
+    const excluded = new Set(excludedPaths);
+    const filesToDelete = Array.from(markedFiles).filter(path => !excluded.has(path));
 
-    // Move all marked files to deleting state
+    // Move eligible marked files to deleting state. Excluded safety-critical
+    // paths are disarmed in the same commit rather than left as a stuck queue.
     setMarkedFiles(new Set());
     const nextDeleting = new Set([...deletingFilesRef.current, ...filesToDelete]);
     deletingFilesRef.current = nextDeleting;

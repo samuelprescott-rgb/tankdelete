@@ -48,6 +48,7 @@ export interface EnemyCombatState {
   ) => EnemyDamageResult | null;
   killEnemy: (enemyId: string, source?: EnemyDamageSource) => EnemyDamageResult | null;
   damageFriendly: (friendlyId: string, amount: number) => FriendlyDamageResult | null;
+  resetFriendlies: () => FriendlyCombatant[];
   resetEnemies: () => EnemyCombatant[];
 }
 
@@ -85,17 +86,22 @@ export function useEnemyCombat({
     setFriendlies(next);
   }, []);
 
-  const resetEnemies = useCallback(() => {
-    const next = createEncounter();
+  const resetFriendlies = useCallback(() => {
     const nextFriendlies = createUSInfantryCombatants();
-    commitEnemies(next);
     friendlyPosesRef.current = new Map(nextFriendlies.map(friendly => [
       friendly.id,
       { position: new THREE.Vector3(...friendly.position) },
     ]));
     commitFriendlies(nextFriendlies);
+    return nextFriendlies;
+  }, [commitFriendlies]);
+
+  const resetEnemies = useCallback(() => {
+    const next = createEncounter();
+    commitEnemies(next);
+    resetFriendlies();
     return next;
-  }, [commitEnemies, commitFriendlies, createEncounter]);
+  }, [commitEnemies, createEncounter, resetFriendlies]);
 
   useEffect(() => {
     resetEnemies();
@@ -187,6 +193,7 @@ export function useEnemyCombat({
     damageEnemy,
     killEnemy,
     damageFriendly,
+    resetFriendlies,
     resetEnemies,
   };
 }

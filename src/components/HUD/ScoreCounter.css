@@ -1,13 +1,14 @@
 .score-counter {
   position: fixed;
-  top: 90px;
-  right: 350px;
+  top: 82px;
+  left: 16px;
   z-index: 1000;
 
   background: rgba(11, 16, 8, 0.9);
   border: 1px solid #879b63;
   border-radius: 2px;
-  padding: 12px 20px;
+  min-width: 132px;
+  padding: 8px 12px;
 
   box-shadow:
     0 0 10px rgba(135, 155, 99, 0.35),
@@ -15,12 +16,12 @@
 
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 1px;
 }
 
 .score-label {
-  font-size: 11px;
+  font-size: 9px;
   color: #879b63;
   letter-spacing: 2px;
   font-weight: 600;
@@ -30,7 +31,7 @@
 }
 
 .score-value {
-  font-size: 28px;
+  font-size: 23px;
   color: #e3b341;
   font-family: 'Courier New', monospace;
   font-weight: bold;
@@ -40,9 +41,15 @@
     0 0 20px rgba(135, 155, 99, 0.3);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .score-counter {
-    right: auto;
-    left: 20px;
+    top: 72px;
+    left: 8px;
+    min-width: 112px;
+    padding: 6px 9px;
+  }
+
+  .score-value {
+    font-size: 20px;
   }
 }

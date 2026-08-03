@@ -208,6 +208,24 @@ export function getFileObjectiveProgress(
   const liveFilePaths = new Set(
     entries.filter(entry => !entry.is_dir).map(entry => entry.path),
   );
+  const remainingPaths = targets
+    .filter(target => liveFilePaths.has(target.path))
+    .map(target => target.path);
+  const remaining = remainingPaths.length;
+
+  // Target removal is authoritative completion. Check it before validating the
+  // retained original so a same-frame batch/collateral removal cannot collapse
+  // the mission into "unavailable" and prevent the follow-on waves from starting.
+  if (remaining === 0) {
+    return Object.freeze({
+      phase: 'complete' as const,
+      total,
+      destroyed: total,
+      remaining: 0,
+      remainingPaths: Object.freeze(remainingPaths),
+    });
+  }
+
   // If the retained original is removed separately, the copy is no longer an
   // easy-safe cleanup. Withdraw the bonus target until Undo restores it.
   if (targets.some(target => !liveFilePaths.has(target.duplicateOfPath))) {
@@ -219,13 +237,9 @@ export function getFileObjectiveProgress(
       remainingPaths: Object.freeze([] as string[]),
     });
   }
-  const remainingPaths = targets
-    .filter(target => liveFilePaths.has(target.path))
-    .map(target => target.path);
-  const remaining = remainingPaths.length;
 
   return Object.freeze({
-    phase: remaining === 0 ? 'complete' as const : 'active' as const,
+    phase: 'active' as const,
     total,
     destroyed: total - remaining,
     remaining,

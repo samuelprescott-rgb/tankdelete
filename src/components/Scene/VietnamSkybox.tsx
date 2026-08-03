@@ -24,6 +24,7 @@ const skyVertexShader = /* glsl */ `
 const skyFragmentShader = /* glsl */ `
   uniform float uSeed;
   uniform float uTime;
+  uniform float uNightmare;
   varying vec3 vDirection;
 
   float hash21(vec2 point) {
@@ -108,6 +109,17 @@ const skyFragmentShader = /* glsl */ `
     // Cool humid haze separates the forest, foothills, and remote ridgelines.
     float horizonHaze = 1.0 - smoothstep(-0.045, 0.2, direction.y);
     sky = mix(sky, rainHorizon, horizonHaze * 0.68);
+
+    // Nightmare mode keeps the same procedural cloud forms, but crushes the
+    // bright monsoon ceiling into a cold near-black storm. The uniform eases
+    // independently of wave changes, avoiding another post-processing pass.
+    vec3 nightmareSky = sky * vec3(0.12, 0.14, 0.17);
+    nightmareSky = mix(
+      nightmareSky,
+      vec3(0.003, 0.007, 0.009),
+      0.38 + elevation * 0.16
+    );
+    sky = mix(sky, nightmareSky, uNightmare);
     gl_FragColor = vec4(sky, 1.0);
   }
 `;
@@ -231,16 +243,27 @@ function createPerimeterClusters(seed: number) {
   return clusters;
 }
 
-function SkyDome({ seed }: { seed: number }) {
+interface NightmareSkyProps {
+  nightmareActive: boolean;
+}
+
+function SkyDome({ seed, nightmareActive }: { seed: number } & NightmareSkyProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const uniforms = useMemo(() => ({
     uSeed: { value: (Math.abs(seed) % 997) / 997 },
     uTime: { value: 0 },
+    uNightmare: { value: 0 },
   }), [seed]);
 
-  useFrame(({ camera, clock }) => {
+  useFrame(({ camera, clock }, delta) => {
     if (meshRef.current) meshRef.current.position.copy(camera.position);
     uniforms.uTime.value = clock.elapsedTime;
+    uniforms.uNightmare.value = THREE.MathUtils.damp(
+      uniforms.uNightmare.value,
+      nightmareActive ? 1 : 0,
+      2.2,
+      delta,
+    );
   });
 
   return (
@@ -386,10 +409,13 @@ function CombatSectorPerimeter({ seed }: { seed: number }) {
   );
 }
 
-export function VietnamSkybox({ seed }: { seed: number }) {
+export function VietnamSkybox({
+  seed,
+  nightmareActive = false,
+}: { seed: number; nightmareActive?: boolean }) {
   return (
     <>
-      <SkyDome seed={seed} />
+      <SkyDome seed={seed} nightmareActive={nightmareActive} />
       <LayeredHorizon seed={seed} />
       <CombatSectorPerimeter seed={seed} />
     </>

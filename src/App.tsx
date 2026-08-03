@@ -32,6 +32,9 @@ import { ExplosionParticles } from './components/Scene/ExplosionParticles';
 import { createTrainingEntries, TRAINING_DIRECTORY } from './lib/training';
 import { useFieldRadio } from './hooks/useFieldRadio';
 import { useGameAudio } from './hooks/useGameAudio';
+import { useZombieAmbience } from './hooks/useZombieAmbience';
+import { useBossVoice } from './hooks/useBossVoice';
+import { NightmareWaveTakeover } from './components/HUD/NightmareWaveTakeover';
 import { OrdnanceEffects } from './components/Scene/OrdnanceEffects';
 import { TankWaterEffects } from './components/Scene/TankWaterEffects';
 import { VietCongCombatants } from './components/Scene/VietCongCombatants';
@@ -41,15 +44,41 @@ import {
 } from './components/Scene/USInfantrySquad';
 import { CRASHED_HUEY_TRANSFORM } from './components/Scene/VietnamEnvironment';
 import { useEnemyCombat } from './hooks/useEnemyCombat';
+import { useZombieEpilogue } from './hooks/useZombieEpilogue';
+import { useFinalBossAllies } from './hooks/useFinalBossAllies';
+import { ZombieHorde } from './components/Scene/ZombieHorde';
+import { FinalBossAllies } from './components/Scene/FinalBossAllies';
+import { BaldEagleSupport } from './components/Scene/BaldEagleSupport';
 import {
+  type CannonReloadState,
   FLAMETHROWER_CONE_DOT,
   FLAMETHROWER_RANGE,
+  type MachineGunHeatState,
+  MACHINE_GUN_BURST_SECONDS,
   NapalmStrike,
   NAPALM_COOLDOWN_SECONDS,
+  NAPALM_HAZARD_DAMAGE_INTERVAL_SECONDS,
+  NAPALM_HAZARD_DAMAGE_PER_TICK,
+  NAPALM_HAZARD_FRIENDLY_DAMAGE_PER_TICK,
   NAPALM_STRIKE_LENGTH,
   NAPALM_STRIKE_WIDTH,
+  isPointInsideNapalmStrike,
   WeaponMode,
 } from './lib/weapons';
+import {
+  type EagleAudioCue,
+  type EagleStrafe,
+  EAGLE_COOLDOWN_SECONDS,
+  EAGLE_STRIKE_DAMAGE,
+  EAGLE_STRIKE_LENGTH,
+  EAGLE_STRIKE_WIDTH,
+} from './lib/eagleSupport';
+import {
+  findLivingZombiesInRectangle,
+  type FriendlyZombieHitEvent,
+  type ZombieFriendlyBreachEvent,
+  type ZombieTankBreachEvent,
+} from './lib/zombieEpilogue';
 import { hashCombatSession } from './lib/combat';
 import {
   createFileObjective,
@@ -82,27 +111,61 @@ function App() {
   const [tankStartPosition, setTankStartPosition] = useState<[number, number, number]>([0, 0, -12]);
   const [isTraining, setIsTraining] = useState(false);
   const [weaponMode, setWeaponMode] = useState<WeaponMode>('cannon');
+  const [cannonReload, setCannonReload] = useState<CannonReloadState>({
+    progress: 1,
+    remainingSeconds: 0,
+    ready: true,
+  });
+  const [machineGunHeat, setMachineGunHeat] = useState<MachineGunHeatState>({
+    heat: 0,
+    firing: false,
+    overheated: false,
+    burstRemainingSeconds: MACHINE_GUN_BURST_SECONDS,
+    recoveryRemainingSeconds: 0,
+  });
   const [flameFuel, setFlameFuel] = useState(1);
   const [napalmStrikes, setNapalmStrikes] = useState<NapalmStrike[]>([]);
   const [napalmCooldown, setNapalmCooldown] = useState(0);
+  const [eagleStrikes, setEagleStrikes] = useState<EagleStrafe[]>([]);
+  const [eagleCooldown, setEagleCooldown] = useState(0);
+  const [eagleBusy, setEagleBusy] = useState(false);
+  const [eagleTargeting, setEagleTargeting] = useState(false);
   const [combatSessionKey, setCombatSessionKey] = useState(0);
   const [tankIntegrity, setTankIntegrity] = useState(100);
   const [damageFlash, setDamageFlash] = useState(false);
+  const [nightmareTakeover, setNightmareTakeover] = useState<{
+    token: number;
+    wave: number;
+    boss: boolean;
+  } | null>(null);
   const [fileObjective, setFileObjective] = useState<FileObjective | null>(null);
   const [sectorPageIndex, setSectorPageIndex] = useState(0);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
+  const eagleReadyAtRef = useRef(0);
+  const eagleTargetingRef = useRef(false);
   const worldSessionRef = useRef(0);
   const automaticHitTriggerByPathRef = useRef(new Map<string, number>());
   const napalmPayloadsRef = useRef(new Map<number, {
     session: number;
     filePaths: string[];
     enemyIds: string[];
+    position: [number, number, number];
+    rotation: number;
+    impacted: boolean;
+    lastBurnDamageAt: Map<string, number>;
+  }>());
+  const eaglePayloadsRef = useRef(new Map<number, {
+    session: number;
+    position: [number, number, number];
+    rotation: number;
   }>());
   const tankHitCooldownRef = useRef(0);
   const damageFlashTimeoutRef = useRef<number | null>(null);
+  const nightmareTakeoverTokenRef = useRef(0);
   const missionSnapshotRef = useRef({ id: null as string | null, remaining: 0 });
+  const bonusAnnouncementRef = useRef({ phase: 'locked', wave: 0 });
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -118,6 +181,7 @@ function App() {
     markedFiles,
     deletingFiles,
     markFile,
+    unmarkFile,
     clearMarked,
     resetMarkedState,
     isMarked,
@@ -133,8 +197,17 @@ function App() {
   const { explosions, spawn: spawnExplosion, despawn: despawnExplosion } = useExplosionPool();
   const fieldRadio = useFieldRadio();
   const gameAudio = useGameAudio();
+  const zombieAmbience = useZombieAmbience(
+    gameAudio.setNightmareRainMix,
+    gameAudio.setNightmareRainDuck,
+  );
+  const bossVoice = useBossVoice({
+    setMusicDuck: fieldRadio.setBossVoiceDuck,
+    setZombieAmbienceDuck: zombieAmbience.setBossVoiceDuck,
+  });
   const {
     enemies,
+    enemiesRef,
     livingEnemies,
     aliveCount: hostileCount,
     friendlies,
@@ -145,13 +218,80 @@ function App() {
     damageEnemy,
     killEnemy,
     damageFriendly,
+    resetFriendlies,
   } = useEnemyCombat({ sessionKey: combatSessionKey, count: 12 });
+  const horde = useZombieEpilogue({
+    sessionKey: combatSessionKey,
+    seed: hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY),
+  });
+  const nightmareBoss = horde.livingZombies.find(zombie => zombie.archetype === 'boss');
+  const finalBossEncounterActive = state === 'ready'
+    && horde.phase === 'combat'
+    && horde.wave === horde.maxWaves
+    && Boolean(nightmareBoss?.alive);
+  const bossAllies = useFinalBossAllies({
+    enabled: finalBossEncounterActive,
+    encounterKey: `${combatSessionKey}:${horde.wave}`,
+    bossHealth: nightmareBoss?.health,
+    bossMaxHealth: nightmareBoss?.maxHealth,
+    baseFriendliesRef: friendliesRef,
+    posesRef: friendlyPosesRef,
+    onDefeat: event => {
+      if (event.position) {
+        spawnExplosion(event.position.clone().add(new THREE.Vector3(0, 0.55, 0)), '#a86a3d', 0.3);
+      }
+      toast.error(`${event.name} is down`, { duration: 2200, icon: '✦' });
+    },
+  });
+
+  useEffect(() => {
+    const finalWaveIsNext = state === 'ready'
+      && horde.phase === 'intermission'
+      && horde.wave === horde.maxWaves - 1;
+    if (finalWaveIsNext) bossVoice.prepare();
+  }, [bossVoice.prepare, horde.maxWaves, horde.phase, horde.wave, state]);
+
+  useEffect(() => {
+    const finalBossIsLive = state === 'ready'
+      && horde.phase === 'combat'
+      && horde.wave === horde.maxWaves
+      && Boolean(nightmareBoss?.alive);
+    if (!finalBossIsLive) bossVoice.stop();
+  }, [
+    bossVoice.stop,
+    horde.maxWaves,
+    horde.phase,
+    horde.wave,
+    nightmareBoss?.alive,
+    state,
+  ]);
+
+  useEffect(() => {
+    if (state !== 'ready'
+      || horde.phase !== 'combat'
+      || horde.wave !== horde.maxWaves
+      || !nightmareBoss?.alive
+      || nightmareBoss.maxHealth <= 0) return;
+    if (nightmareBoss.health / nightmareBoss.maxHealth <= 0.35) {
+      bossVoice.cueEnraged();
+    }
+  }, [
+    bossVoice.cueEnraged,
+    horde.maxWaves,
+    horde.phase,
+    horde.wave,
+    nightmareBoss?.alive,
+    nightmareBoss?.health,
+    nightmareBoss?.maxHealth,
+    state,
+  ]);
 
   useEffect(() => {
     if (state === 'ready') {
       gameAudio.setBattlefieldActive(true);
       void fieldRadio.launch();
     } else {
+      zombieAmbience.stop();
       gameAudio.stopAllLoops();
       if (state === 'scanning') fieldRadio.suspend();
       else fieldRadio.stop();
@@ -163,24 +303,39 @@ function App() {
     fieldRadio.suspend,
     gameAudio.setBattlefieldActive,
     gameAudio.stopAllLoops,
+    zombieAmbience.stop,
   ]);
 
   useEffect(() => {
+    if (state === 'ready' && horde.phase !== 'locked' && horde.phase !== 'victory') return;
+    zombieAmbience.stop();
+  }, [horde.phase, state, zombieAmbience.stop]);
+
+  useEffect(() => {
+    bossVoice.stop();
     setTankIntegrity(100);
     setDamageFlash(false);
     setNapalmStrikes([]);
     setNapalmCooldown(0);
+    setEagleStrikes([]);
+    setEagleCooldown(0);
+    setEagleBusy(false);
+    setEagleTargeting(false);
+    setNightmareTakeover(null);
+    eagleTargetingRef.current = false;
     napalmReadyAtRef.current = 0;
+    eagleReadyAtRef.current = 0;
     napalmPayloadsRef.current.clear();
+    eaglePayloadsRef.current.clear();
     tankHitCooldownRef.current = 0;
     if (damageFlashTimeoutRef.current !== null) {
       window.clearTimeout(damageFlashTimeoutRef.current);
       damageFlashTimeoutRef.current = null;
     }
-  }, [combatSessionKey]);
+  }, [bossVoice.stop, combatSessionKey]);
 
   useEffect(() => {
-    if (tankIntegrity > 0 || state !== 'ready') return;
+    if (tankIntegrity > 0 || state !== 'ready' || horde.phase === 'defeat') return;
     toast.error('Tank disabled · recovery crew inbound', { duration: 2400 });
     const recoveryTimer = window.setTimeout(() => {
       setTankIntegrity(100);
@@ -188,7 +343,7 @@ function App() {
       toast.success('Armor restored · back in the fight', { duration: 2200 });
     }, 2200);
     return () => window.clearTimeout(recoveryTimer);
-  }, [state, tankIntegrity]);
+  }, [horde.phase, state, tankIntegrity]);
 
   // File block mesh refs for hit detection (populated by FileBlocks component)
   const fileBlockRefsRef = useRef<React.RefObject<THREE.InstancedMesh | null>[]>([]);
@@ -234,14 +389,32 @@ function App() {
     const interval = window.setInterval(() => {
       const remaining = Math.max(0, (napalmReadyAtRef.current - Date.now()) / 1000);
       setNapalmCooldown(remaining);
+      const eagleRemaining = Math.max(0, (eagleReadyAtRef.current - Date.now()) / 1000);
+      setEagleCooldown(eagleRemaining);
     }, 100);
 
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (horde.phase === 'combat' || !eagleTargetingRef.current) return;
+    eagleTargetingRef.current = false;
+    setEagleTargeting(false);
+  }, [horde.phase]);
+
   // Keyboard listener for Ctrl+Z (Cmd+Z on macOS) and batch delete
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (state === 'ready' && horde.phase === 'defeat') {
+        if (!e.repeat && (e.key === 'r' || e.key === 'R')) {
+          e.preventDefault();
+          handleRetryZombieDefense();
+        } else if (e.key === 'm' || e.key === 'M') {
+          fieldRadio.toggleMute();
+        }
+        return;
+      }
+
       // Check for Ctrl+Z or Cmd+Z
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault(); // Prevent browser default undo
@@ -254,10 +427,16 @@ function App() {
         handleBatchDelete();
       }
 
-      if (e.key === 'Escape' && markedCount > 0) {
+      if (e.key === 'Escape' && (markedCount > 0 || eagleTargetingRef.current)) {
         e.preventDefault();
-        clearMarked();
-        toast('Targets disarmed', { duration: 1800 });
+        if (markedCount > 0) clearMarked();
+        if (eagleTargetingRef.current) {
+          eagleTargetingRef.current = false;
+          setEagleTargeting(false);
+          toast('Eagle Strafe designation cancelled', { duration: 1500 });
+        } else {
+          toast('Targets disarmed', { duration: 1800 });
+        }
       }
 
       if (e.key === '1') setWeaponMode('cannon');
@@ -265,11 +444,26 @@ function App() {
       if (e.key === '3') setWeaponMode('flamethrower');
       if (e.key === '4') setWeaponMode('napalm');
       if (state === 'ready' && (e.key === 'm' || e.key === 'M')) fieldRadio.toggleMute();
+      if (state === 'ready' && !e.repeat && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        handleCallEagle();
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDirectory, markedCount, state, fieldRadio.toggleMute]); // Re-attach when relevant controls change
+  }, [
+    currentDirectory,
+    markedCount,
+    state,
+    fieldRadio.toggleMute,
+    horde.phase,
+    horde.aliveCount,
+    eagleCooldown,
+    eagleBusy,
+    eagleTargeting,
+    resetFriendlies,
+  ]); // Re-attach when relevant controls change
 
   async function pickDirectory() {
     void fieldRadio.prime();
@@ -499,6 +693,72 @@ function App() {
     );
   }
 
+  function handleZombieProjectileHit(
+    zombieId: string,
+    projectile: Projectile,
+    hitPoint: THREE.Vector3,
+  ) {
+    const result = horde.damageZombie(
+      zombieId,
+      projectile.kind === 'cannon' ? 140 : 40,
+      projectile.kind,
+    );
+    if (!result) return;
+
+    spawnExplosion(
+      hitPoint,
+      result.killed ? '#c66a38' : '#e5c56b',
+      result.killed ? (projectile.kind === 'cannon' ? 0.52 : 0.3) : 0.1,
+    );
+  }
+
+  function handleFriendlyZombieHit(event: FriendlyZombieHitEvent) {
+    const result = horde.damageZombie(event.zombieId, event.damage, 'friendly-rifle');
+    if (!result?.killed) return;
+    spawnExplosion(result.position.clone().add(new THREE.Vector3(0, 0.48, 0)), '#776f4d', 0.16);
+  }
+
+  function handleZombieTankBreach(event: ZombieTankBreachEvent) {
+    const isBossAttack = horde.zombiesRef.current.some(zombie => (
+      zombie.id === event.zombieId && zombie.alive && zombie.archetype === 'boss'
+    ));
+    const outcome = horde.registerBreach();
+    if (!outcome.accepted) return;
+    handleTankHit(event.damage);
+    if (isBossAttack && !outcome.defeated) bossVoice.cueMajorAttack();
+    if (!outcome.defeated) return;
+
+    // Terminal means terminal for this attempt: bypass the ordinary recovery
+    // crew and leave the tank frozen for the explicit retry/exit outcome.
+    setTankIntegrity(0);
+    eagleTargetingRef.current = false;
+    setEagleTargeting(false);
+    toast.error('Defensive line overrun · tank lost', { duration: 4200 });
+  }
+
+  function handleZombieFriendlyBreach(event: ZombieFriendlyBreachEvent) {
+    const isBossAttack = horde.zombiesRef.current.some(zombie => (
+      zombie.id === event.zombieId && zombie.alive && zombie.archetype === 'boss'
+    ));
+    if (isBossAttack) bossVoice.cueMajorAttack();
+    if (bossAllies.handleFriendlyBreach(event)) return;
+    handleFriendlyInfantryHit(event.friendlyId, event.damage);
+  }
+
+  function handleRetryZombieDefense() {
+    if (!horde.retry()) return;
+    resetFriendlies();
+    setTankIntegrity(100);
+    setTankStartPosition([0, 0, -12]);
+    setDamageFlash(false);
+    tankHitCooldownRef.current = 0;
+    if (damageFlashTimeoutRef.current !== null) {
+      window.clearTimeout(damageFlashTimeoutRef.current);
+      damageFlashTimeoutRef.current = null;
+    }
+    toast('Defensive line reformed · contacts inbound', { duration: 2500 });
+  }
+
   function handleTankHit(damage: number) {
     const now = performance.now();
     if (now < tankHitCooldownRef.current || tankIntegrity <= 0) return;
@@ -566,6 +826,30 @@ function App() {
         applyEnemyDamage(enemy.id, 28, 'flamethrower');
       }
     }
+
+    const zombieTargets: string[] = [];
+    for (const zombie of horde.zombiesRef.current) {
+      if (!zombie.alive) continue;
+      const pose = horde.posesRef.current.get(zombie.id);
+      if (!pose?.active) continue;
+      const offsetX = pose.position.x - position.x;
+      const offsetY = pose.position.y + 0.62 - position.y;
+      const offsetZ = pose.position.z - position.z;
+      const distance = Math.hypot(offsetX, offsetY, offsetZ);
+      const alignment = distance > 0
+        ? (offsetX * normalizedDirection.x
+          + offsetY * normalizedDirection.y
+          + offsetZ * normalizedDirection.z) / distance
+        : 1;
+      if (distance <= FLAMETHROWER_RANGE && alignment >= FLAMETHROWER_CONE_DOT) {
+        zombieTargets.push(zombie.id);
+      }
+    }
+    const zombieResults = horde.damageZombies(zombieTargets, 18, 'flamethrower');
+    for (const result of zombieResults) {
+      if (!result.killed) continue;
+      spawnExplosion(result.position.clone().add(new THREE.Vector3(0, 0.55, 0)), '#d75b32', 0.3);
+    }
   }
 
   function handleNapalm(target: THREE.Vector3, runDirection: THREE.Vector3) {
@@ -611,11 +895,25 @@ function App() {
         Math.abs(candidate.alongRun) <= NAPALM_STRIKE_LENGTH / 2
         && Math.abs(candidate.acrossRun) <= NAPALM_STRIKE_WIDTH / 2
       ));
+    const zombieTargetsAtDesignation = findLivingZombiesInRectangle(
+      horde.zombiesRef.current,
+      horde.posesRef.current,
+      target.x,
+      target.z,
+      strikeDirection.x,
+      strikeDirection.y,
+      NAPALM_STRIKE_LENGTH,
+      NAPALM_STRIKE_WIDTH,
+    );
 
     napalmPayloadsRef.current.set(id, {
       session: strikeSession,
       filePaths: targets.map(({ block }) => block.path),
       enemyIds: enemyTargets.map(({ enemy }) => enemy.id),
+      position: [target.x, 0.03, target.z],
+      rotation: strikeRotation,
+      impacted: false,
+      lastBurnDamageAt: new Map(),
     });
 
     const beginSynchronizedStrike = () => {
@@ -629,7 +927,7 @@ function App() {
         position: [target.x, 0.03, target.z],
         rotation: strikeRotation,
       }]);
-      const targetCount = targets.length + enemyTargets.length;
+      const targetCount = targets.length + enemyTargets.length + zombieTargetsAtDesignation.length;
       toast(
         targetCount > 0
           ? `Phantom inbound · ${targetCount} targets in strike zone`
@@ -646,7 +944,12 @@ function App() {
   function handleNapalmImpact(id: number) {
     const payload = napalmPayloadsRef.current.get(id);
     if (!payload || payload.session !== worldSessionRef.current) return;
-    napalmPayloadsRef.current.delete(id);
+    // HMR can preserve a payload created before the lingering-burn fields were
+    // introduced. Normalize it at the event boundary before either handler
+    // touches the map so an in-flight strike cannot crash a wave transition.
+    payload.lastBurnDamageAt ??= new Map<string, number>();
+    payload.impacted = true;
+    const impactAt = performance.now();
 
     const liveFilePaths = new Set(
       allBlocks
@@ -657,6 +960,7 @@ function App() {
 
     let enemyCasualties = 0;
     for (const enemyId of payload.enemyIds) {
+      payload.lastBurnDamageAt.set(`enemy:${enemyId}`, impactAt);
       const result = killEnemy(enemyId, 'napalm');
       if (!result?.killed) continue;
       enemyCasualties += 1;
@@ -664,7 +968,28 @@ function App() {
       spawnExplosion(new THREE.Vector3(x, y + 0.4, z), '#ff6a28', 0.65);
     }
 
-    const totalTargets = filePathsAtImpact.length + enemyCasualties;
+    const zombieTargets = findLivingZombiesInRectangle(
+      horde.zombiesRef.current,
+      horde.posesRef.current,
+      payload.position[0],
+      payload.position[2],
+      Math.cos(payload.rotation),
+      -Math.sin(payload.rotation),
+      NAPALM_STRIKE_LENGTH,
+      NAPALM_STRIKE_WIDTH,
+    );
+    const zombieResults = horde.killZombies(
+      zombieTargets.map(zombie => zombie.id),
+      'napalm',
+    );
+    for (const zombie of zombieTargets) {
+      payload.lastBurnDamageAt.set(`zombie:${zombie.id}`, impactAt);
+    }
+    for (const result of zombieResults.slice(0, 8)) {
+      spawnExplosion(result.position.clone().add(new THREE.Vector3(0, 0.45, 0)), '#ff6a28', 0.48);
+    }
+
+    const totalTargets = filePathsAtImpact.length + enemyCasualties + zombieResults.length;
     toast(
       totalTargets > 0
         ? `Napalm impact · ${totalTargets} targets caught in the burn`
@@ -679,13 +1004,231 @@ function App() {
     })();
   }
 
+  function handleNapalmBurnTick(id: number, burnStrength: number) {
+    const payload = napalmPayloadsRef.current.get(id);
+    if (!payload || payload.session !== worldSessionRef.current) return;
+    payload.lastBurnDamageAt ??= new Map<string, number>();
+    payload.impacted ??= false;
+    if (!payload.impacted) return;
+
+    const strength = THREE.MathUtils.clamp(burnStrength, 0, 1);
+    if (strength <= 0) return;
+    const now = performance.now();
+    const damageIntervalMs = NAPALM_HAZARD_DAMAGE_INTERVAL_SECONDS * 1000;
+    const reserveDamageTick = (targetKey: string) => {
+      const lastDamageAt = payload.lastBurnDamageAt.get(targetKey) ?? -Infinity;
+      if (now - lastDamageAt < damageIntervalMs) return false;
+      payload.lastBurnDamageAt.set(targetKey, now);
+      return true;
+    };
+    const hostileDamage = Math.max(1, NAPALM_HAZARD_DAMAGE_PER_TICK * strength);
+    const friendlyDamage = Math.max(
+      1,
+      NAPALM_HAZARD_FRIENDLY_DAMAGE_PER_TICK * strength,
+    );
+
+    for (const enemy of enemiesRef.current) {
+      if (!enemy.alive
+        || !isPointInsideNapalmStrike(
+          enemy.position[0],
+          enemy.position[2],
+          payload,
+          0.35,
+        )
+        || !reserveDamageTick(`enemy:${enemy.id}`)) continue;
+      applyEnemyDamage(enemy.id, hostileDamage, 'napalm');
+    }
+
+    const zombieTargets = findLivingZombiesInRectangle(
+      horde.zombiesRef.current,
+      horde.posesRef.current,
+      payload.position[0],
+      payload.position[2],
+      Math.cos(payload.rotation),
+      -Math.sin(payload.rotation),
+      NAPALM_STRIKE_LENGTH,
+      NAPALM_STRIKE_WIDTH,
+    ).filter(zombie => reserveDamageTick(`zombie:${zombie.id}`));
+    const zombieResults = horde.damageZombies(
+      zombieTargets.map(zombie => zombie.id),
+      hostileDamage,
+      'napalm',
+    );
+    for (const result of zombieResults) {
+      if (!result.killed) continue;
+      spawnExplosion(
+        result.position.clone().add(new THREE.Vector3(0, 0.45, 0)),
+        '#ff6a28',
+        0.34,
+      );
+    }
+
+    const [tankX, , tankZ] = tankStateRef.current.position;
+    if (tankIntegrity > 0
+      && isPointInsideNapalmStrike(tankX, tankZ, payload, 0.9)
+      && reserveDamageTick('tank')) {
+      handleTankHit(friendlyDamage);
+    }
+
+    for (const friendly of friendliesRef.current) {
+      if (!friendly.alive) continue;
+      const pose = friendlyPosesRef.current.get(friendly.id)?.position;
+      const x = pose?.x ?? friendly.position[0];
+      const z = pose?.z ?? friendly.position[2];
+      if (!isPointInsideNapalmStrike(x, z, payload, 0.4)
+        || !reserveDamageTick(`friendly:${friendly.id}`)) continue;
+      handleFriendlyInfantryHit(friendly.id, friendlyDamage);
+    }
+
+    for (const ally of bossAllies.alliesRef.current) {
+      if (!ally.alive) continue;
+      const pose = bossAllies.posesRef.current.get(ally.id)?.position;
+      const x = pose?.x ?? ally.position[0];
+      const z = pose?.z ?? ally.position[2];
+      if (!isPointInsideNapalmStrike(x, z, payload, 0.55)
+        || !reserveDamageTick(`boss-ally:${ally.id}`)) continue;
+      bossAllies.damageAlly(ally.id, friendlyDamage);
+    }
+  }
+
   function handleNapalmComplete(id: number) {
     napalmPayloadsRef.current.delete(id);
     setNapalmStrikes(prev => prev.filter(strike => strike.id !== id));
   }
 
+  function handleCallEagle() {
+    if (eagleTargetingRef.current) {
+      eagleTargetingRef.current = false;
+      setEagleTargeting(false);
+      toast('Eagle Strafe designation cancelled', { duration: 1500 });
+      return;
+    }
+    if (horde.phase !== 'combat' || horde.aliveCount === 0) return;
+    if (eagleBusy) {
+      toast('Eagle Strafe already active', { duration: 1400 });
+      return;
+    }
+
+    const remaining = (eagleReadyAtRef.current - Date.now()) / 1000;
+    if (remaining > 0) {
+      toast(`Eagle Strafe rearming · ${remaining.toFixed(1)}s`, { duration: 1500 });
+      return;
+    }
+
+    eagleTargetingRef.current = true;
+    setEagleTargeting(true);
+    toast('Eagle Strafe designator active · click terrain to mark the lane', {
+      duration: 2200,
+      icon: '⌖',
+    });
+  }
+
+  function handleEagleTarget(target: THREE.Vector3, aimDirection: THREE.Vector3) {
+    if (!eagleTargetingRef.current) return;
+    eagleTargetingRef.current = false;
+    setEagleTargeting(false);
+
+    if (horde.phase !== 'combat' || horde.aliveCount === 0 || eagleBusy) return;
+    const remaining = (eagleReadyAtRef.current - Date.now()) / 1000;
+    if (remaining > 0) return;
+
+    const flatAimDirection = new THREE.Vector2(aimDirection.x, aimDirection.z);
+    if (flatAimDirection.lengthSq() < 0.0001) flatAimDirection.set(0, -1);
+    flatAimDirection.normalize();
+    // Match the napalm designator: the support asset crosses the player's
+    // current line of aim, making the chosen lane readable from the tank.
+    const strikeDirection = new THREE.Vector2(
+      flatAimDirection.y,
+      -flatAimDirection.x,
+    ).normalize();
+    const strike: EagleStrafe = {
+      id: ordnanceIdRef.current++,
+      position: [target.x, 0.03, target.z],
+      rotation: Math.atan2(-strikeDirection.y, strikeDirection.x),
+    };
+
+    const strikeSession = worldSessionRef.current;
+    eaglePayloadsRef.current.set(strike.id, {
+      session: strikeSession,
+      position: strike.position,
+      rotation: strike.rotation,
+    });
+    eagleReadyAtRef.current = Date.now() + EAGLE_COOLDOWN_SECONDS * 1000;
+    setEagleCooldown(EAGLE_COOLDOWN_SECONDS);
+    setEagleBusy(true);
+    setEagleStrikes([strike]);
+    toast('Target fixed · Eagle Strafe inbound with twin .50s', { duration: 1900, icon: '🦅' });
+  }
+
+  function handleEagleImpact(id: number) {
+    const payload = eaglePayloadsRef.current.get(id);
+    if (!payload || payload.session !== worldSessionRef.current) return;
+
+    const targets = findLivingZombiesInRectangle(
+      horde.zombiesRef.current,
+      horde.posesRef.current,
+      payload.position[0],
+      payload.position[2],
+      Math.cos(payload.rotation),
+      -Math.sin(payload.rotation),
+      EAGLE_STRIKE_LENGTH,
+      EAGLE_STRIKE_WIDTH,
+    );
+    const results = horde.damageZombies(
+      targets.map(zombie => zombie.id),
+      EAGLE_STRIKE_DAMAGE,
+      'eagle',
+    );
+    const kills = results.filter(result => result.killed);
+    for (const result of kills.slice(0, 8)) {
+      spawnExplosion(result.position.clone().add(new THREE.Vector3(0, 0.5, 0)), '#f0b04d', 0.34);
+    }
+    toast(
+      kills.length > 0
+        ? `Eagle Strafe · ${kills.length} undead cut down`
+        : 'Eagle Strafe · lane clear',
+      { duration: 2100 },
+    );
+  }
+
+  function handleEagleComplete(id: number) {
+    eaglePayloadsRef.current.delete(id);
+    setEagleStrikes(current => current.filter(strike => strike.id !== id));
+  }
+
+  function handleEagleAudioCue(cue: EagleAudioCue) {
+    if (cue === 'approach') {
+      gameAudio.playEagleApproach();
+    } else {
+      gameAudio.setEagleGunsActive(cue === 'guns-start');
+      if (cue === 'guns-stop') {
+        // The outbound silhouette is cosmetic after the firing pass. Releasing
+        // support here lets a newly-ready wave replace that visual immediately.
+        setEagleBusy(false);
+      }
+    }
+  }
+
+  function getProtectedObjectiveOriginalPaths() {
+    const livePaths = new Set(entries.filter(entry => !entry.is_dir).map(entry => entry.path));
+    return new Set(
+      (fileObjective?.targets ?? [])
+        .filter(target => livePaths.has(target.path))
+        .map(target => target.duplicateOfPath),
+    );
+  }
+
   // Projectile hit handler with two-shot deletion logic
   async function handleProjectileHit(filePath: string) {
+    if (getProtectedObjectiveOriginalPaths().has(filePath)) {
+      unmarkFile(filePath);
+      toast('Retained original protected · destroy the highlighted copy', {
+        duration: 2600,
+        icon: '◆',
+      });
+      return;
+    }
+
     if (isMarked(filePath)) {
       // Second hit: delete the file
       try {
@@ -758,9 +1301,22 @@ function App() {
   async function handleBatchDelete() {
     if (markedCount === 0) return;
 
+    const protectedOriginalPaths = getProtectedObjectiveOriginalPaths();
+    const filesToDelete = Array.from(markedFiles).filter(path => !protectedOriginalPaths.has(path));
+    const protectedMarkedCount = markedCount - filesToDelete.length;
+    if (protectedMarkedCount > 0) {
+      toast('Retained objective original disarmed and protected', {
+        duration: 2600,
+        icon: '◆',
+      });
+    }
+    if (filesToDelete.length === 0) {
+      clearMarked();
+      return;
+    }
+
     try {
       if (isTraining) {
-        const filesToDelete = Array.from(markedFiles);
         const fileBlocks = filesToDelete
           .map(filePath => allBlocks.find(block => block.path === filePath))
           .filter((block): block is NonNullable<typeof block> => block !== undefined);
@@ -769,7 +1325,7 @@ function App() {
           .filter((entry): entry is FileEntry => entry !== undefined);
         const bytesFreed = entriesToDelete.reduce((total, entry) => total + entry.size, 0);
 
-        await deleteAllMarked(async () => {});
+        await deleteAllMarked(async () => {}, protectedOriginalPaths);
         trainingUndoStackRef.current.push(...entriesToDelete);
         setDeletedCount(prev => prev + entriesToDelete.length);
         setDeletedBytes(prev => prev + bytesFreed);
@@ -793,7 +1349,6 @@ function App() {
       const [, prevBytes] = await commands.getSessionStats();
 
       // Capture marked files and their block data before deletion
-      const filesToDelete = Array.from(markedFiles);
       const fileBlocks = filesToDelete.map(filePath =>
         allBlocks.find(b => b.path === filePath)
       ).filter(block => block !== undefined);
@@ -805,7 +1360,7 @@ function App() {
           && entries.some(entry => entry.path === target.duplicateOfPath && !entry.is_dir)
         ));
         return commands.moveToTrash(filePath, duplicateTarget?.duplicateOfPath);
-      });
+      }, protectedOriginalPaths);
       const successfulPathSet = new Set(successfulPaths);
       const successfulBlocks = fileBlocks.filter(block => successfulPathSet.has(block.path));
       const failedCount = filesToDelete.length - successfulPaths.length;
@@ -980,7 +1535,10 @@ function App() {
       && previous.remaining > 0
       && missionProgress.remaining === 0
       && missionProgress.total > 0) {
-      toast.success('Bonus cleanup complete · confirmed duplicate eliminated', {
+      const nightmareStarted = objectiveId ? horde.begin(objectiveId) : false;
+      toast.success(nightmareStarted
+        ? 'Cleanup complete · anomalous contacts inbound'
+        : 'Bonus cleanup complete · confirmed duplicate eliminated', {
         duration: 4200,
         icon: '★',
       });
@@ -989,7 +1547,82 @@ function App() {
       id: objectiveId,
       remaining: missionProgress.remaining,
     };
-  }, [fileObjective?.id, missionProgress.remaining, missionProgress.total]);
+  }, [fileObjective?.id, horde.begin, missionProgress.remaining, missionProgress.total]);
+
+  useEffect(() => {
+    const previous = bonusAnnouncementRef.current;
+    if (horde.phase === 'locked') {
+      bonusAnnouncementRef.current = { phase: 'locked', wave: 0 };
+      return;
+    }
+
+    const showTakeover = (wave: number, boss = false) => {
+      nightmareTakeoverTokenRef.current += 1;
+      setNightmareTakeover({
+        token: nightmareTakeoverTokenRef.current,
+        wave,
+        boss,
+      });
+    };
+
+    if (horde.phase === 'warning' && previous.phase !== 'warning') {
+      showTakeover(1);
+    }
+
+    if (previous.phase === 'locked') {
+      // The warning ambience begins here. The separate tank-radio Change cue is
+      // anchored to first-wave combat at T+0 and never shares the intro clock.
+      resetFriendlies();
+      setTankIntegrity(100);
+      zombieAmbience.start();
+      zombieAmbience.playIntro();
+      fieldRadio.beginBonusRound();
+    }
+
+    if (horde.phase === 'combat'
+      && (previous.phase !== 'combat' || previous.wave !== horde.wave)) {
+      const isBossWave = horde.wave === horde.maxWaves;
+      if (horde.wave === 1) fieldRadio.cueBonusTrack();
+      if (horde.wave > 1) showTakeover(horde.wave, isBossWave);
+      if (isBossWave) {
+        fieldRadio.cueFinalBossTrack();
+        bossVoice.prepare();
+        zombieAmbience.playBossScreech();
+      }
+
+      // Every wave begins with support available; a long wave can earn another
+      // pass after the normal cooldown without growing a new upgrade system.
+      eagleReadyAtRef.current = 0;
+      setEagleCooldown(0);
+      toast(`Nightmare wave ${horde.wave}/${horde.maxWaves} · ${horde.aliveCount} contacts`, {
+        duration: 2300,
+        icon: '⚠',
+      });
+    } else if (horde.phase === 'victory' && previous.phase !== 'victory') {
+      zombieAmbience.stop();
+      toast.success(`Nightmare survived · ${horde.totalKills} undead neutralized`, {
+        duration: 4200,
+        icon: '🦅',
+      });
+    }
+
+    bonusAnnouncementRef.current = { phase: horde.phase, wave: horde.wave };
+  }, [
+    bossVoice.prepare,
+    fieldRadio.beginBonusRound,
+    fieldRadio.cueBonusTrack,
+    fieldRadio.cueFinalBossTrack,
+    horde.aliveCount,
+    horde.maxWaves,
+    horde.phase,
+    horde.totalKills,
+    horde.wave,
+    resetFriendlies,
+    zombieAmbience.playBossScreech,
+    zombieAmbience.playIntro,
+    zombieAmbience.start,
+    zombieAmbience.stop,
+  ]);
 
   useEffect(() => {
     // Deleting the final item on the final page can shrink the grid count. The
@@ -1000,11 +1633,16 @@ function App() {
     ));
   }, [sectorPage.pageIndex]);
 
+  const sectorPagingLocked = horde.phase === 'warning'
+    || horde.phase === 'combat'
+    || horde.phase === 'intermission';
+
   function changeSectorPage(direction: -1 | 1) {
-    // Avoid unmounting a hut during its short de-rez animation. Armed targets
-    // are deliberately cleared so a hidden page can never be purged by mistake.
+    if (sectorPagingLocked) return;
+    // Avoid unmounting a hut during its short de-rez animation. Clear marks that
+    // would become hidden, but retain the pinned bonus target's armed state.
     if (deletingFiles.size > 0) return;
-    clearMarked();
+    clearMarked(activeObjectivePath ? [activeObjectivePath] : []);
     // Folder portals are centered within each bounded page. Return the tank to
     // the clear approach lane before swapping the slice so a newly materialized
     // portal can never overlap the stationary vehicle and navigate immediately.
@@ -1151,14 +1789,16 @@ function App() {
         folderCount={sectorPage.totalFolders}
         markedCount={markedCount}
         markedBytes={markedBytes}
-        onClearMarked={clearMarked}
+        onClearMarked={() => clearMarked()}
         weaponMode={weaponMode}
         onWeaponChange={setWeaponMode}
         flameFuel={flameFuel}
         napalmCooldown={napalmCooldown}
+        cannonReload={cannonReload}
+        machineGunHeat={machineGunHeat}
         tankIntegrity={tankIntegrity}
-        hostileCount={hostileCount}
-        friendlyCount={friendlyAliveCount}
+        hostileCount={hostileCount + horde.aliveCount}
+        friendlyCount={friendlyAliveCount + (bossAllies.active ? bossAllies.livingCount : 0)}
         missionTotal={missionProgress.total}
         missionRemaining={missionProgress.remaining}
         missionTargetName={missionTarget?.name}
@@ -1169,9 +1809,43 @@ function App() {
         radioTrackName={fieldRadio.trackName}
         onToggleRadioMute={fieldRadio.toggleMute}
         radioSourceLabel={fieldRadio.sourceLabel}
+        bonusPhase={horde.phase}
+        bonusWave={horde.wave}
+        bonusTotalWaves={horde.maxWaves}
+        bonusRemaining={horde.aliveCount}
+        bonusBreaches={horde.breachCount}
+        bonusMaxBreaches={horde.maxBreaches}
+        bonusBossHealth={nightmareBoss?.health}
+        bonusBossMaxHealth={nightmareBoss?.maxHealth}
+        onRetryBonus={handleRetryZombieDefense}
+        eagleCooldown={eagleCooldown}
+        eagleActive={eagleBusy}
+        eagleTargeting={eagleTargeting}
+        onCallEagle={handleCallEagle}
+        bossAllies={bossAllies.allies}
+        bossAlliesVisible={finalBossEncounterActive && !nightmareTakeover}
       />
 
-      <Crosshair weaponMode={weaponMode} />
+      {nightmareTakeover && (
+        <NightmareWaveTakeover
+          key={nightmareTakeover.token}
+          active
+          wave={nightmareTakeover.wave}
+          boss={nightmareTakeover.boss}
+          onComplete={() => {
+            if (nightmareTakeover.boss
+              && horde.phase === 'combat'
+              && horde.wave === horde.maxWaves) {
+              bossVoice.startBossFight();
+            }
+            setNightmareTakeover(current => (
+              current?.token === nightmareTakeover.token ? null : current
+            ));
+          }}
+        />
+      )}
+
+      <Crosshair weaponMode={weaponMode} eagleTargeting={eagleTargeting} />
 
       <Minimap
         tankStateRef={tankStateRef}
@@ -1180,6 +1854,7 @@ function App() {
         backPortalPosition={backPortalPosition}
         enemies={livingEnemies}
         friendlies={livingFriendlies}
+        zombiePosesRef={horde.posesRef}
       />
 
       <div className="header" data-game-ui>
@@ -1200,7 +1875,9 @@ function App() {
               <button
                 type="button"
                 onClick={() => changeSectorPage(-1)}
-                disabled={sectorPage.pageIndex === 0 || deletingFiles.size > 0}
+                disabled={sectorPage.pageIndex === 0
+                  || deletingFiles.size > 0
+                  || sectorPagingLocked}
                 aria-label="Previous sector grid"
               >
                 Prev
@@ -1209,7 +1886,9 @@ function App() {
               <button
                 type="button"
                 onClick={() => changeSectorPage(1)}
-                disabled={sectorPage.pageIndex === sectorPage.pageCount - 1 || deletingFiles.size > 0}
+                disabled={sectorPage.pageIndex === sectorPage.pageCount - 1
+                  || deletingFiles.size > 0
+                  || sectorPagingLocked}
                 aria-label="Next sector grid"
               >
                 Next
@@ -1223,7 +1902,11 @@ function App() {
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>
-        <Scene environmentSeed={environmentSeed} tankRef={tankRef}>
+        <Scene
+          environmentSeed={environmentSeed}
+          tankRef={tankRef}
+          nightmareActive={horde.phase !== 'locked' && horde.phase !== 'victory'}
+        >
           <Tank
             ref={tankRef}
             initialPosition={tankStartPosition}
@@ -1234,11 +1917,16 @@ function App() {
             onFlamethrower={handleFlamethrower}
             onFlameFuelChange={setFlameFuel}
             onNapalm={handleNapalm}
+            eagleTargeting={eagleTargeting}
+            onEagleTarget={handleEagleTarget}
             onMachineGunAudioChange={gameAudio.setMachineGunActive}
+            onCannonReloadChange={setCannonReload}
+            onMachineGunHeatChange={setMachineGunHeat}
             onFlamethrowerAudioChange={gameAudio.setFlamethrowerActive}
             onMovementAudioChange={gameAudio.setMovementActive}
             environmentSeed={environmentSeed}
             colliders={tankColliders}
+            disabled={horde.phase === 'defeat'}
           />
           <TankWaterEffects
             tankRef={tankRef}
@@ -1252,11 +1940,17 @@ function App() {
 
           <USInfantrySquad
             enemies={enemies}
+            zombies={horde.zombies}
+            zombiePosesRef={horde.posesRef}
             friendlies={friendlies}
             friendlyPosesRef={friendlyPosesRef}
             obstacles={combatObstacles}
-            enabled={hostileCount > 0 && friendlyAliveCount > 0}
+            enabled={(hostileCount > 0 || horde.phase === 'combat')
+              && horde.phase !== 'defeat'
+              && friendlyAliveCount > 0}
             onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'friendly-rifle')}
+            onZombieHit={handleFriendlyZombieHit}
+            onFriendlyFire={gameAudio.playFriendlyRifle}
           />
 
           <VietCongCombatants
@@ -1265,11 +1959,39 @@ function App() {
             friendlyPosesRef={friendlyPosesRef}
             tankRef={tankRef}
             obstacles={combatObstacles}
-            enabled={hostileCount > 0 && (tankIntegrity > 0 || friendlyAliveCount > 0)}
+            enabled={horde.phase !== 'defeat'
+              && hostileCount > 0
+              && (tankIntegrity > 0 || friendlyAliveCount > 0)}
             tankTargetEnabled={tankIntegrity > 0}
             onTankHit={event => handleTankHit(event.damage)}
             onFriendlyHit={event => handleFriendlyInfantryHit(event.friendlyId, event.damage)}
             onEnemyFire={gameAudio.playEnemyRifle}
+          />
+
+          <ZombieHorde
+            zombies={horde.zombies}
+            posesRef={horde.posesRef}
+            tankRef={tankRef}
+            friendliesRef={bossAllies.friendliesRef}
+            friendlyPosesRef={bossAllies.posesRef}
+            obstacles={combatObstacles}
+            active={horde.phase === 'combat' && !nightmareTakeover}
+            tankTargetEnabled={tankIntegrity > 0}
+            onTankBreach={handleZombieTankBreach}
+            onFriendlyBreach={handleZombieFriendlyBreach}
+          />
+
+          <FinalBossAllies
+            allies={bossAllies.allies}
+            posesRef={bossAllies.posesRef}
+            zombies={horde.zombies}
+            zombiePosesRef={horde.posesRef}
+            obstacles={combatObstacles}
+            enabled={finalBossEncounterActive && !nightmareTakeover}
+            onZombieHit={handleFriendlyZombieHit}
+            onFire={event => {
+              if (event.weapon !== 'cavalry-saber') gameAudio.playFriendlyRifle(event);
+            }}
           />
 
           <PortalCollision
@@ -1285,8 +2007,11 @@ function App() {
             despawn={despawn}
             onHit={handleProjectileCollision}
             onEnemyHit={handleEnemyProjectileHit}
+            onZombieHit={handleZombieProjectileHit}
             allBlocks={allBlocks}
             enemies={livingEnemies}
+            zombies={horde.zombies}
+            zombiePosesRef={horde.posesRef}
           />
 
           {explosions.length > 0 && (
@@ -1297,7 +2022,17 @@ function App() {
             <OrdnanceEffects
               napalmStrikes={napalmStrikes}
               onNapalmImpact={handleNapalmImpact}
+              onNapalmBurnTick={handleNapalmBurnTick}
               onNapalmComplete={handleNapalmComplete}
+            />
+          )}
+
+          {eagleStrikes.length > 0 && (
+            <BaldEagleSupport
+              strikes={eagleStrikes}
+              onImpact={handleEagleImpact}
+              onComplete={handleEagleComplete}
+              onAudioCue={handleEagleAudioCue}
             />
           )}
 

@@ -1,0 +1,225 @@
+.boss-allies {
+  position: fixed;
+  top: 158px;
+  left: 16px;
+  z-index: 96;
+  width: min(256px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.62);
+  border-left: 3px solid #d4ad4f;
+  background:
+    repeating-linear-gradient(100deg, rgba(228, 204, 121, 0.025) 0 1px, transparent 1px 11px),
+    rgba(10, 15, 8, 0.9);
+  color: #d9d2ad;
+  font-family: 'Courier New', monospace;
+  box-shadow: 0 8px 20px rgba(3, 7, 2, 0.34), inset 0 0 18px rgba(127, 143, 80, 0.06);
+  pointer-events: none;
+}
+
+.boss-allies-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 25px;
+  border-bottom: 1px solid rgba(135, 155, 99, 0.3);
+  padding: 4px 7px;
+  color: #9cab73;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.boss-allies-heading b {
+  color: #e0bb5b;
+  font-size: 10px;
+}
+
+.boss-allies-list {
+  display: grid;
+  gap: 1px;
+}
+
+.boss-ally {
+  position: relative;
+  display: grid;
+  grid-template-columns: 31px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  min-height: 43px;
+  padding: 5px 7px;
+  background: rgba(31, 41, 24, 0.48);
+  transition: opacity 300ms ease, filter 300ms ease, transform 300ms ease;
+}
+
+.boss-ally + .boss-ally {
+  border-top: 1px solid rgba(135, 155, 99, 0.15);
+}
+
+.boss-ally-icon {
+  position: relative;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #8f9e68;
+  border-radius: 50%;
+  color: #e0c56f;
+  background: radial-gradient(circle at 40% 35%, #4c5738, #1b2417 70%);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  box-shadow: 0 0 8px rgba(188, 181, 98, 0.14);
+}
+
+.boss-ally-icon::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(0deg, rgba(10, 17, 8, 0.14) 0 1px, transparent 1px 3px),
+    radial-gradient(circle at 50% 42%, transparent 48%, rgba(7, 10, 6, 0.38) 100%);
+  content: '';
+  pointer-events: none;
+}
+
+.boss-ally-icon img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: sepia(0.1) saturate(0.9) contrast(1.1);
+  transform: scale(1.06);
+}
+
+.boss-ally-icon span {
+  position: relative;
+  z-index: 0;
+}
+
+.boss-ally-copy,
+.boss-ally-copy > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.boss-ally-copy strong {
+  overflow: hidden;
+  color: #ddd5aa;
+  font-size: 10px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boss-ally-copy small {
+  overflow: hidden;
+  color: #7f8968;
+  font-size: 7px;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boss-ally-meter {
+  position: relative;
+  height: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 148, 91, 0.4);
+  background: rgba(5, 9, 4, 0.9);
+}
+
+.boss-ally-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #a5422d, #d0aa4e 46%, #91af69 78%);
+  box-shadow: 0 0 7px rgba(169, 190, 105, 0.42);
+  transition: width 220ms ease-out;
+}
+
+.boss-ally-meter i {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 8px;
+  background: #f3e0a0;
+  opacity: 0.7;
+  transition: left 220ms ease-out;
+}
+
+.boss-ally-value {
+  color: #c9b463;
+  font-size: 9px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.boss-ally.is-defeating {
+  animation: ally-defeat 1.65s ease-in forwards;
+  border-color: rgba(209, 76, 45, 0.58);
+  background: rgba(92, 29, 18, 0.42);
+}
+
+.boss-ally.is-defeating .boss-ally-meter span {
+  width: 0 !important;
+  background: #ae3926;
+}
+
+.boss-ally.is-defeating .boss-ally-value,
+.boss-ally.is-defeating .boss-ally-copy small {
+  color: #e36b46;
+}
+
+@keyframes ally-defeat {
+  0% { opacity: 1; filter: none; transform: translateX(0); }
+  18% { filter: brightness(1.7) sepia(0.35); transform: translateX(-3px); }
+  28% { transform: translateX(2px); }
+  56% { opacity: 0.72; filter: grayscale(0.55); }
+  100% { opacity: 0; filter: grayscale(1); transform: translateX(-12px); }
+}
+
+@media (max-width: 720px) {
+  .boss-allies {
+    top: 137px;
+    left: 8px;
+    width: min(228px, calc(100vw - 16px));
+  }
+
+  .boss-ally {
+    grid-template-columns: 27px minmax(0, 1fr) 26px;
+    min-height: 38px;
+    padding: 4px 6px;
+  }
+
+  .boss-ally-icon {
+    width: 25px;
+    height: 25px;
+  }
+}
+
+@media (max-height: 650px) {
+  .boss-allies-heading {
+    display: none;
+  }
+
+  .boss-ally {
+    min-height: 34px;
+    padding-block: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boss-ally,
+  .boss-ally-meter span,
+  .boss-ally-meter i {
+    transition: none;
+  }
+
+  .boss-ally.is-defeating {
+    animation: none;
+    opacity: 0.35;
+  }
+}

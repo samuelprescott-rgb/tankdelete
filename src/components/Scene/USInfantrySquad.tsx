@@ -15,6 +15,13 @@ import {
   terrainBlocksCombatSegment,
   US_INFANTRY_DEPLOYMENT,
 } from '../../lib/combat';
+import {
+  findNearestLivingZombieHit,
+  type FriendlyZombieHitEvent,
+  type ZombieCombatant,
+  type ZombieCombatPose,
+  ZOMBIE_MAX_ACTIVE,
+} from '../../lib/zombieEpilogue';
 
 const FRIENDLY_PROJECTILE_CAPACITY = 40;
 const FRIENDLY_RIFLE_SPEED = 31;
@@ -22,6 +29,7 @@ const FRIENDLY_RIFLE_LIFETIME = 2.7;
 // The squad sustains the firefight without clearing the whole encounter before
 // the player can engage; concentrated rifle fire still finishes exposed targets.
 const FRIENDLY_RIFLE_DAMAGE = 3;
+const FRIENDLY_ZOMBIE_RIFLE_DAMAGE = 5;
 const FRIENDLY_MAX_RANGE = 58;
 const TRACER_LENGTH = 0.58;
 const SOLDIER_SCALE = 0.96;
@@ -63,14 +71,18 @@ interface SoldierRuntime {
   moveEndsAt: number;
   moving: boolean;
   atAlternate: boolean;
+  wasAlive: boolean;
 }
 
 export interface USInfantrySquadProps {
   enemies: readonly EnemyCombatant[];
+  zombies?: readonly ZombieCombatant[];
+  zombiePosesRef?: React.RefObject<Map<string, ZombieCombatPose>>;
   friendlies: readonly FriendlyCombatant[];
   friendlyPosesRef: React.RefObject<Map<string, FriendlyCombatPose>>;
   obstacles?: readonly CombatObstacle[];
   onEnemyHit?: (event: FriendlyEnemyHitEvent) => void;
+  onZombieHit?: (event: FriendlyZombieHitEvent) => void;
   onFriendlyFire?: (event: FriendlyFireEvent) => void;
   enabled?: boolean;
 }
@@ -664,10 +676,13 @@ const TRACER_MATERIAL = {
 
 export function USInfantrySquad({
   enemies,
+  zombies = [],
+  zombiePosesRef,
   friendlies,
   friendlyPosesRef,
   obstacles = [],
   onEnemyHit,
+  onZombieHit,
   onFriendlyFire,
   enabled = true,
 }: USInfantrySquadProps) {
@@ -682,6 +697,25 @@ export function USInfantrySquad({
   const activeBoundMemberRef = useRef(-1);
   const boundCursorRef = useRef(0);
   const nextSquadBoundAtRef = useRef(5.8);
+  const combatTargetsRef = useRef<EnemyCombatant[]>([]);
+
+  // Reused adapters let the established cover-aware rifle logic aim at live
+  // zombie poses without allocating a fresh target array every animation frame.
+  const zombieTargetPool = useMemo<EnemyCombatant[]>(() => (
+    Array.from({ length: ZOMBIE_MAX_ACTIVE }, (_, index) => ({
+      id: `undead-proxy-${index}`,
+      position: [0, 0, 0],
+      health: 1,
+      maxHealth: 1,
+      alive: false,
+      stance: 'standing',
+      headwear: 'boonie',
+      uniformVariant: 0,
+      fireInterval: 1,
+      initialFireDelay: 0,
+      accuracy: 0,
+    }))
+  ), []);
 
   const projectilePool = useMemo<FriendlyProjectile[]>(() => (
     Array.from({ length: FRIENDLY_PROJECTILE_CAPACITY }, () => ({
@@ -735,6 +769,30 @@ export function USInfantrySquad({
 
   useFrame(({ clock }, delta) => {
     const now = clock.elapsedTime;
+    const combatTargets = combatTargetsRef.current;
+    combatTargets.length = 0;
+    let zombieTargetCount = 0;
+    if (zombiePosesRef) {
+      for (let index = 0; index < zombies.length && zombieTargetCount < ZOMBIE_MAX_ACTIVE; index += 1) {
+        const zombie = zombies[index];
+        const pose = zombiePosesRef.current.get(zombie.id);
+        if (!zombie.alive || !pose?.active) continue;
+        const proxy = zombieTargetPool[zombieTargetCount++];
+        proxy.id = zombie.id;
+        proxy.position[0] = pose.position.x;
+        proxy.position[1] = pose.position.y;
+        proxy.position[2] = pose.position.z;
+        proxy.health = zombie.health;
+        proxy.maxHealth = zombie.maxHealth;
+        proxy.alive = true;
+        combatTargets.push(proxy);
+      }
+    }
+    // During a horde push the squad prioritizes the advancing line. Once it is
+    // clear, the same pooled rifles resume their normal Viet Cong engagement.
+    if (zombieTargetCount === 0) {
+      for (const enemy of enemies) if (enemy.alive) combatTargets.push(enemy);
+    }
 
     if (!enabled) {
       for (const projectile of projectilePool) projectile.active = false;
@@ -763,6 +821,7 @@ export function USInfantrySquad({
           moveEndsAt: 0,
           moving: false,
           atAlternate: false,
+          wasAlive: friendlyAlive,
         };
         runtimeRef.current.set(member.id, runtime);
       }
@@ -770,7 +829,7 @@ export function USInfantrySquad({
       // One rifleman at a time makes a short, deterministic bound within the
       // protection of his existing emplacement. The radio operator holds fast.
       if (enabled
-        && enemies.length > 0
+        && combatTargets.length > 0
         && activeBoundMemberRef.current < 0
         && now >= nextSquadBoundAtRef.current) {
         let nextMover = -1;
@@ -808,11 +867,25 @@ export function USInfantrySquad({
         if (soldier) soldier.visible = false;
         if (flash) flash.visible = false;
         runtime.moving = false;
+        runtime.wasAlive = false;
         if (activeBoundMemberRef.current === memberIndex) {
           activeBoundMemberRef.current = -1;
           nextSquadBoundAtRef.current = now + 1.5;
         }
         continue;
+      }
+      if (!runtime.wasAlive) {
+        runtime.baseX = member.position[0];
+        runtime.baseZ = member.position[2];
+        runtime.moveFromX = member.position[0];
+        runtime.moveFromZ = member.position[2];
+        runtime.moveToX = member.position[0];
+        runtime.moveToZ = member.position[2];
+        runtime.moving = false;
+        runtime.atAlternate = false;
+        runtime.burstRemaining = member.burstSize;
+        runtime.nextShotAt = now + member.initialDelay;
+        runtime.wasAlive = true;
       }
       if (soldier) soldier.visible = true;
       let movementProgress = 0;
@@ -876,7 +949,7 @@ export function USInfantrySquad({
         if (flash.visible) flash.scale.setScalar(0.82 + Math.sin(now * 157 + memberIndex) * 0.18);
       }
 
-      if (!enabled || enemies.length === 0) {
+      if (!enabled || combatTargets.length === 0) {
         if (soldier) {
           soldier.rotation.y = Math.PI
             + Math.sin(now * 0.24 + memberIndex * 1.3) * (member.radioOperator ? 0.34 : 0.22);
@@ -890,8 +963,8 @@ export function USInfantrySquad({
       let preferredTarget: EnemyCombatant | null = null;
       let preferredTargetIndex = -1;
       let aimScore = Number.POSITIVE_INFINITY;
-      for (let enemyIndex = 0; enemyIndex < enemies.length; enemyIndex += 1) {
-        const candidate = enemies[enemyIndex];
+      for (let enemyIndex = 0; enemyIndex < combatTargets.length; enemyIndex += 1) {
+        const candidate = combatTargets[enemyIndex];
         if (!candidate.alive) continue;
         const dx = candidate.position[0] - (soldier?.position.x ?? runtime.baseX);
         const dz = candidate.position[2] - (soldier?.position.z ?? runtime.baseZ);
@@ -931,8 +1004,8 @@ export function USInfantrySquad({
       let suppressionTarget: EnemyCombatant | null = null;
       let selectedScore = Number.POSITIVE_INFINITY;
       let suppressionScore = Number.POSITIVE_INFINITY;
-      for (let enemyIndex = 0; enemyIndex < enemies.length; enemyIndex += 1) {
-        const candidate = enemies[enemyIndex];
+      for (let enemyIndex = 0; enemyIndex < combatTargets.length; enemyIndex += 1) {
+        const candidate = combatTargets[enemyIndex];
         if (!candidate.alive) continue;
         targetPosition.set(
           candidate.position[0],
@@ -1064,8 +1137,31 @@ export function USInfantrySquad({
         projectile.position,
         enemies,
       );
+      const zombieHit = zombiePosesRef
+        ? findNearestLivingZombieHit(
+            projectile.previousPosition,
+            projectile.position,
+            zombies,
+            zombiePosesRef.current,
+          )
+        : null;
 
-      if (enemyHit && (obstacleHitT === null || enemyHit.t < obstacleHitT)) {
+      if (zombieHit
+        && (!enemyHit || zombieHit.t <= enemyHit.t)
+        && (obstacleHitT === null || zombieHit.t < obstacleHitT)) {
+        impactPosition.copy(zombieHit.point);
+        onZombieHit?.({
+          soldierId: projectile.soldierId,
+          zombieId: zombieHit.zombie.id,
+          position: impactPosition.clone(),
+          damage: FRIENDLY_ZOMBIE_RIFLE_DAMAGE,
+        });
+        projectile.active = false;
+        continue;
+      }
+      if (enemyHit
+        && (!zombieHit || enemyHit.t < zombieHit.t)
+        && (obstacleHitT === null || enemyHit.t < obstacleHitT)) {
         impactPosition.copy(enemyHit.point);
         onEnemyHit?.({
           soldierId: projectile.soldierId,

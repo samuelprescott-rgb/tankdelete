@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
   NapalmStrike,
+  NAPALM_HAZARD_SAMPLE_SECONDS,
   NAPALM_STRIKE_LENGTH,
   NAPALM_STRIKE_WIDTH,
   NAPALM_TIMELINE,
@@ -95,7 +96,9 @@ function seededRandom(seed: number) {
   };
 }
 
-function createFlameTexture() {
+// Shared by compact secondary fire effects so their flame language stays
+// consistent with the authored napalm strike without duplicating the texture.
+export function createFlameTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 128;
@@ -131,10 +134,16 @@ function createFlameTexture() {
 interface NapalmStrikeVisualProps {
   strike: NapalmStrike;
   onImpact: (id: number) => void;
+  onBurnTick?: (id: number, burnStrength: number) => void;
   onComplete: (id: number) => void;
 }
 
-function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisualProps) {
+function NapalmStrikeVisual({
+  strike,
+  onImpact,
+  onBurnTick,
+  onComplete,
+}: NapalmStrikeVisualProps) {
   const strikeGroupRef = useRef<THREE.Group>(null);
   const jetRef = useRef<THREE.Group>(null);
   const bombRef = useRef<THREE.Group>(null);
@@ -153,6 +162,7 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
   const fireLightRef = useRef<THREE.PointLight>(null);
   const elapsedRef = useRef(0);
   const impactTriggeredRef = useRef(false);
+  const nextBurnSampleAtRef = useRef(0);
   const completedRef = useRef(false);
   const flightPathInitializedRef = useRef(false);
   const bombReleasedRef = useRef(false);
@@ -458,6 +468,10 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
           NAPALM_TIMELINE.rollingFireSeconds,
           totalFireSeconds,
         );
+      if (burnDown > 0 && fireAge >= nextBurnSampleAtRef.current) {
+        nextBurnSampleAtRef.current = fireAge + NAPALM_HAZARD_SAMPLE_SECONDS;
+        onBurnTick?.(strike.id, burnDown);
+      }
       const flickerTime = clock.elapsedTime;
 
       const outerFlames = outerFlameRef.current;
@@ -883,12 +897,14 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
 interface OrdnanceEffectsProps {
   napalmStrikes: NapalmStrike[];
   onNapalmImpact: (id: number) => void;
+  onNapalmBurnTick?: (id: number, burnStrength: number) => void;
   onNapalmComplete: (id: number) => void;
 }
 
 export function OrdnanceEffects({
   napalmStrikes,
   onNapalmImpact,
+  onNapalmBurnTick,
   onNapalmComplete,
 }: OrdnanceEffectsProps) {
   return (
@@ -898,6 +914,7 @@ export function OrdnanceEffects({
           key={strike.id}
           strike={strike}
           onImpact={onNapalmImpact}
+          onBurnTick={onNapalmBurnTick}
           onComplete={onNapalmComplete}
         />
       ))}

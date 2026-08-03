@@ -1,4 +1,6 @@
 import { useRef, useEffect } from 'react';
+import type { Vector3 } from 'three';
+import type { ZombieArchetype } from '../../lib/zombieEpilogue';
 
 interface MinimapProps {
   tankStateRef: React.RefObject<{ position: [number, number, number]; rotation: number }>;
@@ -12,6 +14,11 @@ interface MinimapProps {
   backPortalPosition: [number, number, number] | null;
   enemies: Array<{ position: [number, number, number] }>;
   friendlies?: ReadonlyArray<{ position: [number, number, number] }>;
+  zombiePosesRef?: React.RefObject<ReadonlyMap<string, {
+    position: Vector3;
+    active: boolean;
+    archetype?: ZombieArchetype;
+  }>>;
 }
 
 export function Minimap({
@@ -21,6 +28,7 @@ export function Minimap({
   backPortalPosition,
   enemies,
   friendlies = [],
+  zombiePosesRef,
 }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -180,6 +188,41 @@ export function Minimap({
         ctx.fill();
       }
 
+      // The arcade epilogue uses amber crosses so undead contacts remain
+      // distinct from both conventional hostiles and real file targets.
+      for (const pose of zombiePosesRef?.current?.values() ?? []) {
+        if (!pose.active) continue;
+        const pos = rotateAndScale(pose.position.x, pose.position.z, true);
+        if (!pos) continue;
+
+        if (pose.archetype === 'boss') {
+          const pulse = 6.2 + Math.sin(time * 5.5) * 1.15;
+          ctx.fillStyle = pos.clamped ? '#fff0b8' : '#d66c32';
+          ctx.strokeStyle = '#ffd77b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(pos.x, pos.y - pulse);
+          ctx.lineTo(pos.x + pulse, pos.y);
+          ctx.lineTo(pos.x, pos.y + pulse);
+          ctx.lineTo(pos.x - pulse, pos.y);
+          ctx.closePath();
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, pulse + 3, 0, Math.PI * 2);
+          ctx.stroke();
+          continue;
+        }
+
+        ctx.strokeStyle = pos.clamped ? '#ffe2a0' : '#f0a146';
+        ctx.lineWidth = pos.clamped ? 2 : 1.6;
+        ctx.beginPath();
+        ctx.moveTo(pos.x - 3.5, pos.y - 3.5);
+        ctx.lineTo(pos.x + 3.5, pos.y + 3.5);
+        ctx.moveTo(pos.x + 3.5, pos.y - 3.5);
+        ctx.lineTo(pos.x - 3.5, pos.y + 3.5);
+        ctx.stroke();
+      }
+
       // Friendly infantry use open blue-green chevrons so the two firing lines
       // remain readable without competing with file dots or hostile diamonds.
       for (const friendly of friendlies) {
@@ -227,7 +270,7 @@ export function Minimap({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition, enemies, friendlies]);
+  }, [tankStateRef, fileBlocks, folderPortals, backPortalPosition, enemies, friendlies, zombiePosesRef]);
 
   return (
     <canvas

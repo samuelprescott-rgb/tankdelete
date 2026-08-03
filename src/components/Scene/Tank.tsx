@@ -4,15 +4,19 @@ import { useKeyboardControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { TANK_SPEED, TANK_ROTATION_SPEED } from '../../lib/constants';
 import {
+  CANNON_RELOAD_SECONDS,
   FLAMETHROWER_CAPACITY_SECONDS,
   FLAMETHROWER_HIT_INTERVAL,
   FLAMETHROWER_RECHARGE_SECONDS,
+  MACHINE_GUN_BURST_SECONDS,
   MACHINE_GUN_FIRE_INTERVAL,
+  MACHINE_GUN_OVERHEAT_RECOVERY_SECONDS,
+  type CannonReloadState,
+  type MachineGunHeatState,
   WeaponMode,
 } from '../../lib/weapons';
 import { FlameStream } from './FlameStream';
 import { intersectsTerrainMound } from '../../lib/terrain';
-import { intersectsTankColliders } from '../../lib/worldCollision';
 import type { TankCollider } from '../../lib/worldCollision';
 import {
   ARENA_TANK_PADDING,
@@ -28,10 +32,11 @@ const TANK_COLLISION_RADIUS = 0.65;
 const MAX_MOVEMENT_SUBSTEP = 0.28;
 const MAX_MOVEMENT_DELTA = 0.25;
 
-function isTankPositionBlocked(x: number, z: number, colliders: readonly TankCollider[]) {
+function isTankPositionBlocked(x: number, z: number) {
+  // The tracked vehicle rolls through low battlefield scenery. Only authored
+  // terrain mounds and the sector perimeter remain hard movement blockers.
   return !isInsideArena(x, z, ARENA_TANK_PADDING)
-    || intersectsTerrainMound(x, z, TANK_COLLISION_RADIUS)
-    || intersectsTankColliders(x, z, TANK_COLLISION_RADIUS, colliders);
+    || intersectsTerrainMound(x, z, TANK_COLLISION_RADIUS);
 }
 
 // Controls enum
@@ -48,7 +53,10 @@ interface TankProps {
   onFlamethrower?: (position: THREE.Vector3, direction: THREE.Vector3, triggerId: number) => void;
   onFlameFuelChange?: (fuel: number) => void;
   onNapalm?: (target: THREE.Vector3, direction: THREE.Vector3) => void;
+  onEagleTarget?: (target: THREE.Vector3, direction: THREE.Vector3) => void;
   onMachineGunAudioChange?: (active: boolean) => void;
+  onCannonReloadChange?: (state: CannonReloadState) => void;
+  onMachineGunHeatChange?: (state: MachineGunHeatState) => void;
   onFlamethrowerAudioChange?: (active: boolean) => void;
   onMovementAudioChange?: (active: boolean) => void;
   weaponMode?: WeaponMode;
@@ -56,9 +64,11 @@ interface TankProps {
   tankStateRef?: React.RefObject<{ position: [number, number, number]; rotation: number }>;
   colliders?: readonly TankCollider[];
   environmentSeed?: number;
+  eagleTargeting?: boolean;
+  disabled?: boolean;
 }
 
-export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef, colliders = [], environmentSeed = 1968 }, tankRef) => {
+export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun, onFlamethrower, onFlameFuelChange, onNapalm, onEagleTarget, onMachineGunAudioChange, onCannonReloadChange, onMachineGunHeatChange, onFlamethrowerAudioChange, onMovementAudioChange, weaponMode = 'cannon', initialPosition = [0, 0, 0], tankStateRef, environmentSeed = 1968, eagleTargeting = false, disabled = false }, tankRef) => {
   const turretRef = useRef<THREE.Group>(null);
   const cannonBarrelRef = useRef<THREE.Group>(null);
   const cannonMuzzleRef = useRef<THREE.Group>(null);
@@ -73,6 +83,22 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   const triggerHeldRef = useRef(false);
   const triggerIdRef = useRef(0);
   const machineGunClockRef = useRef(0);
+  const machineGunBurstElapsedRef = useRef(0);
+  const machineGunOverheatedRef = useRef(false);
+  const machineGunRecoveryRemainingRef = useRef(0);
+  const cannonReadyAtRef = useRef(0);
+  const lastCannonReloadReportRef = useRef<CannonReloadState>({
+    progress: 1,
+    remainingSeconds: 0,
+    ready: true,
+  });
+  const lastMachineGunHeatReportRef = useRef<MachineGunHeatState>({
+    heat: 0,
+    firing: false,
+    overheated: false,
+    burstRemainingSeconds: MACHINE_GUN_BURST_SECONDS,
+    recoveryRemainingSeconds: 0,
+  });
   const flameHitClockRef = useRef(0);
   const flameFuelRef = useRef(FLAMETHROWER_CAPACITY_SECONDS);
   const flameLockedRef = useRef(false);
@@ -111,22 +137,133 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   // Get keyboard controls (use transient reads with get() to avoid re-renders)
   const [, get] = useKeyboardControls<Controls>();
 
+  function reportCannonReload(now: number, force = false) {
+    const remainingSeconds = Math.max(0, (cannonReadyAtRef.current - now) / 1_000);
+    const nextState: CannonReloadState = {
+      progress: THREE.MathUtils.clamp(1 - remainingSeconds / CANNON_RELOAD_SECONDS, 0, 1),
+      remainingSeconds,
+      ready: remainingSeconds === 0,
+    };
+    const previous = lastCannonReloadReportRef.current;
+    if (!force
+      && previous.ready === nextState.ready
+      && Math.abs(previous.progress - nextState.progress) < 0.01) return;
+    lastCannonReloadReportRef.current = nextState;
+    onCannonReloadChange?.(nextState);
+  }
+
+  function reportMachineGunHeat(force = false) {
+    const firing = machineGunVisualActiveRef.current;
+    const overheated = machineGunOverheatedRef.current;
+    const recoveryRemainingSeconds = overheated
+      ? Math.max(0, machineGunRecoveryRemainingRef.current)
+      : 0;
+    const heat = overheated
+      ? THREE.MathUtils.clamp(
+          recoveryRemainingSeconds / MACHINE_GUN_OVERHEAT_RECOVERY_SECONDS,
+          0,
+          1,
+        )
+      : firing
+        ? THREE.MathUtils.clamp(
+            machineGunBurstElapsedRef.current / MACHINE_GUN_BURST_SECONDS,
+            0,
+            1,
+          )
+        : 0;
+    const nextState: MachineGunHeatState = {
+      heat,
+      firing,
+      overheated,
+      burstRemainingSeconds: firing
+        ? Math.max(0, MACHINE_GUN_BURST_SECONDS - machineGunBurstElapsedRef.current)
+        : overheated
+          ? 0
+          : MACHINE_GUN_BURST_SECONDS,
+      recoveryRemainingSeconds,
+    };
+    const previous = lastMachineGunHeatReportRef.current;
+    if (!force
+      && previous.firing === nextState.firing
+      && previous.overheated === nextState.overheated
+      && Math.abs(previous.heat - nextState.heat) < 0.01) return;
+    lastMachineGunHeatReportRef.current = nextState;
+    onMachineGunHeatChange?.(nextState);
+  }
+
+  function stopMachineGunBurst(overheated = false) {
+    const wasFiring = machineGunVisualActiveRef.current;
+    machineGunVisualActiveRef.current = false;
+    if (wasFiring) onMachineGunAudioChange?.(false);
+
+    if (overheated) {
+      machineGunBurstElapsedRef.current = MACHINE_GUN_BURST_SECONDS;
+      machineGunOverheatedRef.current = true;
+      machineGunRecoveryRemainingRef.current = MACHINE_GUN_OVERHEAT_RECOVERY_SECONDS;
+      // A held pointer cannot buffer the next burst. The player must release
+      // and press again after the weapon has recovered.
+      triggerHeldRef.current = false;
+    } else if (!machineGunOverheatedRef.current) {
+      machineGunBurstElapsedRef.current = 0;
+    }
+    reportMachineGunHeat(true);
+  }
+
+  function resetWeaponCycles() {
+    triggerHeldRef.current = false;
+    onMachineGunAudioChange?.(false);
+    cannonReadyAtRef.current = 0;
+    machineGunClockRef.current = 0;
+    machineGunBurstElapsedRef.current = 0;
+    machineGunOverheatedRef.current = false;
+    machineGunRecoveryRemainingRef.current = 0;
+    machineGunVisualActiveRef.current = false;
+    reportCannonReload(performance.now(), true);
+    reportMachineGunHeat(true);
+  }
+
   // Reset tank position when initialPosition changes (directory navigation)
   useEffect(() => {
     if (tankRef && 'current' in tankRef && tankRef.current) {
       tankRef.current.position.set(initialPosition[0], initialPosition[1], initialPosition[2]);
       tankRef.current.rotation.y = Math.PI; // Face toward files (+Z direction)
     }
+    resetWeaponCycles();
+    // The tuple is the authoritative tank-session reset signal. Callback
+    // identities intentionally do not restart weapon cycles mid-encounter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPosition, tankRef]);
+
+  useEffect(() => {
+    reportCannonReload(performance.now(), true);
+    reportMachineGunHeat(true);
+    // These callbacks only publish the current snapshot when a HUD consumer
+    // mounts; changing them must not alter any gameplay clock.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCannonReloadChange, onMachineGunHeatChange]);
 
   useEffect(() => {
     triggerHeldRef.current = false;
     flameActiveRef.current = false;
-    machineGunVisualActiveRef.current = false;
+    stopMachineGunBurst(false);
     setFlameActive(false);
-    onMachineGunAudioChange?.(false);
     onFlamethrowerAudioChange?.(false);
+    // Weapon selection must not clear an active overheat recovery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weaponMode, onMachineGunAudioChange, onFlamethrowerAudioChange]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    triggerHeldRef.current = false;
+    flameActiveRef.current = false;
+    movementAudioActiveRef.current = false;
+    setFlameActive(false);
+    stopMachineGunBurst(false);
+    resetWeaponCycles();
+    onFlamethrowerAudioChange?.(false);
+    onMovementAudioChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled, onFlamethrowerAudioChange, onMachineGunAudioChange, onMovementAudioChange]);
 
   useEffect(() => () => {
     onMachineGunAudioChange?.(false);
@@ -138,23 +275,41 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
       // Only fire on left click (button 0)
-      if (event.button !== 0) return;
+      if (disabled || event.button !== 0) return;
       if ((event.target as HTMLElement | null)?.closest?.('[data-game-ui]')) return;
       if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
+      // Reject duplicate pointerdown delivery while a physical press is still
+      // active. This closes the input-buffer path for cannon and automatic fire.
+      if (triggerHeldRef.current) return;
+
+      const now = performance.now();
+      if (!eagleTargeting && weaponMode === 'cannon' && now < cannonReadyAtRef.current) {
+        reportCannonReload(now, true);
+        return;
+      }
+      if (!eagleTargeting && weaponMode === 'machinegun' && machineGunOverheatedRef.current) {
+        reportMachineGunHeat(true);
+        return;
+      }
 
       triggerHeldRef.current = true;
       triggerIdRef.current += 1;
       machineGunClockRef.current = 0;
       flameHitClockRef.current = 0;
 
-      const activeMuzzle = weaponMode === 'machinegun'
-        ? machineGunMuzzleRef.current
-        : weaponMode === 'flamethrower'
-          ? flameMuzzleRef.current
-          : weaponMode === 'cannon'
-            ? cannonMuzzleRef.current
-            : turretRef.current;
-      if (!activeMuzzle) return;
+      const activeMuzzle = eagleTargeting
+        ? turretRef.current
+        : weaponMode === 'machinegun'
+          ? machineGunMuzzleRef.current
+          : weaponMode === 'flamethrower'
+            ? flameMuzzleRef.current
+            : weaponMode === 'cannon'
+              ? cannonMuzzleRef.current
+              : turretRef.current;
+      if (!activeMuzzle) {
+        triggerHeldRef.current = false;
+        return;
+      }
 
       activeMuzzle.getWorldPosition(tempWorldPos);
       activeMuzzle.getWorldDirection(tempWorldDir);
@@ -165,13 +320,28 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
 
       const spawnPosition = tempWorldPos.clone();
 
-      if (weaponMode === 'cannon') {
+      if (eagleTargeting) {
+        raycaster.setFromCamera(pointer, camera);
+        if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
+          intersection.x = clampArenaX(intersection.x, ARENA_TANK_PADDING);
+          intersection.z = clampArenaZ(intersection.z, ARENA_TANK_PADDING);
+          onEagleTarget?.(intersection.clone(), tempWorldDir.clone());
+        }
+        triggerHeldRef.current = false;
+      } else if (weaponMode === 'cannon') {
+        // Arm the lock before invoking application code so a synchronous or
+        // duplicated input event cannot squeeze in a second shot.
+        cannonReadyAtRef.current = now + CANNON_RELOAD_SECONDS * 1_000;
+        reportCannonReload(now, true);
         cannonRecoilRef.current = 1;
         onShoot?.(spawnPosition, tempWorldDir.clone());
       } else if (weaponMode === 'machinegun') {
+        machineGunBurstElapsedRef.current = 0;
+        machineGunClockRef.current = 0;
         machineGunVisualActiveRef.current = true;
         onMachineGunAudioChange?.(true);
         onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
+        reportMachineGunHeat(true);
       } else if (weaponMode === 'flamethrower' && !flameLockedRef.current && flameFuelRef.current > 0) {
         flameActiveRef.current = true;
         setFlameActive(true);
@@ -194,18 +364,16 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       if (event.button !== 0) return;
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
-      machineGunVisualActiveRef.current = false;
       setFlameActive(false);
-      onMachineGunAudioChange?.(false);
+      stopMachineGunBurst(false);
       onFlamethrowerAudioChange?.(false);
     }
 
     function handleWindowBlur() {
       triggerHeldRef.current = false;
       flameActiveRef.current = false;
-      machineGunVisualActiveRef.current = false;
       setFlameActive(false);
-      onMachineGunAudioChange?.(false);
+      stopMachineGunBurst(false);
       onFlamethrowerAudioChange?.(false);
     }
 
@@ -218,10 +386,24 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       document.removeEventListener('pointerup', handlePointerUp, true);
       window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, onMachineGunAudioChange, onFlamethrowerAudioChange, weaponMode, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
+  }, [tankRef, onShoot, onMachineGun, onFlamethrower, onNapalm, onEagleTarget, onMachineGunAudioChange, onCannonReloadChange, onMachineGunHeatChange, onFlamethrowerAudioChange, weaponMode, eagleTargeting, disabled, tempWorldPos, tempWorldDir, raycaster, pointer, camera, groundPlane, intersection]);
 
   useFrame(({ clock }, delta) => {
     if (!tankRef || !('current' in tankRef) || !tankRef.current || !turretRef.current) return;
+    if (disabled) return;
+
+    reportCannonReload(performance.now());
+    if (machineGunOverheatedRef.current) {
+      machineGunRecoveryRemainingRef.current = Math.max(
+        0,
+        machineGunRecoveryRemainingRef.current - delta,
+      );
+      if (machineGunRecoveryRemainingRef.current === 0) {
+        machineGunOverheatedRef.current = false;
+        machineGunBurstElapsedRef.current = 0;
+      }
+      reportMachineGunHeat();
+    }
 
     const tank = tankRef.current;
     const controls = get();
@@ -269,8 +451,8 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     }
 
     // Tank body movement (W/S keys)
-    // Cap resume-from-background deltas, then use short substeps. This prevents
-    // a low-frame-rate tank from tunnelling through a narrow sandbag or wreck.
+    // Cap resume-from-background deltas, then use short substeps so the tank
+    // cannot tunnel through a terrain mound or the sector perimeter.
     if (controls.forward || controls.backward) {
       // Get forward direction based on tank body rotation
       direction.set(0, 0, -1);
@@ -309,7 +491,7 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
 
         for (let substep = 0; substep < substepCount; substep += 1) {
           nextPosition.set(tank.position.x + deltaX, tank.position.y, tank.position.z + deltaZ);
-          if (!isTankPositionBlocked(nextPosition.x, nextPosition.z, colliders)) {
+          if (!isTankPositionBlocked(nextPosition.x, nextPosition.z)) {
             tank.position.copy(nextPosition);
             continue;
           }
@@ -317,12 +499,10 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
           const canSlideX = !isTankPositionBlocked(
             tank.position.x + deltaX,
             tank.position.z,
-            colliders,
           );
           const canSlideZ = !isTankPositionBlocked(
             tank.position.x,
             tank.position.z + deltaZ,
-            colliders,
           );
           if (canSlideX && (!canSlideZ || Math.abs(deltaX) >= Math.abs(deltaZ))) {
             slidePosition.set(tank.position.x + deltaX, tank.position.y, tank.position.z);
@@ -362,11 +542,24 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
     tempWorldDir.negate();
     const spawnPosition = tempWorldPos.clone();
 
-    if (weaponMode === 'machinegun' && triggerHeldRef.current) {
-      machineGunClockRef.current += delta;
+    if (weaponMode === 'machinegun'
+      && triggerHeldRef.current
+      && machineGunVisualActiveRef.current
+      && !machineGunOverheatedRef.current) {
+      const burstDelta = Math.min(
+        delta,
+        Math.max(0, MACHINE_GUN_BURST_SECONDS - machineGunBurstElapsedRef.current),
+      );
+      machineGunBurstElapsedRef.current += burstDelta;
+      machineGunClockRef.current += burstDelta;
       if (machineGunClockRef.current >= MACHINE_GUN_FIRE_INTERVAL) {
         machineGunClockRef.current %= MACHINE_GUN_FIRE_INTERVAL;
         onMachineGun?.(spawnPosition, tempWorldDir.clone(), triggerIdRef.current);
+      }
+      if (machineGunBurstElapsedRef.current >= MACHINE_GUN_BURST_SECONDS) {
+        stopMachineGunBurst(true);
+      } else {
+        reportMachineGunHeat();
       }
     }
 

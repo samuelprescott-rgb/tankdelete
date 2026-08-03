@@ -1,0 +1,323 @@
+.nightmare-takeover {
+  --nightmare-hot: #d9d9d9;
+  --nightmare-cold: #8e8e8e;
+  --nightmare-paper: #eeeeee;
+  --nightmare-title: #f02e25;
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  isolation: isolate;
+  contain: paint;
+  color: var(--nightmare-paper);
+  background: rgba(0, 0, 0, 0.34);
+  -webkit-backdrop-filter: grayscale(1) contrast(1.42) brightness(0.58);
+  backdrop-filter: grayscale(1) contrast(1.42) brightness(0.58);
+  animation: nightmare-signal-envelope 3.2s linear both;
+}
+
+.nightmare-takeover.is-boss {
+  --nightmare-hot: #eeeeee;
+  --nightmare-cold: #969696;
+  --nightmare-paper: #f7f7f7;
+  --nightmare-title: #ff2d25;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.nightmare-takeover__backdrop,
+.nightmare-takeover__static,
+.nightmare-takeover__scanlines,
+.nightmare-takeover__tears,
+.nightmare-takeover__dropout {
+  position: absolute;
+  inset: 0;
+}
+
+.nightmare-takeover__backdrop {
+  z-index: -4;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 25% 72%, rgba(255, 255, 255, 0.08)),
+    radial-gradient(circle at 50% 48%, rgba(108, 108, 108, 0.36), transparent 34%),
+    radial-gradient(circle at 50% 50%, rgba(8, 8, 8, 0.2), rgba(0, 0, 0, 0.92) 76%);
+}
+
+.is-boss .nightmare-takeover__backdrop {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07), transparent 25% 72%, rgba(255, 255, 255, 0.1)),
+    radial-gradient(circle at 50% 48%, rgba(118, 118, 118, 0.42), transparent 34%),
+    radial-gradient(circle at 50% 50%, rgba(6, 6, 6, 0.22), rgba(0, 0, 0, 0.95) 76%);
+}
+
+.nightmare-takeover__static {
+  z-index: -2;
+  inset: -18%;
+  opacity: 0.13;
+  background-image:
+    repeating-radial-gradient(circle at 31% 43%, transparent 0 2px, rgba(255, 255, 255, 0.31) 3px, transparent 4px 8px),
+    repeating-linear-gradient(103deg, rgba(210, 210, 210, 0.16) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(17deg, transparent 0 5px, rgba(132, 132, 132, 0.2) 6px, transparent 7px 13px);
+  background-size: 43px 37px, 71px 53px, 89px 67px;
+  will-change: transform, opacity;
+  animation: nightmare-static-shift 0.52s steps(2, end) infinite;
+}
+
+.nightmare-takeover__scanlines {
+  z-index: 3;
+  opacity: 0.3;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    rgba(0, 0, 0, 0.48) 4px,
+    rgba(230, 230, 230, 0.05) 5px
+  );
+  will-change: transform;
+  animation: nightmare-scan-roll 0.7s linear infinite;
+}
+
+.nightmare-takeover__signal-frame {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(88vw, 980px);
+  transform: translate(-50%, -50%);
+  justify-items: center;
+  gap: clamp(8px, 1.4vh, 15px);
+  border-block: 1px solid color-mix(in srgb, var(--nightmare-hot) 68%, transparent);
+  padding: clamp(30px, 6vh, 68px) clamp(18px, 4vw, 56px);
+  text-align: center;
+  text-transform: uppercase;
+  background:
+    linear-gradient(90deg, transparent, rgba(6, 6, 6, 0.76) 18% 82%, transparent),
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(255, 255, 255, 0.025) 15px 16px);
+  box-shadow:
+    inset 0 1px rgba(240, 240, 240, 0.06),
+    inset 0 -1px rgba(150, 150, 150, 0.08);
+  will-change: transform, opacity;
+  animation: nightmare-frame-lock 3.2s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.nightmare-takeover__kicker {
+  color: color-mix(in srgb, var(--nightmare-cold) 82%, #fff 18%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(8px, 1.1vw, 12px);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+}
+
+.nightmare-takeover__title {
+  position: relative;
+  display: block;
+  color: var(--nightmare-title);
+  font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
+  font-size: clamp(48px, 10vw, 132px);
+  font-weight: 900;
+  letter-spacing: clamp(0.025em, 0.65vw, 0.09em);
+  line-height: 0.86;
+  text-shadow:
+    -3px 0 0 rgba(90, 0, 0, 0.72),
+    4px 0 0 rgba(255, 96, 82, 0.44),
+    0 4px 22px rgba(0, 0, 0, 0.92);
+}
+
+.nightmare-takeover__title::before,
+.nightmare-takeover__title::after {
+  position: absolute;
+  inset: 0;
+  content: attr(data-text);
+  overflow: hidden;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.nightmare-takeover__title::before {
+  color: #941b17;
+  opacity: 0.42;
+  clip-path: inset(8% 0 66% 0);
+  animation: nightmare-title-tear-a 0.86s steps(1, end) infinite;
+}
+
+.nightmare-takeover__title::after {
+  color: #ff5147;
+  opacity: 0.46;
+  clip-path: inset(63% 0 12% 0);
+  animation: nightmare-title-tear-b 1.12s steps(1, end) infinite reverse;
+}
+
+.nightmare-takeover__wave-number {
+  display: flex;
+  align-items: baseline;
+  gap: 0.34em;
+  color: var(--nightmare-hot);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1;
+}
+
+.nightmare-takeover__wave-number span {
+  font-size: clamp(10px, 1.35vw, 16px);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.nightmare-takeover__wave-number b {
+  font-size: clamp(24px, 4.2vw, 54px);
+  letter-spacing: 0.08em;
+}
+
+.nightmare-takeover__signal-frame p {
+  margin: 0;
+  color: color-mix(in srgb, var(--nightmare-paper) 72%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(9px, 1.15vw, 13px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.is-boss .nightmare-takeover__signal-frame p,
+.is-boss .nightmare-takeover__wave-number {
+  color: #eeeeee;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.2);
+}
+
+.nightmare-takeover__tears {
+  z-index: 4;
+}
+
+.nightmare-takeover__tears span {
+  position: absolute;
+  right: -12%;
+  left: -12%;
+  height: 4.5%;
+  opacity: 0;
+  background:
+    linear-gradient(90deg, transparent 3%, rgba(225, 225, 225, 0.2) 18% 33%, transparent 52%),
+    linear-gradient(90deg, transparent 42%, rgba(125, 125, 125, 0.24) 63% 84%, transparent 96%);
+  will-change: transform, opacity;
+  animation: nightmare-horizontal-tear 1.05s steps(1, end) infinite;
+}
+
+.nightmare-takeover__tears span:nth-child(1) { top: 18%; animation-delay: -0.12s; }
+.nightmare-takeover__tears span:nth-child(2) { top: 39%; height: 2.5%; animation-delay: -0.58s; animation-duration: 1.34s; }
+.nightmare-takeover__tears span:nth-child(3) { top: 64%; height: 7%; animation-delay: -0.81s; animation-duration: 1.58s; }
+.nightmare-takeover__tears span:nth-child(4) { top: 82%; height: 3%; animation-delay: -0.34s; animation-duration: 1.21s; }
+
+.nightmare-takeover__dropout {
+  z-index: 5;
+  background: #010101;
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: nightmare-dark-dropout 3.2s steps(1, end) both;
+}
+
+@keyframes nightmare-signal-envelope {
+  0% { opacity: 0; }
+  5% { opacity: 0.94; }
+  24% { opacity: 0.94; }
+  27% { opacity: 0.52; }
+  30% { opacity: 0.95; }
+  62% { opacity: 0.95; }
+  66% { opacity: 0.72; }
+  69% { opacity: 0.96; }
+  91% { opacity: 0.96; }
+  100% { opacity: 0; }
+}
+
+@keyframes nightmare-static-shift {
+  0% { transform: translate3d(-2%, 1%, 0) scale(1.02); opacity: 0.08; }
+  50% { transform: translate3d(2%, -1.5%, 0) scale(1.01); opacity: 0.16; }
+  100% { transform: translate3d(-1%, 2%, 0) scale(1.03); opacity: 0.1; }
+}
+
+@keyframes nightmare-scan-roll {
+  from { transform: translate3d(0, -10px, 0); }
+  to { transform: translate3d(0, 10px, 0); }
+}
+
+@keyframes nightmare-frame-lock {
+  0% { opacity: 0; transform: translate(-54%, -47%) scaleX(1.08); }
+  7% { opacity: 0.9; transform: translate(-48%, -51%) scaleX(0.98); }
+  13% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
+  68% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
+  72% { opacity: 0.76; transform: translate(-49%, -50%) scaleX(1.025); }
+  76% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
+  92% { opacity: 1; transform: translate(-50%, -50%) scaleX(1); }
+  100% { opacity: 0; transform: translate(-46%, -53%) scaleX(1.1); }
+}
+
+@keyframes nightmare-title-tear-a {
+  0%, 18%, 100% { transform: translate(0); opacity: 0.2; }
+  19%, 25% { transform: translate(-0.055em, -0.02em); opacity: 0.58; }
+  26%, 64% { transform: translate(0.018em, 0); opacity: 0.26; }
+  65%, 72% { transform: translate(0.075em, 0.015em); opacity: 0.5; }
+  73%, 99% { transform: translate(0); opacity: 0.22; }
+}
+
+@keyframes nightmare-title-tear-b {
+  0%, 29%, 100% { transform: translate(0); opacity: 0.2; }
+  30%, 36% { transform: translate(0.065em, 0.025em); opacity: 0.52; }
+  37%, 78% { transform: translate(-0.016em, 0); opacity: 0.25; }
+  79%, 85% { transform: translate(-0.085em, -0.015em); opacity: 0.56; }
+  86%, 99% { transform: translate(0); opacity: 0.22; }
+}
+
+@keyframes nightmare-horizontal-tear {
+  0%, 16%, 100% { opacity: 0; transform: translate3d(-5%, 0, 0) skewX(0deg); }
+  17%, 23% { opacity: 0.48; transform: translate3d(7%, 0, 0) skewX(-8deg); }
+  24%, 71% { opacity: 0; transform: translate3d(0, 0, 0); }
+  72%, 77% { opacity: 0.28; transform: translate3d(-4%, 0, 0) skewX(5deg); }
+  78%, 99% { opacity: 0; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes nightmare-dark-dropout {
+  0%, 20%, 24%, 55%, 58%, 84%, 87%, 100% { opacity: 0; transform: scaleY(1); }
+  21%, 23% { opacity: 0.46; transform: scaleY(0.72); }
+  56%, 57% { opacity: 0.28; transform: scaleY(1); }
+  85%, 86% { opacity: 0.38; transform: scaleY(0.9); }
+}
+
+@keyframes nightmare-reduced-envelope {
+  0% { opacity: 0; }
+  12%, 88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 600px) {
+  .nightmare-takeover__signal-frame {
+    width: 94vw;
+    padding-inline: 10px;
+  }
+
+  .nightmare-takeover__title {
+    font-size: clamp(42px, 14vw, 76px);
+    line-height: 0.92;
+  }
+
+  .nightmare-takeover__signal-frame p {
+    max-width: 88vw;
+    line-height: 1.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nightmare-takeover {
+    animation: nightmare-reduced-envelope 3.2s ease both;
+  }
+
+  .nightmare-takeover__static,
+  .nightmare-takeover__scanlines,
+  .nightmare-takeover__signal-frame,
+  .nightmare-takeover__title::before,
+  .nightmare-takeover__title::after,
+  .nightmare-takeover__tears span,
+  .nightmare-takeover__dropout {
+    animation: none;
+  }
+
+  .nightmare-takeover__static { opacity: 0.06; transform: none; }
+  .nightmare-takeover__scanlines { opacity: 0.16; transform: none; }
+  .nightmare-takeover__signal-frame { opacity: 1; transform: translate(-50%, -50%); }
+  .nightmare-takeover__tears span,
+  .nightmare-takeover__dropout { opacity: 0; }
+}
