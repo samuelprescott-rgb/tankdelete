@@ -65,6 +65,8 @@ Grab the latest installer for your platform from the [Releases](https://github.c
 - **Windows**: `.msi` or `.exe`
 - **Linux**: `.deb` or `.AppImage`
 
+See the [changelog](CHANGELOG.md) for release-by-release updates.
+
 ## Build from Source
 
 Requires [Rust](https://rustup.rs/), [Bun](https://bun.sh/), and platform dependencies for [Tauri v2](https://v2.tauri.app/start/prerequisites/).
