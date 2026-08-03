@@ -26,6 +26,9 @@ const AMBIENT_TIMING = {
   combatGapMs: [18_000, 36_000],
 } as const;
 
+const ENEMY_RIFLE_VOICE_COUNT = 3;
+const ENEMY_RIFLE_MIN_GAP_MS = 115;
+
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
@@ -42,7 +45,10 @@ export function useGameAudio() {
   const cannonRef = useRef<HTMLAudioElement | null>(null);
   const napalmPoolRef = useRef<HTMLAudioElement[]>([]);
   const gearShiftRef = useRef<HTMLAudioElement | null>(null);
-  const enemyRifleRef = useRef<HTMLAudioElement | null>(null);
+  const enemyRiflePoolRef = useRef<HTMLAudioElement[]>([]);
+  const enemyRifleFadeFramesRef = useRef(new Map<HTMLAudioElement, number>());
+  const enemyRifleVoiceTokensRef = useRef(new Map<HTMLAudioElement, number>());
+  const lastEnemyRifleAtRef = useRef(-Infinity);
   const distantRifleRef = useRef<HTMLAudioElement | null>(null);
   const distantCannonRef = useRef<HTMLAudioElement | null>(null);
   const machineGunRef = useRef<HTMLAudioElement | null>(null);
@@ -61,11 +67,26 @@ export function useGameAudio() {
   const battlefieldActiveRef = useRef(false);
   const riverAudioRef = useRef<RiverAudioGraph | null>(null);
 
+  const releaseEnemyRifleVoice = useCallback((audio: HTMLAudioElement) => {
+    enemyRifleVoiceTokensRef.current.set(
+      audio,
+      (enemyRifleVoiceTokensRef.current.get(audio) ?? 0) + 1,
+    );
+    const fadeFrame = enemyRifleFadeFramesRef.current.get(audio);
+    if (fadeFrame !== undefined) window.cancelAnimationFrame(fadeFrame);
+    enemyRifleFadeFramesRef.current.delete(audio);
+    audio.pause();
+    audio.volume = 0;
+  }, []);
+
   useEffect(() => {
     cannonRef.current = createAudio(AUDIO_PATHS.cannon, 0.78);
     napalmPoolRef.current = Array.from({ length: 2 }, () => createAudio(AUDIO_PATHS.napalm, 0.74));
     gearShiftRef.current = createAudio(AUDIO_PATHS.gearShift, 0.4);
-    enemyRifleRef.current = createAudio(AUDIO_PATHS.machineGun, 0.2);
+    enemyRiflePoolRef.current = Array.from(
+      { length: ENEMY_RIFLE_VOICE_COUNT },
+      () => createAudio(AUDIO_PATHS.machineGun, 0),
+    );
     distantRifleRef.current = createAudio(AUDIO_PATHS.machineGun, 0.075);
     distantCannonRef.current = createAudio(AUDIO_PATHS.cannon, 0.085);
     machineGunRef.current = createAudio(AUDIO_PATHS.machineGun, 0.56, true);
@@ -87,7 +108,7 @@ export function useGameAudio() {
         cannonRef.current,
         ...napalmPoolRef.current,
         gearShiftRef.current,
-        enemyRifleRef.current,
+        ...enemyRiflePoolRef.current,
         distantRifleRef.current,
         distantCannonRef.current,
         machineGunRef.current,
@@ -98,6 +119,8 @@ export function useGameAudio() {
       ]) {
         audio?.pause();
       }
+      for (const audio of enemyRiflePoolRef.current) releaseEnemyRifleVoice(audio);
+      enemyRiflePoolRef.current = [];
       for (const audio of activeOneShotsRef.current) audio.pause();
       activeOneShotsRef.current.clear();
       const riverAudio = riverAudioRef.current;
@@ -111,7 +134,7 @@ export function useGameAudio() {
         void riverAudio.context.close().catch(() => {});
       }
     };
-  }, []);
+  }, [releaseEnemyRifleVoice]);
 
   const ensureRiverAudio = useCallback(() => {
     if (riverAudioRef.current) return riverAudioRef.current;
@@ -377,8 +400,70 @@ export function useGameAudio() {
 
   const playEnemyRifle = useCallback(() => {
     ensureBattlefieldAmbience();
-    playOneShot(enemyRifleRef.current, { playbackRate: 1.3, maxDurationMs: 260 });
-  }, [ensureBattlefieldAmbience, playOneShot]);
+    const now = performance.now();
+    if (now - lastEnemyRifleAtRef.current < ENEMY_RIFLE_MIN_GAP_MS) return;
+
+    const audio = enemyRiflePoolRef.current.find(candidate => candidate.paused);
+    if (!audio) return;
+    lastEnemyRifleAtRef.current = now;
+
+    const peakVolume = randomBetween(0.075, 0.105);
+    // Span at least two typical 60 Hz frames so a random mid-waveform seek
+    // never jumps straight from silence to full volume.
+    const attackDurationMs = randomBetween(24, 32);
+    const fadeDelayMs = randomBetween(110, 135);
+    const fadeDurationMs = randomBetween(80, 100);
+    const voiceToken = (enemyRifleVoiceTokensRef.current.get(audio) ?? 0) + 1;
+    enemyRifleVoiceTokensRef.current.set(audio, voiceToken);
+    audio.playbackRate = randomBetween(1.08, 1.28);
+    audio.volume = 0;
+    try {
+      const maximumOffset = Number.isFinite(audio.duration)
+        ? Math.max(0.12, Math.min(5.8, audio.duration - 0.35))
+        : 1.4;
+      audio.currentTime = randomBetween(0.08, maximumOffset);
+    } catch {
+      // A not-yet-decoded voice naturally starts at the beginning this time.
+    }
+
+    void audio.play().then(() => {
+      if (enemyRifleVoiceTokensRef.current.get(audio) !== voiceToken) return;
+      if (!battlefieldActiveRef.current || !enemyRiflePoolRef.current.includes(audio)) {
+        releaseEnemyRifleVoice(audio);
+        return;
+      }
+      const attackStartsAt = performance.now();
+      const attackEndsAt = attackStartsAt + attackDurationMs;
+      const fadeStartsAt = attackStartsAt + fadeDelayMs;
+      const fadeEndsAt = fadeStartsAt + fadeDurationMs;
+      const fade = (frameNow: number) => {
+        if (enemyRifleVoiceTokensRef.current.get(audio) !== voiceToken) return;
+        if (frameNow >= fadeEndsAt) {
+          enemyRifleFadeFramesRef.current.delete(audio);
+          audio.pause();
+          audio.volume = 0;
+          return;
+        }
+        if (frameNow < attackEndsAt) {
+          const progress = Math.max(0, (frameNow - attackStartsAt) / attackDurationMs);
+          audio.volume = peakVolume * Math.min(1, progress);
+        } else if (frameNow < fadeStartsAt) {
+          audio.volume = peakVolume;
+        } else {
+          const progress = (frameNow - fadeStartsAt) / fadeDurationMs;
+          audio.volume = peakVolume * Math.pow(1 - progress, 2);
+        }
+        const frameId = window.requestAnimationFrame(fade);
+        enemyRifleFadeFramesRef.current.set(audio, frameId);
+      };
+      const frameId = window.requestAnimationFrame(fade);
+      enemyRifleFadeFramesRef.current.set(audio, frameId);
+    }).catch(() => {
+      if (enemyRifleVoiceTokensRef.current.get(audio) === voiceToken) {
+        releaseEnemyRifleVoice(audio);
+      }
+    });
+  }, [ensureBattlefieldAmbience, releaseEnemyRifleVoice]);
 
   const setMachineGunActive = useCallback((active: boolean) => {
     if (active) ensureBattlefieldAmbience();
@@ -453,6 +538,8 @@ export function useGameAudio() {
     stopLoop(flamethrowerRef.current);
     stopLoop(engineRef.current);
     stopLoop(battlefieldRef.current);
+    lastEnemyRifleAtRef.current = -Infinity;
+    for (const audio of enemyRiflePoolRef.current) releaseEnemyRifleVoice(audio);
     for (const timerId of napalmStartTimerIdsRef.current) window.clearTimeout(timerId);
     napalmStartTimerIdsRef.current.clear();
     for (const audio of napalmPoolRef.current) stopLoop(audio);
@@ -463,7 +550,7 @@ export function useGameAudio() {
       riverAudio.gain.gain.setTargetAtTime(0, now, 0.08);
     }
     stopAmbientEvents();
-  }, [stopAmbientEvents, stopLoop]);
+  }, [releaseEnemyRifleVoice, stopAmbientEvents, stopLoop]);
 
   return {
     playCannon,

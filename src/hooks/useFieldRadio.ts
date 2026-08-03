@@ -15,6 +15,9 @@ export function useFieldRadio() {
   const [playing, setPlaying] = useState(false);
   const mutedRef = useRef(false);
   const playingRef = useRef(false);
+  const pendingFirstLaunchRef = useRef(false);
+  const primingPromiseRef = useRef<Promise<boolean> | null>(null);
+  const lifecycleTokenRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const updatePlaying = useCallback((next: boolean) => {
@@ -30,7 +33,7 @@ export function useFieldRadio() {
     audio.loop = true;
     audio.volume = RADIO_VOLUME;
     audio.muted = mutedRef.current;
-    audio.onplaying = () => updatePlaying(true);
+    audio.onplaying = () => updatePlaying(!audio.muted);
     audio.onpause = () => updatePlaying(false);
     audio.onerror = () => updatePlaying(false);
     audioRef.current = audio;
@@ -38,45 +41,107 @@ export function useFieldRadio() {
     return audio;
   }, [updatePlaying]);
 
-  const start = useCallback(async () => {
+  const prime = useCallback(() => {
     const audio = ensureAudio();
-    audio.muted = mutedRef.current;
+    const lifecycleToken = lifecycleTokenRef.current + 1;
+    lifecycleTokenRef.current = lifecycleToken;
+    pendingFirstLaunchRef.current = true;
+    audio.currentTime = 0;
+    audio.muted = true;
+    updatePlaying(false);
     if (!audio.paused) {
-      updatePlaying(true);
+      const alreadyPlaying = Promise.resolve(true);
+      primingPromiseRef.current = alreadyPlaying;
+      return alreadyPlaying;
+    }
+
+    const primingPromise = audio.play().then(() => {
+      // Begin silently inside the entry gesture. This retains autoplay
+      // permission through a native picker and an arbitrarily long scan.
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
+      return true;
+    }).catch(() => {
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
+      return false;
+    });
+    primingPromiseRef.current = primingPromise;
+    return primingPromise;
+  }, [ensureAudio, updatePlaying]);
+
+  const suspend = useCallback(() => {
+    // Portal/directory scans stay silent without surrendering the already
+    // unlocked media element or rewinding an established transmission.
+    const audio = audioRef.current;
+    lifecycleTokenRef.current += 1;
+    if (audio) audio.muted = true;
+    updatePlaying(false);
+  }, [updatePlaying]);
+
+  const launch = useCallback(async () => {
+    const audio = ensureAudio();
+    const lifecycleToken = lifecycleTokenRef.current;
+    if (pendingFirstLaunchRef.current) {
+      const primingPromise = primingPromiseRef.current;
+      await primingPromise;
+      if (lifecycleTokenRef.current !== lifecycleToken) return false;
+      audio.currentTime = 0;
+      pendingFirstLaunchRef.current = false;
+      primingPromiseRef.current = null;
+    }
+    audio.muted = mutedRef.current;
+
+    if (!audio.paused) {
+      updatePlaying(!mutedRef.current);
       return true;
     }
 
     try {
-      // Game-entry buttons call this before any awaited directory work, which
-      // keeps play() inside the browser's legal user-activation window.
       await audio.play();
-      updatePlaying(true);
+      if (lifecycleTokenRef.current !== lifecycleToken) return false;
+      updatePlaying(!mutedRef.current);
       return true;
     } catch {
-      // Keep the element intact. A browser policy rejection is not a missing
-      // file, and the next direct click or M key can safely retry playback.
-      updatePlaying(false);
+      // Keep the element intact. A policy rejection is recoverable from the
+      // visible Start control once the playable scene has mounted.
+      if (lifecycleTokenRef.current === lifecycleToken) updatePlaying(false);
       return false;
     }
   }, [ensureAudio, updatePlaying]);
+
+  const stop = useCallback(() => {
+    const audio = audioRef.current;
+    lifecycleTokenRef.current += 1;
+    pendingFirstLaunchRef.current = false;
+    primingPromiseRef.current = null;
+    if (audio) {
+      audio.muted = true;
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    updatePlaying(false);
+  }, [updatePlaying]);
 
   const toggleMute = useCallback(() => {
     // This is a recovery path for a browser that rejected the best-effort
     // automatic start. Under normal game entry the only states are Mute/Unmute.
     if (!playingRef.current && !mutedRef.current) {
-      void start();
+      void launch();
       return;
     }
 
     const next = !mutedRef.current;
     mutedRef.current = next;
     setMuted(next);
-    if (audioRef.current) audioRef.current.muted = next;
+    if (audioRef.current) {
+      audioRef.current.muted = next;
+      updatePlaying(!next && !audioRef.current.paused);
+    }
 
-    if (!next && audioRef.current?.paused) void start();
-  }, [start]);
+    if (!next && audioRef.current?.paused) void launch();
+  }, [launch, updatePlaying]);
 
   useEffect(() => () => {
+    lifecycleTokenRef.current += 1;
     const audio = audioRef.current;
     audioRef.current = null;
     if (!audio) return;
@@ -93,7 +158,10 @@ export function useFieldRadio() {
     playing,
     trackName: BUNDLED_TRACK_NAME,
     sourceLabel: `${BUNDLED_TRACK_ARTIST} · approved cover`,
-    start,
+    prime,
+    suspend,
+    launch,
+    stop,
     toggleMute,
   };
 }

@@ -987,20 +987,10 @@ export function VietCongCombatants({
         continue;
       }
 
-      // Keep terrain and huts tactically meaningful; concealed soldiers do not shoot through them.
-      const obstacleHitT = findNearestObstacleHit(muzzlePosition, targetCenter, obstacles);
-      const targetLaneBlocked = terrainBlocksCombatSegment(muzzlePosition, targetCenter)
-        || (obstacleHitT !== null && obstacleHitT < 0.88);
-      // Infantry contacts rotate after a physical round is spawned. Suppressive
-      // shots therefore still leave the rifle when this coarse whole-segment
-      // test finds cover; the projectile's swept terrain/structure/sandbag tests
-      // stop the tracer at the actual obstruction. Rejecting here pinned a VC
-      // rifleman to one blocked squad member forever because shotIndex never
-      // advanced, leaving the US line functionally invulnerable.
-      if (!selectedFriendly && targetLaneBlocked) {
-        runtime.nextShotAt = now + 0.42;
-        continue;
-      }
+      // Always emit suppressive fire once a target is in range. The swept
+      // projectile tests below still stop each tracer on terrain, huts, and
+      // sandbags, while blocked tank lanes now produce visible cover impacts
+      // instead of silently retrying forever.
 
       aimDirection.normalize();
       const shotIndex = runtime.shotIndex++;
@@ -1017,7 +1007,7 @@ export function VietCongCombatants({
       aimDirection.normalize();
 
       if (spawnHostileRound(muzzlePosition, aimDirection, enemy.id)) {
-        runtime.flashUntil = now + 0.07;
+        runtime.flashUntil = now + 0.09;
         onEnemyFire?.({
           enemyId: enemy.id,
           position: muzzlePosition.clone(),

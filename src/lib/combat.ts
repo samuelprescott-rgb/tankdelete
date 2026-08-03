@@ -90,7 +90,9 @@ export const FRIENDLY_HIT_RADIUS = 0.46;
 // Infantry crossfire primarily sells battlefield pressure; it should not decide
 // the cleanup encounter before the player has time to engage with the tank.
 export const ENEMY_RIFLE_DAMAGE = 1;
-export const ENEMY_RIFLE_INFANTRY_DAMAGE = 34;
+// VC fire is intentionally frequent and visible; lower per-round damage keeps
+// the five-man US line alive long enough for a sustained background firefight.
+export const ENEMY_RIFLE_INFANTRY_DAMAGE = 18;
 export const ENEMY_RIFLE_SPEED = 18;
 export const ENEMY_RIFLE_LIFETIME = 3.2;
 
@@ -216,8 +218,8 @@ function resolveSpawnPoint(
 /**
  * Produces a stable six-to-twelve-soldier formation. Stable placement matters
  * because combat/HUD state changes must not cause enemies to jump around the
- * battlefield. The last four contacts are a deliberately slower reserve line:
- * they deepen the scene without multiplying the original encounter's fire rate.
+ * battlefield. The last four contacts remain a slower reserve line, but every
+ * position contributes enough fire to read as an active engagement.
  */
 export function createVietCongCombatants(seed = 1968, requestedCount = 12): EnemyCombatant[] {
   const count = THREE.MathUtils.clamp(Math.round(requestedCount), MIN_ENEMY_COUNT, MAX_ENEMY_COUNT);
@@ -238,11 +240,11 @@ export function createVietCongCombatants(seed = 1968, requestedCount = 12): Enem
       headwear: index % 4 === 0 ? 'pith' : 'boonie',
       uniformVariant: index % 3,
       fireInterval: reserveLine
-        ? 4.4 + seeded(seed, index, 4) * 2.3
-        : 3.1 + seeded(seed, index, 4) * 2.15,
+        ? 3 + seeded(seed, index, 4) * 1.4
+        : 2.15 + seeded(seed, index, 4) * 1.15,
       initialFireDelay: reserveLine
-        ? 6.2 + (index - 8) * 1.15 + seeded(seed, index, 5) * 1.8
-        : 1.8 + index * 0.38 + seeded(seed, index, 5) * 1.15,
+        ? 2.7 + (index - 8) * 0.55 + seeded(seed, index, 5) * 0.9
+        : 0.8 + index * 0.22 + seeded(seed, index, 5) * 0.65,
       accuracy: reserveLine
         ? 0.09 + seeded(seed, index, 6) * 0.06
         : 0.04 + seeded(seed, index, 6) * 0.055,

@@ -150,13 +150,17 @@ function App() {
   useEffect(() => {
     if (state === 'ready') {
       gameAudio.setBattlefieldActive(true);
-      void fieldRadio.start();
+      void fieldRadio.launch();
     } else {
       gameAudio.stopAllLoops();
+      if (state === 'scanning') fieldRadio.suspend();
+      else fieldRadio.stop();
     }
   }, [
     state,
-    fieldRadio.start,
+    fieldRadio.launch,
+    fieldRadio.stop,
+    fieldRadio.suspend,
     gameAudio.setBattlefieldActive,
     gameAudio.stopAllLoops,
   ]);
@@ -260,16 +264,15 @@ function App() {
       if (e.key === '2') setWeaponMode('machinegun');
       if (e.key === '3') setWeaponMode('flamethrower');
       if (e.key === '4') setWeaponMode('napalm');
-      if (e.key === 'm' || e.key === 'M') fieldRadio.toggleMute();
+      if (state === 'ready' && (e.key === 'm' || e.key === 'M')) fieldRadio.toggleMute();
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDirectory, markedCount, fieldRadio.toggleMute]); // Re-attach when relevant controls change
+  }, [currentDirectory, markedCount, state, fieldRadio.toggleMute]); // Re-attach when relevant controls change
 
   async function pickDirectory() {
-    // Start inside the click gesture before the native directory dialog opens.
-    void fieldRadio.start();
+    void fieldRadio.prime();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
@@ -285,6 +288,7 @@ function App() {
 
       if (result === null) {
         // User cancelled - remain on the picker screen.
+        fieldRadio.stop();
         return;
       }
 
@@ -296,13 +300,13 @@ function App() {
       await scanDirectory(result);
     } catch (err) {
       // System directory blocked or other error
+      fieldRadio.stop();
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   function startTraining() {
-    // Boot Camp is a direct user gesture, so audible playback is permitted.
-    void fieldRadio.start();
+    void fieldRadio.prime();
     gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
@@ -326,6 +330,7 @@ function App() {
     resetMarkedState();
     setError(null);
     setState('ready');
+    void fieldRadio.launch();
   }
 
   async function scanDirectory(path: string) {
@@ -353,7 +358,7 @@ function App() {
   async function reopenLastDirectory() {
     if (!lastDirectory) return;
 
-    void fieldRadio.start();
+    void fieldRadio.prime();
     worldSessionRef.current += 1;
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
