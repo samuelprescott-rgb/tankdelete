@@ -625,7 +625,7 @@ function ObjectiveFileMarkers({
     <group>
       <instancedMesh ref={ringRef} args={[undefined, undefined, activeObjectives.length]} renderOrder={72}>
         <ringGeometry args={[0.82, 1, 28]} />
-        <meshBasicMaterial color="#ffca55" transparent opacity={0.78} depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#cfe982" transparent opacity={0.82} depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />
       </instancedMesh>
       <instancedMesh ref={poleRef} args={[undefined, undefined, activeObjectives.length]}>
         <cylinderGeometry args={[1, 1.18, 1, 6]} />
@@ -633,7 +633,7 @@ function ObjectiveFileMarkers({
       </instancedMesh>
       <instancedMesh ref={flagRef} args={[undefined, undefined, activeObjectives.length]} renderOrder={71}>
         <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial color="#e55d2d" side={THREE.DoubleSide} toneMapped={false} />
+        <meshBasicMaterial color="#739b4b" side={THREE.DoubleSide} toneMapped={false} />
       </instancedMesh>
     </group>
   );

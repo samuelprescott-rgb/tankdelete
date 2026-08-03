@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { ARENA_DEPTH, ARENA_PERIMETER_DEPTH, ARENA_WIDTH } from '../../lib/arenaBounds';
 import { ROAD_GRID_SPACING } from '../../lib/constants';
 import { FILE_OBJECTIVE_RESERVED_ZONE } from '../../lib/mission';
 import { TERRAIN_MOUNDS } from '../../lib/terrain';
@@ -222,8 +223,8 @@ function ElephantGrass({ seed, tankRef }: ElephantGrassProps) {
   const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const grass = useMemo(() => {
     const points = createDeterministicScatter({
-      width: 150,
-      depth: 150,
+      width: ARENA_WIDTH,
+      depth: ARENA_DEPTH,
       cellSize: 2.5,
       minDistance: 1.7,
       seed: seed ^ 0x45a1,
@@ -397,8 +398,8 @@ function GroundPatches({ seed }: { seed: number }) {
     new THREE.Color('#2b432d'),
   ], []);
   const patches = useMemo(() => createDeterministicScatter({
-    width: 150,
-    depth: 150,
+    width: ARENA_WIDTH,
+    depth: ARENA_DEPTH,
     cellSize: 9.2,
     minDistance: 6.4,
     seed: seed ^ 0x2b17,
@@ -2065,8 +2066,8 @@ function MudAndPuddles({ seed }: { seed: number }) {
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const riverStations = useMemo(() => createRiverStations(seed), [seed]);
   const puddles = useMemo(() => createDeterministicScatter({
-    width: 148,
-    depth: 148,
+    width: ARENA_WIDTH,
+    depth: ARENA_DEPTH,
     cellSize: 9.4,
     minDistance: 6.2,
     seed: seed ^ 0x7a2f,
@@ -2100,7 +2101,10 @@ function MudAndPuddles({ seed }: { seed: number }) {
   return (
     <>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.09, 0]} receiveShadow>
-        <planeGeometry args={[260, 260]} />
+        <planeGeometry args={[
+          ARENA_WIDTH + ARENA_PERIMETER_DEPTH * 4,
+          ARENA_DEPTH + ARENA_PERIMETER_DEPTH * 4,
+        ]} />
         <meshStandardMaterial color="#405036" roughness={1} metalness={0} />
       </mesh>
       <instancedMesh ref={puddlesRef} args={[undefined, undefined, puddles.length]}>

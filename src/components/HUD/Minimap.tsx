@@ -121,17 +121,17 @@ export function Minimap({
         ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
         ctx.fill();
 
-        // Objective huts stay legible from the insertion point even when the
-        // compound lies beyond the normal 30 m radar sweep.
+        // A green confirmation ring distinguishes the byte-verified duplicate
+        // bonus target from ordinary files and hostile contacts.
         if (block.isObjective) {
-          ctx.strokeStyle = pos.clamped ? '#ffcc58' : '#e3b341';
+          ctx.strokeStyle = pos.clamped ? '#dcf59a' : '#a8cf6b';
           ctx.lineWidth = pos.clamped ? 2 : 1.5;
           ctx.beginPath();
           ctx.arc(pos.x, pos.y, pos.clamped ? 5.5 : 5, 0, Math.PI * 2);
           ctx.stroke();
           if (pos.clamped) {
             const angle = Math.atan2(pos.y - centerY, pos.x - centerX);
-            ctx.fillStyle = '#ffcc58';
+            ctx.fillStyle = '#dcf59a';
             ctx.beginPath();
             ctx.moveTo(pos.x + Math.cos(angle) * 6, pos.y + Math.sin(angle) * 6);
             ctx.lineTo(pos.x + Math.cos(angle + 2.45) * 4, pos.y + Math.sin(angle + 2.45) * 4);

@@ -1,6 +1,7 @@
 import { FileEntry } from './types';
 import { getFileCategory } from './colors';
 import { ROAD_GRID_SPACING } from './constants';
+import { ARENA_BOUNDS, isInsideArena } from './arenaBounds';
 
 export type BlockPosition = {
   x: number;
@@ -18,6 +19,10 @@ export interface ReservedLayoutZone {
 interface LayoutOptions {
   reservedZones?: readonly ReservedLayoutZone[];
 }
+
+// File centers remain this far inside the hard edge. The hut geometry can then
+// extend beyond its center without touching the jungle wall or skybox seam.
+export const LAYOUT_PLAYABLE_PADDING = 6;
 
 function coordinateNoise(value: string, salt: number) {
   let hash = 2166136261 ^ salt;
@@ -67,7 +72,9 @@ export function layoutFilesInGrid(
 
   for (let i = 0; i < folders.length; i++) {
     const x = i * S - folderRowOffset;
-    positions.set(folders[i].path, { x, y: 0.5, z: 0 });
+    if (isInsideArena(x, 0, LAYOUT_PLAYABLE_PADDING)) {
+      positions.set(folders[i].path, { x, y: 0.5, z: 0 });
+    }
   }
 
   // Place files in city blocks between road grid lines.
@@ -83,13 +90,26 @@ export function layoutFilesInGrid(
   const colStart = -Math.floor(numCols / 2);
 
   let fileIndex = 0;
-  let row = 0;
+  const maximumPlotOffset = blockInset + jitterLimit;
+  const maximumBlockCenterZ = ARENA_BOUNDS.maxZ - LAYOUT_PLAYABLE_PADDING - maximumPlotOffset;
+  const minimumBlockCenterZ = ARENA_BOUNDS.minZ + LAYOUT_PLAYABLE_PADDING + maximumPlotOffset;
+  const rowCenters: number[] = [];
 
-  while (fileIndex < regularFiles.length) {
+  // Keep the familiar village in front of the spawn first. A finite defensive
+  // rear pass is available if a future reserved zone removes more front plots.
+  for (let z = S * 1.5; z <= maximumBlockCenterZ; z += S) rowCenters.push(z);
+  for (let z = -S * 3.5; z >= minimumBlockCenterZ; z -= S) rowCenters.push(z);
+
+  for (let row = 0; row < rowCenters.length && fileIndex < regularFiles.length; row++) {
+    const blockCenterZ = rowCenters[row];
     for (let c = 0; c < numCols && fileIndex < regularFiles.length; c++) {
       const col = colStart + c;
       const blockCenterX = (col + 0.5) * S;
-      const blockCenterZ = (row + 0.5) * S + S; // offset past folder row
+      if (!isInsideArena(
+        blockCenterX,
+        blockCenterZ,
+        LAYOUT_PLAYABLE_PADDING + maximumPlotOffset,
+      )) continue;
       const blockOverlapsReservedZone = options.reservedZones?.some(zone => (
         Math.abs(blockCenterX - zone.centerX) <= zone.halfWidth + S * 0.5
         && Math.abs(blockCenterZ - zone.centerZ) <= zone.halfDepth + S * 0.5
@@ -112,15 +132,17 @@ export function layoutFilesInGrid(
         const coordinateSeed = `${file.path}:${row}:${col}:${f}`;
         const jitterX = (coordinateNoise(coordinateSeed, 1968) - 0.5) * jitterLimit * 2;
         const jitterZ = (coordinateNoise(coordinateSeed, 1971) - 0.5) * jitterLimit * 2;
+        const x = blockCenterX + ox + jitterX;
+        const z = blockCenterZ + oz + jitterZ;
+        if (!isInsideArena(x, z, LAYOUT_PLAYABLE_PADDING)) continue;
         positions.set(file.path, {
-          x: blockCenterX + ox + jitterX,
+          x,
           y: 0.5,
-          z: blockCenterZ + oz + jitterZ,
+          z,
         });
         fileIndex++;
       }
     }
-    row++;
   }
 
   return positions;

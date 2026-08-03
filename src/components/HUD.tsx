@@ -21,6 +21,7 @@ interface HUDProps {
   missionTotal: number;
   missionRemaining: number;
   missionTargetName?: string;
+  missionOriginalName?: string;
   damageFlash: boolean;
   radioEnabled: boolean;
   radioTrackName: string;
@@ -48,6 +49,7 @@ export function HUD({
   missionTotal,
   missionRemaining,
   missionTargetName,
+  missionOriginalName,
   damageFlash,
   radioEnabled,
   radioTrackName,
@@ -104,27 +106,31 @@ export function HUD({
 
         <div className={`mission-order ${missionTotal > 0 && missionRemaining === 0 ? 'is-complete' : ''}`}>
           <div className="mission-order-heading">
-            <span className="hud-kicker">Mission order</span>
+            <span className="hud-kicker">Bonus cleanup</span>
             {missionTotal > 0 && (
               <strong>{missionTotal - missionRemaining}/{missionTotal}</strong>
             )}
           </div>
           {missionTotal === 0 ? (
-            <span>No file targets in this sector.</span>
+            <>
+              <b>No safe bonus target</b>
+              <span>No byte-confirmed duplicate in this sector.</span>
+            </>
           ) : missionRemaining > 0 ? (
             <>
-              <b>Destroy the objective file cache</b>
-              <span>{missionRemaining} file-hut{missionRemaining === 1 ? '' : 's'} remaining</span>
-              {missionTargetName && <small>Priority target · {missionTargetName}</small>}
-              <div className="mission-meter" aria-label={`${missionTotal - missionRemaining} of ${missionTotal} objective files destroyed`}>
+              <b>Destroy the confirmed duplicate</b>
+              <span>One redundant copy · byte-for-byte match confirmed</span>
+              {missionTargetName && <small>Duplicate · {missionTargetName}</small>}
+              {missionOriginalName && <small>Matched original · {missionOriginalName}</small>}
+              <div className="mission-meter" aria-label={`${missionTotal - missionRemaining} of ${missionTotal} confirmed duplicates destroyed`}>
                 <span style={{ width: `${((missionTotal - missionRemaining) / missionTotal) * 100}%` }} />
               </div>
             </>
           ) : (
             <>
-              <b>Objective destroyed</b>
-              <span>File cache eliminated · sector secure</span>
-              <div className="mission-meter" aria-label="Mission objective complete">
+              <b>Bonus cleanup complete</b>
+              <span>Confirmed duplicate moved to Trash</span>
+              <div className="mission-meter" aria-label="Bonus duplicate cleanup complete">
                 <span style={{ width: '100%' }} />
               </div>
             </>

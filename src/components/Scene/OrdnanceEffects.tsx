@@ -38,6 +38,54 @@ interface ScorchPatch {
   rotation: number;
 }
 
+function setHermitePosition(
+  result: THREE.Vector3,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  startVelocity: THREE.Vector3,
+  endVelocity: THREE.Vector3,
+  duration: number,
+  progress: number,
+) {
+  const progressSquared = progress * progress;
+  const progressCubed = progressSquared * progress;
+  const startWeight = 2 * progressCubed - 3 * progressSquared + 1;
+  const startVelocityWeight = progressCubed - 2 * progressSquared + progress;
+  const endWeight = -2 * progressCubed + 3 * progressSquared;
+  const endVelocityWeight = progressCubed - progressSquared;
+
+  result
+    .copy(start)
+    .multiplyScalar(startWeight)
+    .addScaledVector(startVelocity, startVelocityWeight * duration)
+    .addScaledVector(end, endWeight)
+    .addScaledVector(endVelocity, endVelocityWeight * duration);
+}
+
+function setHermiteDirection(
+  result: THREE.Vector3,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  startVelocity: THREE.Vector3,
+  endVelocity: THREE.Vector3,
+  duration: number,
+  progress: number,
+) {
+  const progressSquared = progress * progress;
+  const startWeight = 6 * progressSquared - 6 * progress;
+  const startVelocityWeight = 3 * progressSquared - 4 * progress + 1;
+  const endWeight = -6 * progressSquared + 6 * progress;
+  const endVelocityWeight = 3 * progressSquared - 2 * progress;
+
+  result
+    .copy(start)
+    .multiplyScalar(startWeight)
+    .addScaledVector(startVelocity, startVelocityWeight * duration)
+    .addScaledVector(end, endWeight)
+    .addScaledVector(endVelocity, endVelocityWeight * duration)
+    .normalize();
+}
+
 function seededRandom(seed: number) {
   let state = seed >>> 0;
   return () => {
@@ -218,6 +266,9 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
   const flightStart = useMemo(() => new THREE.Vector3(), []);
   const flightPass = useMemo(() => new THREE.Vector3(), []);
   const flightExit = useMemo(() => new THREE.Vector3(), []);
+  const flightApproachVelocity = useMemo(() => new THREE.Vector3(), []);
+  const flightPassVelocity = useMemo(() => new THREE.Vector3(), []);
+  const flightExitVelocity = useMemo(() => new THREE.Vector3(), []);
   const cameraFlightPoint = useMemo(() => new THREE.Vector3(), []);
   const flightDirection = useMemo(() => new THREE.Vector3(), []);
   const jetForward = useMemo(() => new THREE.Vector3(1, 0, 0), []);
@@ -248,20 +299,36 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
       resolveFlightPoint(-22, 2.2, -38, 8.5, flightStart);
       resolveFlightPoint(1.5, 0.4, -24, 7, flightPass);
       resolveFlightPoint(30, 4.4, -42, 10, flightExit);
+
+      const approachDuration = NAPALM_TIMELINE.impactSeconds - NAPALM_TIMELINE.jetIngressSeconds;
+      const exitDuration = NAPALM_TIMELINE.jetExitSeconds - NAPALM_TIMELINE.impactSeconds;
+      flightApproachVelocity.copy(flightPass).sub(flightStart).multiplyScalar(1 / approachDuration);
+      flightExitVelocity.copy(flightExit).sub(flightPass).multiplyScalar(1 / exitDuration);
+
+      // Use one physical velocity through the release point so the two authored
+      // path sections meet C1-continuously instead of easing the Phantom to a stop.
+      const passSpeed = (flightApproachVelocity.length() + flightExitVelocity.length()) * 0.5;
+      flightPassVelocity
+        .copy(flightApproachVelocity)
+        .add(flightExitVelocity)
+        .normalize()
+        .multiplyScalar(passSpeed);
       flightPathInitializedRef.current = true;
     }
 
     if (jetRef.current && flightPathInitializedRef.current) {
-      const approaching = age < NAPALM_TIMELINE.impactSeconds;
+      const approaching = age <= NAPALM_TIMELINE.impactSeconds;
+      const approachDuration = NAPALM_TIMELINE.impactSeconds - NAPALM_TIMELINE.jetIngressSeconds;
+      const exitDuration = NAPALM_TIMELINE.jetExitSeconds - NAPALM_TIMELINE.impactSeconds;
       const approachProgress = THREE.MathUtils.clamp(
         (age - NAPALM_TIMELINE.jetIngressSeconds)
-          / (NAPALM_TIMELINE.impactSeconds - NAPALM_TIMELINE.jetIngressSeconds),
+          / approachDuration,
         0,
         1,
       );
       const exitProgress = THREE.MathUtils.clamp(
         (age - NAPALM_TIMELINE.impactSeconds)
-          / (NAPALM_TIMELINE.jetExitSeconds - NAPALM_TIMELINE.impactSeconds),
+          / exitDuration,
         0,
         1,
       );
@@ -270,22 +337,75 @@ function NapalmStrikeVisual({ strike, onImpact, onComplete }: NapalmStrikeVisual
         && age < NAPALM_TIMELINE.jetExitSeconds;
 
       if (approaching) {
-        const altitudeProgress = THREE.MathUtils.smoothstep(approachProgress, 0, 1);
-        jetRef.current.position.lerpVectors(flightStart, flightPass, altitudeProgress);
-        flightDirection.copy(flightPass).sub(flightStart).normalize();
-        jetRef.current.quaternion.setFromUnitVectors(jetForward, flightDirection);
-        jetRef.current.rotateX(THREE.MathUtils.lerp(-0.1, -0.025, approachProgress));
+        setHermitePosition(
+          jetRef.current.position,
+          flightStart,
+          flightPass,
+          flightApproachVelocity,
+          flightPassVelocity,
+          approachDuration,
+          approachProgress,
+        );
+        setHermiteDirection(
+          flightDirection,
+          flightStart,
+          flightPass,
+          flightApproachVelocity,
+          flightPassVelocity,
+          approachDuration,
+          approachProgress,
+        );
       } else {
-        const climbProgress = THREE.MathUtils.smoothstep(exitProgress, 0, 1);
-        jetRef.current.position.lerpVectors(flightPass, flightExit, climbProgress);
-        flightDirection.copy(flightExit).sub(flightPass).normalize();
-        jetRef.current.quaternion.setFromUnitVectors(jetForward, flightDirection);
-        jetRef.current.rotateX(THREE.MathUtils.lerp(0.02, 0.14, exitProgress));
+        setHermitePosition(
+          jetRef.current.position,
+          flightPass,
+          flightExit,
+          flightPassVelocity,
+          flightExitVelocity,
+          exitDuration,
+          exitProgress,
+        );
+        setHermiteDirection(
+          flightDirection,
+          flightPass,
+          flightExit,
+          flightPassVelocity,
+          flightExitVelocity,
+          exitDuration,
+          exitProgress,
+        );
       }
+
+      const fullFlightProgress = THREE.MathUtils.clamp(
+        (age - NAPALM_TIMELINE.jetIngressSeconds)
+          / (NAPALM_TIMELINE.jetExitSeconds - NAPALM_TIMELINE.jetIngressSeconds),
+        0,
+        1,
+      );
+      jetRef.current.quaternion.setFromUnitVectors(jetForward, flightDirection);
+      jetRef.current.rotateX(THREE.MathUtils.lerp(
+        -0.1,
+        0.14,
+        THREE.MathUtils.smoothstep(fullFlightProgress, 0, 1),
+      ));
 
       if (age >= NAPALM_TIMELINE.bombReleaseSeconds && !bombReleasedRef.current) {
         bombReleasedRef.current = true;
-        bombReleasePosition.copy(jetRef.current.position);
+        const releaseProgress = THREE.MathUtils.clamp(
+          (NAPALM_TIMELINE.bombReleaseSeconds - NAPALM_TIMELINE.jetIngressSeconds)
+            / approachDuration,
+          0,
+          1,
+        );
+        setHermitePosition(
+          bombReleasePosition,
+          flightStart,
+          flightPass,
+          flightApproachVelocity,
+          flightPassVelocity,
+          approachDuration,
+          releaseProgress,
+        );
         bombReleasePosition.y -= 0.55;
       }
 

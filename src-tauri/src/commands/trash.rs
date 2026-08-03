@@ -1,3 +1,4 @@
+use crate::commands::directory::{files_match_exactly, is_easy_duplicate_size};
 use crate::models::{TrashAction, UndoStack};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,7 @@ fn generate_staging_name(original_name: &str, timestamp: u64) -> String {
 #[tauri::command]
 pub async fn move_to_trash(
     path: String,
+    duplicate_of: Option<String>,
     app: AppHandle,
     undo_stack: State<'_, UndoStack>,
 ) -> Result<TrashAction, String> {
@@ -46,6 +48,22 @@ pub async fn move_to_trash(
         .map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
     let original_size = metadata.len();
+    if let Some(original_path) = duplicate_of.as_deref() {
+        if original_path == path {
+            return Err("Duplicate target cannot reference itself".to_string());
+        }
+        if !is_easy_duplicate_size(original_size) {
+            return Err("Bonus target is larger than the safe duplicate limit".to_string());
+        }
+        let still_matches = files_match_exactly(file_path, Path::new(original_path))
+            .map_err(|error| format!("Could not re-confirm duplicate before deletion: {error}"))?;
+        if !still_matches {
+            return Err(
+                "Bonus target changed since the scan and no longer matches its retained original"
+                    .to_string(),
+            );
+        }
+    }
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())

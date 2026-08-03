@@ -18,8 +18,11 @@ export const commands = {
     return await invoke<string | null>('get_last_directory');
   },
 
-  async moveToTrash(path: string): Promise<TrashAction> {
-    return await invoke<TrashAction>('move_to_trash', { path });
+  async moveToTrash(path: string, duplicateOf?: string): Promise<TrashAction> {
+    return await invoke<TrashAction>('move_to_trash', {
+      path,
+      duplicateOf: duplicateOf ?? null,
+    });
   },
 
   async undoLastTrash(): Promise<TrashAction | null> {

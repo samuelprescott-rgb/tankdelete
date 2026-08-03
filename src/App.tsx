@@ -58,6 +58,7 @@ import {
   type FileObjective,
 } from './lib/mission';
 import type { TankCollider } from './lib/worldCollision';
+import { createSectorPage } from './lib/sectorPaging';
 
 type AppState = 'checking' | 'picking' | 'scanning' | 'ready';
 
@@ -89,6 +90,7 @@ function App() {
   const [tankIntegrity, setTankIntegrity] = useState(100);
   const [damageFlash, setDamageFlash] = useState(false);
   const [fileObjective, setFileObjective] = useState<FileObjective | null>(null);
+  const [sectorPageIndex, setSectorPageIndex] = useState(0);
   const trainingUndoStackRef = useRef<FileEntry[]>([]);
   const ordnanceIdRef = useRef(0);
   const napalmReadyAtRef = useRef(0);
@@ -258,6 +260,7 @@ function App() {
     resetMarkedState();
     setIsTraining(false);
     setFileObjective(null);
+    setSectorPageIndex(0);
     setState('picking');
     setError(null);
 
@@ -292,6 +295,7 @@ function App() {
     const trainingEntries = createTrainingEntries();
     setEntries(trainingEntries);
     setFileObjective(createFileObjective(trainingEntries, `${TRAINING_DIRECTORY}:${worldSessionRef.current}`));
+    setSectorPageIndex(0);
     setDeletedCount(0);
     setDeletedBytes(0);
     setTankStartPosition([0, 0, -12]);
@@ -307,6 +311,7 @@ function App() {
   }
 
   async function scanDirectory(path: string) {
+    setSectorPageIndex(0);
     setState('scanning');
     setScanProgress(null);
     setError(null);
@@ -334,6 +339,7 @@ function App() {
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
+    setSectorPageIndex(0);
     setCurrentDirectory(lastDirectory);
     setLastDirectory(null);
     setState('scanning');
@@ -348,6 +354,7 @@ function App() {
     fieldRadio.stop();
     setIsTraining(false);
     setFileObjective(null);
+    setSectorPageIndex(0);
     setNapalmStrikes([]);
     setLastDirectory(null);
     setState('picking');
@@ -358,6 +365,7 @@ function App() {
     setCombatSessionKey(prev => prev + 1);
     automaticHitTriggerByPathRef.current.clear();
     resetMarkedState();
+    setSectorPageIndex(0);
     setCurrentDirectory(dirPath);
     await commands.saveLastDirectory(dirPath);
     // Reset tank position to spawn near back portal when entering new directory
@@ -642,6 +650,10 @@ function App() {
       // Second hit: delete the file
       try {
         const trainingEntry = isTraining ? entries.find(entry => entry.path === filePath) : undefined;
+        const duplicateTarget = fileObjective?.targets.find(target => (
+          target.path === filePath
+          && entries.some(entry => entry.path === target.duplicateOfPath && !entry.is_dir)
+        ));
         const action = isTraining
           ? {
               file_path: filePath,
@@ -649,7 +661,7 @@ function App() {
               original_size: trainingEntry?.size || 0,
               trash_timestamp: Date.now(),
             }
-          : await commands.moveToTrash(filePath);
+          : await commands.moveToTrash(filePath, duplicateTarget?.duplicateOfPath);
 
         if (trainingEntry) {
           trainingUndoStackRef.current.push(trainingEntry);
@@ -747,7 +759,13 @@ function App() {
       ).filter(block => block !== undefined);
 
       // Delete all marked files and keep failed targets armed for another attempt.
-      const successfulPaths = await deleteAllMarked();
+      const successfulPaths = await deleteAllMarked(filePath => {
+        const duplicateTarget = fileObjective?.targets.find(target => (
+          target.path === filePath
+          && entries.some(entry => entry.path === target.duplicateOfPath && !entry.is_dir)
+        ));
+        return commands.moveToTrash(filePath, duplicateTarget?.duplicateOfPath);
+      });
       const successfulPathSet = new Set(successfulPaths);
       const successfulBlocks = fileBlocks.filter(block => successfulPathSet.has(block.path));
       const failedCount = filesToDelete.length - successfulPaths.length;
@@ -793,7 +811,6 @@ function App() {
   }
 
   // Prepare data for 3D scene (needs to be before early returns so handlers can reference allBlocks)
-  const { blocksByCategory, folders, allBlocks } = useFileBlocks(entries, fileObjective);
   const environmentSeed = useMemo(
     () => hashCombatSession(currentDirectory ?? TRAINING_DIRECTORY),
     [currentDirectory],
@@ -802,9 +819,23 @@ function App() {
     () => getFileObjectiveProgress(fileObjective, entries),
     [entries, fileObjective],
   );
-  const missionTargetName = useMemo(() => {
+  const visibleFileObjective = missionProgress.phase === 'unavailable'
+    ? null
+    : fileObjective;
+  const activeObjectivePath = missionProgress.phase === 'active'
+    ? missionProgress.remainingPaths[0]
+    : undefined;
+  const sectorPage = useMemo(
+    () => createSectorPage(entries, sectorPageIndex, activeObjectivePath),
+    [activeObjectivePath, entries, sectorPageIndex],
+  );
+  const { blocksByCategory, folders, allBlocks } = useFileBlocks(
+    sectorPage.entries,
+    visibleFileObjective,
+  );
+  const missionTarget = useMemo(() => {
     const nextPath = missionProgress.remainingPaths[0];
-    return fileObjective?.targets.find(target => target.path === nextPath)?.name;
+    return fileObjective?.targets.find(target => target.path === nextPath);
   }, [fileObjective, missionProgress.remainingPaths]);
   const tankColliders = useMemo<TankCollider[]>(() => {
     const colliders: TankCollider[] = [];
@@ -909,7 +940,7 @@ function App() {
       && previous.remaining > 0
       && missionProgress.remaining === 0
       && missionProgress.total > 0) {
-      toast.success('Objective destroyed · file cache eliminated', {
+      toast.success('Bonus cleanup complete · confirmed duplicate eliminated', {
         duration: 4200,
         icon: '★',
       });
@@ -919,6 +950,30 @@ function App() {
       remaining: missionProgress.remaining,
     };
   }, [fileObjective?.id, missionProgress.remaining, missionProgress.total]);
+
+  useEffect(() => {
+    // Deleting the final item on the final page can shrink the grid count. The
+    // current rendered slice is already clamped; mirror it back into state so
+    // navigation remains monotonic after the de-rez animation completes.
+    setSectorPageIndex(current => (
+      current === sectorPage.pageIndex ? current : sectorPage.pageIndex
+    ));
+  }, [sectorPage.pageIndex]);
+
+  function changeSectorPage(direction: -1 | 1) {
+    // Avoid unmounting a hut during its short de-rez animation. Armed targets
+    // are deliberately cleared so a hidden page can never be purged by mistake.
+    if (deletingFiles.size > 0) return;
+    clearMarked();
+    // Folder portals are centered within each bounded page. Return the tank to
+    // the clear approach lane before swapping the slice so a newly materialized
+    // portal can never overlap the stationary vehicle and navigate immediately.
+    setTankStartPosition([0, 0, -12]);
+    setSectorPageIndex(current => Math.max(
+      0,
+      Math.min(sectorPage.pageCount - 1, current + direction),
+    ));
+  }
   const combatObstacles = allBlocks.map(block => ({
     position: block.position,
     radius: Math.max(0.62, block.scale * 0.74),
@@ -926,7 +981,7 @@ function App() {
 
   // Calculate folder positions (folders get front rows in grid layout)
   const folderPositions = new Map<string, [number, number, number]>();
-  const folderEntries = entries.filter(e => e.is_dir);
+  const folderEntries = folders;
   const allPositions = layoutFilesInGrid(folderEntries);
 
   for (const folder of folderEntries) {
@@ -978,8 +1033,8 @@ function App() {
     position: portal.position,
   }));
 
-  const markedBytes = allBlocks.reduce(
-    (total, block) => total + (markedFiles.has(block.path) ? block.size : 0),
+  const markedBytes = entries.reduce(
+    (total, entry) => total + (!entry.is_dir && markedFiles.has(entry.path) ? entry.size : 0),
     0,
   );
 
@@ -1052,8 +1107,8 @@ function App() {
         deletedCount={deletedCount}
         deletedBytes={deletedBytes}
         score={score}
-        fileCount={allBlocks.length}
-        folderCount={folders.length}
+        fileCount={sectorPage.totalFiles}
+        folderCount={sectorPage.totalFolders}
         markedCount={markedCount}
         markedBytes={markedBytes}
         onClearMarked={clearMarked}
@@ -1065,7 +1120,8 @@ function App() {
         hostileCount={hostileCount}
         missionTotal={missionProgress.total}
         missionRemaining={missionProgress.remaining}
-        missionTargetName={missionTargetName}
+        missionTargetName={missionTarget?.name}
+        missionOriginalName={missionTarget?.duplicateOfName}
         damageFlash={damageFlash}
         radioEnabled={fieldRadio.enabled}
         radioTrackName={fieldRadio.trackName}
@@ -1098,9 +1154,32 @@ function App() {
           <h2>{currentDirectory}</h2>
           {isTraining && <span className="training-badge">Simulation</span>}
         </div>
-        <button onClick={changeDirectory} className="btn-secondary">
-          {isTraining ? 'Exit Training' : 'Change Directory'}
-        </button>
+        <div className="header-actions">
+          {sectorPage.pageCount > 1 && (
+            <nav className="sector-grid-controls" aria-label="Sector grid pages">
+              <button
+                type="button"
+                onClick={() => changeSectorPage(-1)}
+                disabled={sectorPage.pageIndex === 0 || deletingFiles.size > 0}
+                aria-label="Previous sector grid"
+              >
+                Prev
+              </button>
+              <span>Sector grid <b>{sectorPage.pageIndex + 1}/{sectorPage.pageCount}</b></span>
+              <button
+                type="button"
+                onClick={() => changeSectorPage(1)}
+                disabled={sectorPage.pageIndex === sectorPage.pageCount - 1 || deletingFiles.size > 0}
+                aria-label="Next sector grid"
+              >
+                Next
+              </button>
+            </nav>
+          )}
+          <button onClick={changeDirectory} className="btn-secondary">
+            {isTraining ? 'Exit Training' : 'Change Directory'}
+          </button>
+        </div>
       </div>
 
       <KeyboardControls map={CONTROLS_MAP}>

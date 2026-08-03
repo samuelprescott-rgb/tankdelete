@@ -14,6 +14,12 @@ import { FlameStream } from './FlameStream';
 import { intersectsTerrainMound } from '../../lib/terrain';
 import { intersectsTankColliders } from '../../lib/worldCollision';
 import type { TankCollider } from '../../lib/worldCollision';
+import {
+  ARENA_TANK_PADDING,
+  clampArenaX,
+  clampArenaZ,
+  isInsideArena,
+} from '../../lib/arenaBounds';
 import { createRiverStations, riverWaterImmersion } from './riverLayout';
 
 const TANK_ARMOR_COLOR = '#a8bf78';
@@ -23,7 +29,8 @@ const MAX_MOVEMENT_SUBSTEP = 0.28;
 const MAX_MOVEMENT_DELTA = 0.25;
 
 function isTankPositionBlocked(x: number, z: number, colliders: readonly TankCollider[]) {
-  return intersectsTerrainMound(x, z, TANK_COLLISION_RADIUS)
+  return !isInsideArena(x, z, ARENA_TANK_PADDING)
+    || intersectsTerrainMound(x, z, TANK_COLLISION_RADIUS)
     || intersectsTankColliders(x, z, TANK_COLLISION_RADIUS, colliders);
 }
 
@@ -173,6 +180,10 @@ export const Tank = forwardRef<THREE.Group, TankProps>(({ onShoot, onMachineGun,
       } else if (weaponMode === 'napalm') {
         raycaster.setFromCamera(pointer, camera);
         if (raycaster.ray.intersectPlane(groundPlane, intersection)) {
+          // Keep air support inside the authored combat sector even if the
+          // pointer ray lands on the procedural horizon beyond the perimeter.
+          intersection.x = clampArenaX(intersection.x, ARENA_TANK_PADDING);
+          intersection.z = clampArenaZ(intersection.z, ARENA_TANK_PADDING);
           onNapalm?.(intersection.clone(), tempWorldDir.clone());
         }
         triggerHeldRef.current = false;
