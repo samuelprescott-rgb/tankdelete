@@ -3,10 +3,18 @@ interface DirectoryPickerProps {
   lastDirectory?: string | null;
   onReopenLast?: () => void;
   onStartTraining?: () => void;
+  onStartHordeMode?: () => void;
   error?: string | null;
 }
 
-export function DirectoryPicker({ onPick, lastDirectory, onReopenLast, onStartTraining, error }: DirectoryPickerProps) {
+export function DirectoryPicker({
+  onPick,
+  lastDirectory,
+  onReopenLast,
+  onStartTraining,
+  onStartHordeMode,
+  error,
+}: DirectoryPickerProps) {
   return (
     <div className="directory-picker">
       <span className="era-stamp">AO CLEAN SWEEP // 1968</span>
@@ -63,6 +71,18 @@ export function DirectoryPicker({ onPick, lastDirectory, onReopenLast, onStartTr
       {lastDirectory && onReopenLast && onStartTraining && (
         <button onClick={onStartTraining} className="btn-training-link">
           Or enter the training arena
+        </button>
+      )}
+
+      {onStartHordeMode && (
+        <button
+          type="button"
+          onClick={onStartHordeMode}
+          className="btn-horde-shortcut"
+          aria-label="Launch Horde Mode"
+          title="Horde Mode"
+        >
+          horde mode
         </button>
       )}
     </div>

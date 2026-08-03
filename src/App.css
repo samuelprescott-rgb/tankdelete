@@ -210,6 +210,35 @@ button:active {
   box-shadow: none;
 }
 
+.btn-horde-shortcut {
+  position: fixed;
+  z-index: 5;
+  left: 7px;
+  bottom: 6px;
+  min-width: 0;
+  border: 1px solid rgba(135, 155, 99, 0.18);
+  padding: 2px 4px;
+  color: rgba(157, 155, 125, 0.3);
+  background: rgba(8, 13, 6, 0.16);
+  box-shadow: none;
+  font-size: 7px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  opacity: 0.56;
+  transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.btn-horde-shortcut:hover,
+.btn-horde-shortcut:focus-visible {
+  border-color: rgba(227, 179, 65, 0.45);
+  color: rgba(227, 179, 65, 0.72);
+  background: rgba(8, 13, 6, 0.35);
+  box-shadow: none;
+  opacity: 1;
+}
+
 /* Loading */
 .loading {
   display: flex;

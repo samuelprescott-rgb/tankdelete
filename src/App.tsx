@@ -166,6 +166,7 @@ function App() {
   const nightmareTakeoverTokenRef = useRef(0);
   const missionSnapshotRef = useRef({ id: null as string | null, remaining: 0 });
   const bonusAnnouncementRef = useRef({ phase: 'locked', wave: 0 });
+  const pendingHordeStartRef = useRef(false);
 
   // Tank ref for camera tracking
   const tankRef = useRef<THREE.Group>(null);
@@ -243,6 +244,17 @@ function App() {
       toast.error(`${event.name} is down`, { duration: 2200, icon: '✦' });
     },
   });
+
+  useEffect(() => {
+    if (!pendingHordeStartRef.current
+      || state !== 'ready'
+      || horde.phase !== 'locked'
+      || !fileObjective?.id) return;
+
+    if (horde.begin(fileObjective.id)) {
+      pendingHordeStartRef.current = false;
+    }
+  }, [fileObjective?.id, horde.begin, horde.phase, state]);
 
   useEffect(() => {
     const finalWaveIsNext = state === 'ready'
@@ -500,6 +512,7 @@ function App() {
   }
 
   function startTraining() {
+    pendingHordeStartRef.current = false;
     void fieldRadio.prime();
     gameAudio.setBattlefieldActive(true);
     worldSessionRef.current += 1;
@@ -511,6 +524,41 @@ function App() {
     const trainingEntries = createTrainingEntries();
     setEntries(trainingEntries);
     setFileObjective(createFileObjective(trainingEntries, `${TRAINING_DIRECTORY}:${worldSessionRef.current}`));
+    setSectorPageIndex(0);
+    setDeletedCount(0);
+    setDeletedBytes(0);
+    setTankStartPosition([0, 0, -12]);
+    setWeaponMode('cannon');
+    setFlameFuel(1);
+    setNapalmStrikes([]);
+    napalmReadyAtRef.current = 0;
+    setNapalmCooldown(0);
+    trainingUndoStackRef.current = [];
+    resetMarkedState();
+    setError(null);
+    setState('ready');
+    void fieldRadio.launch();
+  }
+
+  function startHordeMode() {
+    pendingHordeStartRef.current = true;
+    void fieldRadio.prime();
+    gameAudio.setBattlefieldActive(true);
+    worldSessionRef.current += 1;
+    setCombatSessionKey(prev => prev + 1);
+    automaticHitTriggerByPathRef.current.clear();
+    setIsTraining(true);
+    setCurrentDirectory(TRAINING_DIRECTORY);
+    setLastDirectory(null);
+
+    const trainingEntries = createTrainingEntries();
+    const objective = createFileObjective(
+      trainingEntries,
+      `${TRAINING_DIRECTORY}:horde:${worldSessionRef.current}`,
+    );
+    const completedTargetPaths = new Set(objective.targets.map(target => target.path));
+    setEntries(trainingEntries.filter(entry => !completedTargetPaths.has(entry.path)));
+    setFileObjective(objective);
     setSectorPageIndex(0);
     setDeletedCount(0);
     setDeletedBytes(0);
@@ -1732,6 +1780,7 @@ function App() {
           lastDirectory={lastDirectory}
           onReopenLast={lastDirectory ? reopenLastDirectory : undefined}
           onStartTraining={startTraining}
+          onStartHordeMode={startHordeMode}
           error={error}
         />
       </div>
