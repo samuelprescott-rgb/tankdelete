@@ -18,6 +18,7 @@ interface HUDProps {
   napalmCooldown: number;
   tankIntegrity: number;
   hostileCount: number;
+  friendlyCount: number;
   missionTotal: number;
   missionRemaining: number;
   missionTargetName?: string;
@@ -46,6 +47,7 @@ export function HUD({
   napalmCooldown,
   tankIntegrity,
   hostileCount,
+  friendlyCount,
   missionTotal,
   missionRemaining,
   missionTargetName,
@@ -145,7 +147,10 @@ export function HUD({
           <div className="armor-meter" aria-label={`Tank armor integrity ${Math.round(tankIntegrity)} percent`}>
             <span style={{ width: `${tankIntegrity}%` }} />
           </div>
-          <small>{hostileCount} hostile{hostileCount === 1 ? '' : 's'} active</small>
+          <small>
+            {hostileCount} hostile{hostileCount === 1 ? '' : 's'} · {friendlyCount}{' '}
+            {friendlyCount === 1 ? 'friendly' : 'friendlies'} active
+          </small>
         </div>
 
         <div className={`hud-targets ${markedCount > 0 ? 'is-armed' : ''}`}>

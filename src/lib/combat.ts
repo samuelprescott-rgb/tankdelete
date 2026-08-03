@@ -3,7 +3,12 @@ import { intersectsTerrainMound } from './terrain';
 
 export type EnemyStance = 'standing' | 'kneeling';
 export type EnemyHeadwear = 'boonie' | 'pith';
-export type EnemyDamageSource = 'cannon' | 'machinegun' | 'flamethrower' | 'napalm';
+export type EnemyDamageSource =
+  | 'cannon'
+  | 'machinegun'
+  | 'flamethrower'
+  | 'napalm'
+  | 'friendly-rifle';
 
 export interface EnemyCombatant {
   id: string;
@@ -19,6 +24,20 @@ export interface EnemyCombatant {
   accuracy: number;
 }
 
+export interface FriendlyCombatant {
+  id: string;
+  position: [number, number, number];
+  health: number;
+  maxHealth: number;
+  alive: boolean;
+  kneeling: boolean;
+}
+
+export interface FriendlyCombatPose {
+  /** Mutable world-space center updated by the rendered squad without React state churn. */
+  position: THREE.Vector3;
+}
+
 export interface CombatObstacle {
   position: [number, number, number];
   radius: number;
@@ -32,6 +51,13 @@ export interface EnemyFireEvent {
 
 export interface EnemyTankHitEvent {
   enemyId: string;
+  position: THREE.Vector3;
+  damage: number;
+}
+
+export interface EnemyFriendlyHitEvent {
+  enemyId: string;
+  friendlyId: string;
   position: THREE.Vector3;
   damage: number;
 }
@@ -59,11 +85,33 @@ export interface EnemyHitResult {
 
 export const ENEMY_MAX_HEALTH = 100;
 export const ENEMY_HIT_RADIUS = 0.48;
+export const FRIENDLY_MAX_HEALTH = 100;
+export const FRIENDLY_HIT_RADIUS = 0.46;
 // Infantry crossfire primarily sells battlefield pressure; it should not decide
 // the cleanup encounter before the player has time to engage with the tank.
 export const ENEMY_RIFLE_DAMAGE = 1;
+export const ENEMY_RIFLE_INFANTRY_DAMAGE = 34;
 export const ENEMY_RIFLE_SPEED = 18;
 export const ENEMY_RIFLE_LIFETIME = 3.2;
+
+export const US_INFANTRY_DEPLOYMENT = [
+  { id: 'us-rifle-1', position: [-5.65, 0.02, -5.35] as [number, number, number], kneeling: true },
+  { id: 'us-rifle-2', position: [-4.12, 0.02, -5.18] as [number, number, number], kneeling: true },
+  { id: 'us-rifle-3', position: [4.18, 0.02, -3.96] as [number, number, number], kneeling: true },
+  { id: 'us-rto-4', position: [5.72, 0.02, -3.78] as [number, number, number], kneeling: false },
+  { id: 'us-rifle-5', position: [0.25, 0.02, 1.82] as [number, number, number], kneeling: true },
+] as const;
+
+export function createUSInfantryCombatants(): FriendlyCombatant[] {
+  return US_INFANTRY_DEPLOYMENT.map(member => ({
+    id: member.id,
+    position: [...member.position],
+    health: FRIENDLY_MAX_HEALTH,
+    maxHealth: FRIENDLY_MAX_HEALTH,
+    alive: true,
+    kneeling: member.kneeling,
+  }));
+}
 
 const DEFAULT_SPAWN_ANCHORS: ReadonlyArray<readonly [number, number]> = [
   [-10.5, 7.5],
@@ -330,6 +378,100 @@ export function findNearestLivingEnemyHit(
     t: nearestT,
     point: start.clone().lerp(end, nearestT),
   };
+}
+
+/**
+ * Swept hostile-round test against the five friendly infantry profiles. Their
+ * authored bounds are intentionally a little forgiving because the rendered
+ * soldiers make short, sub-meter bounds inside their fighting positions.
+ */
+export function findNearestLivingFriendlyHit(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  friendlies: readonly FriendlyCombatant[],
+  poses?: ReadonlyMap<string, FriendlyCombatPose>,
+  radius = FRIENDLY_HIT_RADIUS,
+) {
+  let nearestFriendly: FriendlyCombatant | null = null;
+  let nearestT = Infinity;
+
+  for (const friendly of friendlies) {
+    if (!friendly.alive) continue;
+    const livePosition = poses?.get(friendly.id)?.position;
+    const centerX = livePosition?.x ?? friendly.position[0];
+    const centerY = livePosition?.y ?? friendly.position[1];
+    const centerZ = livePosition?.z ?? friendly.position[2];
+    const profile = friendly.kneeling
+      ? [[0.2, 1], [0.52, 1.04], [0.86, 0.92]] as const
+      : [[0.24, 1], [0.66, 1.02], [1, 0.9]] as const;
+
+    for (const [height, radiusScale] of profile) {
+      const hitT = segmentSphereIntersectionXYZ(
+        start,
+        end,
+        centerX,
+        centerY + height,
+        centerZ,
+        radius * radiusScale,
+      );
+      if (hitT !== null && hitT < nearestT) {
+        nearestT = hitT;
+        nearestFriendly = friendly;
+      }
+    }
+  }
+
+  if (!nearestFriendly) return null;
+  return {
+    friendly: nearestFriendly,
+    t: nearestT,
+    point: start.clone().lerp(end, nearestT),
+  };
+}
+
+const FRIENDLY_COVER_POSITIONS = [
+  { position: [-4.9, 0.02, -4.7] as const, rotation: -0.08, width: 3.15 },
+  { position: [4.95, 0.02, -3.28] as const, rotation: 0.08, width: 3.15 },
+  { position: [0.25, 0.02, 2.48] as const, rotation: 0, width: 1.85 },
+] as const;
+
+const FRIENDLY_SANDBAG_SPHERES = FRIENDLY_COVER_POSITIONS.flatMap(cover => {
+  const count = Math.max(3, Math.round(cover.width / 0.5));
+  const cos = Math.cos(cover.rotation);
+  const sin = Math.sin(cover.rotation);
+  const row = (upper: boolean) => Array.from(
+    { length: upper ? count - 1 : count },
+    (_, index) => {
+      const spacing = cover.width / count;
+      const localX = -cover.width * 0.5
+        + (index + 0.5) * spacing
+        + (upper ? spacing * 0.5 : 0);
+      return {
+        x: cover.position[0] + cos * localX,
+        y: cover.position[1] + (upper ? 0.32 : 0.14),
+        z: cover.position[2] - sin * localX,
+        radius: upper ? 0.225 : 0.235,
+      };
+    },
+  );
+  return [...row(false), ...row(true)];
+});
+
+/** Approximate the visible US sandbag rows so incoming fire lands on cover. */
+export function findNearestFriendlyCoverHit(start: THREE.Vector3, end: THREE.Vector3) {
+  let nearestT: number | null = null;
+  for (const sphere of FRIENDLY_SANDBAG_SPHERES) {
+    const hitT = segmentSphereIntersectionXYZ(
+      start,
+      end,
+      sphere.x,
+      sphere.y,
+      sphere.z,
+      sphere.radius,
+    );
+    if (hitT !== null && (nearestT === null || hitT < nearestT)) nearestT = hitT;
+  }
+  return nearestT;
 }
 
 export function findNearestObstacleHit(

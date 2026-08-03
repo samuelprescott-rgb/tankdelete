@@ -9,15 +9,15 @@ import {
 export function PostProcessing() {
   return (
     <EffectComposer multisampling={2}>
-      <HueSaturation saturation={0.17} />
-      <BrightnessContrast brightness={0.045} contrast={0.045} />
+      <HueSaturation saturation={0.1} />
+      <BrightnessContrast brightness={-0.008} contrast={0.055} />
       <Bloom
-        intensity={0.52}
-        luminanceThreshold={0.72}
+        intensity={0.46}
+        luminanceThreshold={0.74}
         luminanceSmoothing={0.72}
         mipmapBlur
       />
-      <Vignette offset={0.3} darkness={0.24} />
+      <Vignette offset={0.3} darkness={0.22} />
     </EffectComposer>
   );
 }

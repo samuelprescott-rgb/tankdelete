@@ -6,12 +6,18 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   CombatObstacle,
   EnemyCombatant,
+  EnemyFriendlyHitEvent,
   EnemyFireEvent,
   EnemyTankHitEvent,
   ENEMY_RIFLE_DAMAGE,
+  ENEMY_RIFLE_INFANTRY_DAMAGE,
   ENEMY_RIFLE_LIFETIME,
   ENEMY_RIFLE_SPEED,
+  findNearestFriendlyCoverHit,
+  findNearestLivingFriendlyHit,
   findNearestObstacleHit,
+  FriendlyCombatant,
+  FriendlyCombatPose,
   hashCombatSession,
   segmentSphereIntersection,
   terrainBlocksCombatSegment,
@@ -82,12 +88,16 @@ interface FighterRuntime {
 
 export interface VietCongCombatantsProps {
   enemies: readonly EnemyCombatant[];
+  friendliesRef: RefObject<FriendlyCombatant[]>;
+  friendlyPosesRef: RefObject<Map<string, FriendlyCombatPose>>;
   tankRef: RefObject<THREE.Group | null>;
   /** Optional hut/structure volumes. Enemy rounds stop safely without touching file handlers. */
   obstacles?: readonly CombatObstacle[];
   onTankHit?: (event: EnemyTankHitEvent) => void;
+  onFriendlyHit?: (event: EnemyFriendlyHitEvent) => void;
   onEnemyFire?: (event: EnemyFireEvent) => void;
   enabled?: boolean;
+  tankTargetEnabled?: boolean;
   maxEngagementRange?: number;
 }
 
@@ -677,11 +687,15 @@ const VietCongFighter = memo(function VietCongFighter({
 
 export function VietCongCombatants({
   enemies,
+  friendliesRef,
+  friendlyPosesRef,
   tankRef,
   obstacles = [],
   onTankHit,
+  onFriendlyHit,
   onEnemyFire,
   enabled = true,
+  tankTargetEnabled = true,
   maxEngagementRange = MAX_ENGAGEMENT_RANGE,
 }: VietCongCombatantsProps) {
   const fighterRefs = useRef<Array<THREE.Group | null>>([]);
@@ -704,6 +718,7 @@ export function VietCongCombatants({
   ), []);
 
   const tankCenter = useMemo(() => new THREE.Vector3(), []);
+  const targetCenter = useMemo(() => new THREE.Vector3(), []);
   const muzzlePosition = useMemo(() => new THREE.Vector3(), []);
   const aimDirection = useMemo(() => new THREE.Vector3(), []);
   const impactPosition = useMemo(() => new THREE.Vector3(), []);
@@ -760,7 +775,8 @@ export function VietCongCombatants({
       return;
     }
 
-    const tank = tankRef.current;
+    const tank = tankTargetEnabled ? tankRef.current : null;
+    const currentFriendlies = friendliesRef.current;
     if (tank) {
       tank.getWorldPosition(tankCenter);
       tankCenter.y += 0.64;
@@ -884,11 +900,48 @@ export function VietCongCombatants({
         }
       }
 
+      let livingFriendlyCount = 0;
+      for (const friendly of currentFriendlies) if (friendly.alive) livingFriendlyCount += 1;
+      const shouldEngageFriendlies = livingFriendlyCount > 0 && (
+        !tank || index % 3 !== 0
+      );
+      let selectedFriendly: FriendlyCombatant | null = null;
+      if (shouldEngageFriendlies) {
+        // Hold a contact for a short three-round engagement before shifting.
+        // Focused fire makes casualties possible while the index offset still
+        // distributes the squad across the full US line.
+        const targetOrdinal = (
+          index * 2 + Math.floor(runtime.shotIndex / 3)
+        ) % livingFriendlyCount;
+        let livingOrdinal = 0;
+        for (const friendly of currentFriendlies) {
+          if (!friendly.alive) continue;
+          if (livingOrdinal === targetOrdinal) {
+            selectedFriendly = friendly;
+            break;
+          }
+          livingOrdinal += 1;
+        }
+      }
+
+      if (selectedFriendly) {
+        const livePose = friendlyPosesRef.current.get(selectedFriendly.id)?.position;
+        targetCenter.set(
+          livePose?.x ?? selectedFriendly.position[0],
+          (livePose?.y ?? selectedFriendly.position[1])
+            + (selectedFriendly.kneeling ? 0.78 : 0.92),
+          livePose?.z ?? selectedFriendly.position[2],
+        );
+      } else if (tank) {
+        targetCenter.copy(tankCenter);
+      }
+      const hasEngagementTarget = selectedFriendly !== null || tank !== null;
+
       if (fighter) {
         fighter.visible = true;
-        if (tank) {
-          const dx = tankCenter.x - enemy.position[0];
-          const dz = tankCenter.z - enemy.position[2];
+        if (hasEngagementTarget) {
+          const dx = targetCenter.x - enemy.position[0];
+          const dz = targetCenter.z - enemy.position[2];
           fighter.rotation.y = Math.atan2(-dx, -dz);
         }
         const idlePhase = now * (0.48 + index * 0.014) + index * 1.67;
@@ -913,7 +966,7 @@ export function VietCongCombatants({
         }
       }
 
-      if (!tank || runtime.moving || now < runtime.nextShotAt) continue;
+      if (!hasEngagementTarget || runtime.moving || now < runtime.nextShotAt) continue;
 
       // Read the rendered muzzle after stance scaling, idle motion, and yaw.
       // This keeps the flash, tracer origin, and rifle crown on one transform.
@@ -927,7 +980,7 @@ export function VietCongCombatants({
           enemy.position[2],
         );
       }
-      aimDirection.copy(tankCenter).sub(muzzlePosition);
+      aimDirection.copy(targetCenter).sub(muzzlePosition);
       const distance = aimDirection.length();
       if (distance > maxEngagementRange || distance < 3.2) {
         runtime.nextShotAt = now + 0.45;
@@ -935,18 +988,32 @@ export function VietCongCombatants({
       }
 
       // Keep terrain and huts tactically meaningful; concealed soldiers do not shoot through them.
-      const obstacleHitT = findNearestObstacleHit(muzzlePosition, tankCenter, obstacles);
-      if (terrainBlocksCombatSegment(muzzlePosition, tankCenter)
-        || (obstacleHitT !== null && obstacleHitT < 0.88)) {
+      const obstacleHitT = findNearestObstacleHit(muzzlePosition, targetCenter, obstacles);
+      const targetLaneBlocked = terrainBlocksCombatSegment(muzzlePosition, targetCenter)
+        || (obstacleHitT !== null && obstacleHitT < 0.88);
+      // Infantry contacts rotate after a physical round is spawned. Suppressive
+      // shots therefore still leave the rifle when this coarse whole-segment
+      // test finds cover; the projectile's swept terrain/structure/sandbag tests
+      // stop the tracer at the actual obstruction. Rejecting here pinned a VC
+      // rifleman to one blocked squad member forever because shotIndex never
+      // advanced, leaving the US line functionally invulnerable.
+      if (!selectedFriendly && targetLaneBlocked) {
         runtime.nextShotAt = now + 0.42;
         continue;
       }
 
       aimDirection.normalize();
       const shotIndex = runtime.shotIndex++;
-      aimDirection.x += (shotNoise(enemy.id, shotIndex, 1) - 0.5) * enemy.accuracy * 2;
-      aimDirection.y += (shotNoise(enemy.id, shotIndex, 2) - 0.5) * enemy.accuracy * 0.8;
-      aimDirection.z += (shotNoise(enemy.id, shotIndex, 3) - 0.5) * enemy.accuracy * 2;
+      // Fire at the exposed upper profile above the sandbag lip. Infantry aim
+      // is a little steadier than anti-armor harassment so the opposing squads
+      // can actually trade casualties without turning every burst into a hit.
+      const infantryAccuracyScale = selectedFriendly ? 0.42 : 1;
+      aimDirection.x += (shotNoise(enemy.id, shotIndex, 1) - 0.5)
+        * enemy.accuracy * 2 * infantryAccuracyScale;
+      aimDirection.y += (shotNoise(enemy.id, shotIndex, 2) - 0.5)
+        * enemy.accuracy * 0.8 * infantryAccuracyScale;
+      aimDirection.z += (shotNoise(enemy.id, shotIndex, 3) - 0.5)
+        * enemy.accuracy * 2 * infantryAccuracyScale;
       aimDirection.normalize();
 
       if (spawnHostileRound(muzzlePosition, aimDirection, enemy.id)) {
@@ -975,6 +1042,20 @@ export function VietCongCombatants({
           const obstacleHitT = projectile.lifetime > 0.08
             ? findNearestObstacleHit(projectile.previousPosition, projectile.position, obstacles)
             : null;
+          const friendlyCoverHitT = projectile.lifetime > 0.08
+            ? findNearestFriendlyCoverHit(projectile.previousPosition, projectile.position)
+            : null;
+          const blockingHitT = obstacleHitT === null
+            ? friendlyCoverHitT
+            : friendlyCoverHitT === null
+              ? obstacleHitT
+              : Math.min(obstacleHitT, friendlyCoverHitT);
+          const friendlyHit = findNearestLivingFriendlyHit(
+            projectile.previousPosition,
+            projectile.position,
+            friendliesRef.current,
+            friendlyPosesRef.current,
+          );
           const tankHitT = tank
             ? segmentSphereIntersection(
                 projectile.previousPosition,
@@ -984,7 +1065,24 @@ export function VietCongCombatants({
               )
             : null;
 
-          if (tankHitT !== null && (obstacleHitT === null || tankHitT < obstacleHitT)) {
+          const friendlyHitT = friendlyHit?.t ?? null;
+          const friendlyHitsFirst = friendlyHitT !== null
+            && (blockingHitT === null || friendlyHitT < blockingHitT)
+            && (tankHitT === null || friendlyHitT < tankHitT);
+          const tankHitsFirst = tankHitT !== null
+            && (blockingHitT === null || tankHitT < blockingHitT)
+            && (friendlyHitT === null || tankHitT <= friendlyHitT);
+
+          if (friendlyHitsFirst && friendlyHit) {
+            impactPosition.copy(friendlyHit.point);
+            onFriendlyHit?.({
+              enemyId: projectile.shooterId,
+              friendlyId: friendlyHit.friendly.id,
+              position: impactPosition.clone(),
+              damage: ENEMY_RIFLE_INFANTRY_DAMAGE,
+            });
+            projectile.active = false;
+          } else if (tankHitsFirst && tankHitT !== null) {
             impactPosition.copy(projectile.previousPosition).lerp(projectile.position, tankHitT);
             onTankHit?.({
               enemyId: projectile.shooterId,
@@ -992,7 +1090,7 @@ export function VietCongCombatants({
               damage: ENEMY_RIFLE_DAMAGE,
             });
             projectile.active = false;
-          } else if (obstacleHitT !== null) {
+          } else if (blockingHitT !== null) {
             projectile.active = false;
           }
         }

@@ -38,7 +38,6 @@ import { VietCongCombatants } from './components/Scene/VietCongCombatants';
 import {
   USInfantrySquad,
   US_FIGHTING_POSITIONS,
-  US_INFANTRY_MINIMAP_CONTACTS,
 } from './components/Scene/USInfantrySquad';
 import { CRASHED_HUEY_TRANSFORM } from './components/Scene/VietnamEnvironment';
 import { useEnemyCombat } from './hooks/useEnemyCombat';
@@ -138,8 +137,14 @@ function App() {
     enemies,
     livingEnemies,
     aliveCount: hostileCount,
+    friendlies,
+    livingFriendlies,
+    friendliesRef,
+    friendlyPosesRef,
+    friendlyAliveCount,
     damageEnemy,
     killEnemy,
+    damageFriendly,
   } = useEnemyCombat({ sessionKey: combatSessionKey, count: 12 });
 
   useEffect(() => {
@@ -434,14 +439,31 @@ function App() {
   function applyEnemyDamage(
     enemyId: string,
     amount: number,
-    source: 'cannon' | 'machinegun' | 'flamethrower' | 'napalm',
+    source: 'cannon' | 'machinegun' | 'flamethrower' | 'napalm' | 'friendly-rifle',
   ) {
     const result = damageEnemy(enemyId, amount, source);
     if (!result?.killed) return;
 
     const [x, y, z] = result.enemy.position;
+    if (source === 'friendly-rifle') {
+      spawnExplosion(new THREE.Vector3(x, y + 0.45, z), '#8b7454', 0.18);
+      return;
+    }
     spawnExplosion(new THREE.Vector3(x, y + 0.45, z), '#d75b32', 0.52);
     toast.success('Hostile position neutralized', { duration: 1500 });
+  }
+
+  function handleFriendlyInfantryHit(friendlyId: string, damage: number) {
+    const result = damageFriendly(friendlyId, damage);
+    if (!result?.killed) return;
+    const livePose = friendlyPosesRef.current.get(friendlyId)?.position;
+    const [x, y, z] = result.friendly.position;
+    spawnExplosion(
+      livePose?.clone().add(new THREE.Vector3(0, 0.5, 0))
+        ?? new THREE.Vector3(x, y + 0.5, z),
+      '#79654b',
+      0.18,
+    );
   }
 
   function handleEnemyProjectileHit(enemyId: string, projectile: Projectile) {
@@ -1118,6 +1140,7 @@ function App() {
         napalmCooldown={napalmCooldown}
         tankIntegrity={tankIntegrity}
         hostileCount={hostileCount}
+        friendlyCount={friendlyAliveCount}
         missionTotal={missionProgress.total}
         missionRemaining={missionProgress.remaining}
         missionTargetName={missionTarget?.name}
@@ -1139,7 +1162,7 @@ function App() {
         folderPortals={minimapFolderPortals}
         backPortalPosition={backPortalPosition}
         enemies={livingEnemies}
-        friendlies={US_INFANTRY_MINIMAP_CONTACTS}
+        friendlies={livingFriendlies}
       />
 
       <div className="header" data-game-ui>
@@ -1211,18 +1234,24 @@ function App() {
           />
 
           <USInfantrySquad
-            enemies={livingEnemies}
+            enemies={enemies}
+            friendlies={friendlies}
+            friendlyPosesRef={friendlyPosesRef}
             obstacles={combatObstacles}
-            enabled={livingEnemies.length > 0}
-            onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'machinegun')}
+            enabled={hostileCount > 0 && friendlyAliveCount > 0}
+            onEnemyHit={({ enemyId, damage }) => applyEnemyDamage(enemyId, damage, 'friendly-rifle')}
           />
 
           <VietCongCombatants
             enemies={enemies}
+            friendliesRef={friendliesRef}
+            friendlyPosesRef={friendlyPosesRef}
             tankRef={tankRef}
             obstacles={combatObstacles}
-            enabled={tankIntegrity > 0}
+            enabled={hostileCount > 0 && (tankIntegrity > 0 || friendlyAliveCount > 0)}
+            tankTargetEnabled={tankIntegrity > 0}
             onTankHit={event => handleTankHit(event.damage)}
+            onFriendlyHit={event => handleFriendlyInfantryHit(event.friendlyId, event.damage)}
             onEnemyFire={gameAudio.playEnemyRifle}
           />
 

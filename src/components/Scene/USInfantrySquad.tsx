@@ -7,10 +7,13 @@ import {
   EnemyCombatant,
   findNearestLivingEnemyHit,
   findNearestObstacleHit,
+  FriendlyCombatant,
+  FriendlyCombatPose,
   FriendlyEnemyHitEvent,
   FriendlyFireEvent,
   hashCombatSession,
   terrainBlocksCombatSegment,
+  US_INFANTRY_DEPLOYMENT,
 } from '../../lib/combat';
 
 const FRIENDLY_PROJECTILE_CAPACITY = 40;
@@ -18,7 +21,7 @@ const FRIENDLY_RIFLE_SPEED = 31;
 const FRIENDLY_RIFLE_LIFETIME = 2.7;
 // The squad sustains the firefight without clearing the whole encounter before
 // the player can engage; concentrated rifle fire still finishes exposed targets.
-const FRIENDLY_RIFLE_DAMAGE = 1;
+const FRIENDLY_RIFLE_DAMAGE = 3;
 const FRIENDLY_MAX_RANGE = 58;
 const TRACER_LENGTH = 0.58;
 const SOLDIER_SCALE = 0.96;
@@ -64,6 +67,8 @@ interface SoldierRuntime {
 
 export interface USInfantrySquadProps {
   enemies: readonly EnemyCombatant[];
+  friendlies: readonly FriendlyCombatant[];
+  friendlyPosesRef: React.RefObject<Map<string, FriendlyCombatPose>>;
   obstacles?: readonly CombatObstacle[];
   onEnemyHit?: (event: FriendlyEnemyHitEvent) => void;
   onFriendlyFire?: (event: FriendlyFireEvent) => void;
@@ -71,11 +76,11 @@ export interface USInfantrySquadProps {
 }
 
 const SQUAD: readonly SquadMember[] = [
-  { id: 'us-rifle-1', position: [-5.65, 0.02, -5.35], alternatePosition: [-5.3, 0.02, -5.7], kneeling: true, radioOperator: false, fireInterval: 1.42, initialDelay: 0.42, accuracy: 0.024, burstSize: 3 },
-  { id: 'us-rifle-2', position: [-4.12, 0.02, -5.18], alternatePosition: [-4.48, 0.02, -5.62], kneeling: true, radioOperator: false, fireInterval: 1.55, initialDelay: 0.86, accuracy: 0.03, burstSize: 2 },
-  { id: 'us-rifle-3', position: [4.18, 0.02, -3.96], alternatePosition: [4.53, 0.02, -4.33], kneeling: true, radioOperator: false, fireInterval: 1.48, initialDelay: 1.16, accuracy: 0.026, burstSize: 3 },
-  { id: 'us-rto-4', position: [5.72, 0.02, -3.78], kneeling: false, radioOperator: true, fireInterval: 1.72, initialDelay: 1.48, accuracy: 0.032, burstSize: 2 },
-  { id: 'us-rifle-5', position: [0.25, 0.02, 1.82], alternatePosition: [-0.3, 0.02, 1.76], kneeling: true, radioOperator: false, fireInterval: 1.62, initialDelay: 1.82, accuracy: 0.027, burstSize: 2 },
+  { ...US_INFANTRY_DEPLOYMENT[0], alternatePosition: [-5.3, 0.02, -5.7], radioOperator: false, fireInterval: 1.42, initialDelay: 0.42, accuracy: 0.024, burstSize: 3 },
+  { ...US_INFANTRY_DEPLOYMENT[1], alternatePosition: [-4.48, 0.02, -5.62], radioOperator: false, fireInterval: 1.55, initialDelay: 0.86, accuracy: 0.03, burstSize: 2 },
+  { ...US_INFANTRY_DEPLOYMENT[2], alternatePosition: [4.53, 0.02, -4.33], radioOperator: false, fireInterval: 1.48, initialDelay: 1.16, accuracy: 0.026, burstSize: 3 },
+  { ...US_INFANTRY_DEPLOYMENT[3], radioOperator: true, fireInterval: 1.72, initialDelay: 1.48, accuracy: 0.032, burstSize: 2 },
+  { ...US_INFANTRY_DEPLOYMENT[4], alternatePosition: [-0.3, 0.02, 1.76], radioOperator: false, fireInterval: 1.62, initialDelay: 1.82, accuracy: 0.027, burstSize: 2 },
 ];
 
 export const US_FIGHTING_POSITIONS = [
@@ -514,12 +519,14 @@ const M16_MUZZLE_LOCAL_Y = 0.012;
 function SoldierModel({
   member,
   index,
+  alive,
   soldierRefs,
   bodyRefs,
   flashRefs,
 }: {
   member: SquadMember;
   index: number;
+  alive: boolean;
   soldierRefs: React.MutableRefObject<Array<THREE.Group | null>>;
   bodyRefs: React.MutableRefObject<Array<THREE.Group | null>>;
   flashRefs: React.MutableRefObject<Array<THREE.Mesh | null>>;
@@ -539,6 +546,7 @@ function SoldierModel({
       ref={node => { soldierRefs.current[index] = node; }}
       position={member.position}
       scale={SOLDIER_SCALE}
+      visible={alive}
     >
       <group ref={node => { bodyRefs.current[index] = node; }}>
         {member.kneeling ? (
@@ -656,6 +664,8 @@ const TRACER_MATERIAL = {
 
 export function USInfantrySquad({
   enemies,
+  friendlies,
+  friendlyPosesRef,
   obstacles = [],
   onEnemyHit,
   onFriendlyFire,
@@ -733,6 +743,8 @@ export function USInfantrySquad({
 
     for (let memberIndex = 0; memberIndex < SQUAD.length; memberIndex += 1) {
       const member = SQUAD[memberIndex];
+      const friendlyState = friendlies.find(friendly => friendly.id === member.id);
+      const friendlyAlive = friendlyState?.alive === true;
       let runtime = runtimeRef.current.get(member.id);
       if (!runtime) {
         runtime = {
@@ -761,10 +773,17 @@ export function USInfantrySquad({
         && enemies.length > 0
         && activeBoundMemberRef.current < 0
         && now >= nextSquadBoundAtRef.current) {
-        while (!SQUAD[boundCursorRef.current]?.alternatePosition) {
-          boundCursorRef.current = (boundCursorRef.current + 1) % SQUAD.length;
+        let nextMover = -1;
+        for (let attempt = 0; attempt < SQUAD.length; attempt += 1) {
+          const candidateIndex = (boundCursorRef.current + attempt) % SQUAD.length;
+          const candidateMember = SQUAD[candidateIndex];
+          const candidateState = friendlies.find(friendly => friendly.id === candidateMember.id);
+          if (candidateMember.alternatePosition && candidateState?.alive) {
+            nextMover = candidateIndex;
+            break;
+          }
         }
-        if (memberIndex === boundCursorRef.current && member.alternatePosition) {
+        if (memberIndex === nextMover && member.alternatePosition) {
           runtime.moveFromX = runtime.baseX;
           runtime.moveFromZ = runtime.baseZ;
           runtime.moveToX = runtime.atAlternate
@@ -785,6 +804,17 @@ export function USInfantrySquad({
       const soldier = soldierRefs.current[memberIndex];
       const body = bodyRefs.current[memberIndex];
       const flash = flashRefs.current[memberIndex];
+      if (!friendlyAlive) {
+        if (soldier) soldier.visible = false;
+        if (flash) flash.visible = false;
+        runtime.moving = false;
+        if (activeBoundMemberRef.current === memberIndex) {
+          activeBoundMemberRef.current = -1;
+          nextSquadBoundAtRef.current = now + 1.5;
+        }
+        continue;
+      }
+      if (soldier) soldier.visible = true;
       let movementProgress = 0;
       let movementBlend = 0;
       if (runtime.moving) {
@@ -815,6 +845,14 @@ export function USInfantrySquad({
           + Math.sin(now * (0.34 + memberIndex * 0.025) + memberIndex * 1.7) * 0.045;
         soldier.position.z = runtime.baseZ
           + Math.sin(now * 0.27 + memberIndex * 2.1) * 0.026;
+      }
+      const livePose = friendlyPosesRef.current.get(member.id);
+      if (livePose) {
+        livePose.position.set(
+          soldier?.position.x ?? runtime.baseX,
+          soldier?.position.y ?? member.position[1],
+          soldier?.position.z ?? runtime.baseZ,
+        );
       }
       if (body) {
         const recoil = now < runtime.recoilUntil
@@ -1077,6 +1115,7 @@ export function USInfantrySquad({
           key={member.id}
           member={member}
           index={index}
+          alive={friendlies.find(friendly => friendly.id === member.id)?.alive === true}
           soldierRefs={soldierRefs}
           bodyRefs={bodyRefs}
           flashRefs={flashRefs}

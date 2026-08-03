@@ -22,13 +22,13 @@ export function Scene({ children, environmentSeed = 1968, tankRef }: SceneProps)
         gl={{ antialias: false, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.26;
+          gl.toneMappingExposure = 1.1;
           gl.outputColorSpace = THREE.SRGBColorSpace;
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
         }}
       >
-        <color attach="background" args={['#718273']} />
-        <fog attach="fog" args={['#7b8977', 50, 154]} />
+        <color attach="background" args={['#42534f']} />
+        <fog attach="fog" args={['#566861', 52, 166]} />
         <VietnamSkybox seed={environmentSeed} />
         <Lighting />
         <VietnamEnvironment seed={environmentSeed} tankRef={tankRef} />
