@@ -1,0 +1,1163 @@
+.hud {
+  position: fixed;
+  top: calc(var(--game-header-height, 46px) + 10px);
+  right: 12px;
+  display: grid;
+  gap: 5px;
+  width: min(var(--game-hud-width, 256px), calc(100vw - 24px));
+  max-height: calc(100dvh - var(--game-header-height, 46px) - 74px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #63715c transparent;
+  background: rgba(12, 18, 15, 0.78);
+  border: 1px solid rgba(179, 191, 169, 0.25);
+  border-radius: 2px;
+  padding: 7px;
+  font-family: var(--game-ui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  /* Do not inherit the app's 24px body line-height into 8–13px telemetry.
+     That tripled row heights and obscured a quarter of the battlefield. */
+  line-height: 1.3;
+  color: #d8dfd2;
+  box-shadow: none;
+  z-index: 90;
+  pointer-events: auto;
+}
+
+.hud-section,
+.hud-targets {
+  display: grid;
+  gap: 3px;
+}
+
+.hud-kicker {
+  color: #a3ae9b;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mission-order {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(203, 183, 121, 0.34);
+  padding: 6px;
+  background: rgba(45, 47, 30, 0.24);
+  color: #b7c0ae;
+  font-size: 10px;
+  box-shadow: none;
+}
+
+.mission-order-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mission-order-heading strong,
+.mission-order b {
+  color: #d9c992;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.mission-order:not(.nightmare-order) {
+  border-left: 3px solid #c5b277;
+  background-color: #20251c;
+}
+
+.mission-order > b,
+.nightmare-order .nightmare-phase-copy b {
+  color: #f0e3b3;
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mission-file {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 3px;
+  font-size: 11px;
+}
+
+.mission-file > span {
+  color: #b9c3b3;
+  font-size: 10px;
+}
+
+.mission-file > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #e0e5d9;
+  font-family: var(--game-number-font, monospace);
+  font-weight: 500;
+}
+
+.mission-trigger-guide {
+  border-top: 1px solid rgba(203, 183, 121, 0.3);
+  padding-top: 4px;
+  color: #e0e5d9;
+  font-size: 11px;
+}
+
+.campaign-radio-action {
+  justify-self: start;
+  padding: 5px 8px;
+  border: 1px solid #b9a970;
+  background: #34412a;
+  color: #f1e9c4;
+  font-size: 11px;
+  letter-spacing: .02em;
+  text-transform: none;
+}
+.campaign-radio-action kbd {
+  padding: 0 3px;
+  border: 1px solid #adbd91;
+  margin-right: 3px;
+}
+
+.mission-meter {
+  height: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(227, 179, 65, 0.38);
+  background: rgba(7, 10, 6, 0.85);
+}
+
+.mission-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #a44325, #e3b341 60%, #cddc84);
+  box-shadow: 0 0 8px rgba(227, 179, 65, 0.5);
+  transition: width 280ms ease-out;
+}
+
+.mission-order.is-complete {
+  border-color: #9ebd72;
+  background: rgba(67, 92, 47, 0.22);
+  box-shadow: inset 3px 0 0 rgba(158, 189, 114, 0.65), 0 0 12px rgba(116, 151, 79, 0.12);
+}
+
+.mission-order.is-complete b {
+  color: #cfe49a;
+}
+
+.nightmare-order {
+  gap: 6px;
+  border-color: rgba(205, 79, 45, 0.72);
+  background:
+    repeating-linear-gradient(112deg, rgba(224, 91, 51, 0.045) 0 1px, transparent 1px 9px),
+    radial-gradient(circle at 82% 12%, rgba(217, 116, 50, 0.13), transparent 42%),
+    rgba(73, 25, 17, 0.27);
+  box-shadow:
+    inset 3px 0 0 rgba(218, 75, 40, 0.72),
+    0 0 14px rgba(148, 43, 24, 0.16);
+}
+
+.nightmare-order .hud-kicker {
+  color: #c8754d;
+  letter-spacing: 0.12em;
+}
+
+.nightmare-order .mission-order-heading strong {
+  color: #f0a153;
+  font-size: 9px;
+}
+
+.nightmare-phase-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.nightmare-phase-copy b {
+  overflow: hidden;
+  color: #f0bd70;
+  font-size: 10px;
+  letter-spacing: 0.055em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.nightmare-phase-copy span {
+  overflow: hidden;
+  color: #9f896e;
+  font-size: 8px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nightmare-count,
+.eagle-support-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 18px;
+  border-top: 1px solid rgba(205, 79, 45, 0.24);
+  padding-top: 4px;
+  color: #8f806b;
+  font-size: 8px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nightmare-count strong {
+  color: #ef8550;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.eagle-support-status strong {
+  color: #a79572;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.eagle-support-status strong.is-ready {
+  color: #f1d477;
+  text-shadow: 0 0 8px rgba(241, 212, 119, 0.42);
+}
+
+.nightmare-boss-health {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(232, 72, 38, 0.38);
+  padding-top: 5px;
+}
+
+.nightmare-boss-health > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #c57959;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nightmare-boss-health strong {
+  color: #ff8054;
+  font-size: 9px;
+  text-shadow: 0 0 8px rgba(255, 75, 37, 0.5);
+}
+
+.nightmare-boss-health > i {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(229, 78, 42, 0.66);
+  background: rgba(30, 10, 8, 0.82);
+  transform: skewX(-8deg);
+}
+
+.nightmare-boss-health > i b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #861d18, #df4329 64%, #ff9b55);
+  box-shadow: 0 0 9px rgba(239, 69, 35, 0.56);
+  transition: width 100ms linear;
+}
+
+.nightmare-eagle-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 29px;
+  border: 1px solid #d48a42;
+  padding: 5px 8px;
+  color: #f0ca79;
+  background: rgba(116, 65, 26, 0.28);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.nightmare-eagle-button kbd {
+  border: 1px solid rgba(240, 202, 121, 0.58);
+  padding: 2px 4px;
+  color: #ffdc80;
+  background: rgba(12, 14, 8, 0.72);
+  font-family: inherit;
+  font-size: 9px;
+}
+
+.nightmare-eagle-button:not(:disabled):hover,
+.nightmare-eagle-button:not(:disabled):focus-visible {
+  border-color: #f1d477;
+  color: #fff0ae;
+  background: rgba(151, 84, 31, 0.38);
+  outline: none;
+  box-shadow: 0 0 12px rgba(226, 148, 59, 0.28);
+}
+
+.nightmare-eagle-button.is-targeting {
+  border-color: #ffe07a;
+  color: #fff0ae;
+  background: rgba(155, 80, 21, 0.5);
+  box-shadow:
+    inset 0 0 12px rgba(255, 190, 62, 0.14),
+    0 0 14px rgba(255, 190, 62, 0.34);
+  animation: eagle-designator-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes eagle-designator-pulse {
+  from { filter: brightness(0.9); }
+  to { filter: brightness(1.2); }
+}
+
+.nightmare-eagle-button:disabled {
+  cursor: default;
+  border-color: rgba(138, 111, 74, 0.34);
+  color: #766d5b;
+  background: rgba(43, 37, 26, 0.28);
+  opacity: 0.76;
+  box-shadow: none;
+}
+
+.nightmare-breaches {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(205, 79, 45, 0.24);
+  padding-top: 5px;
+}
+
+.nightmare-breaches > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #8f806b;
+  font-size: 8px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nightmare-breaches strong {
+  color: #ef8550;
+  font-size: 9px;
+}
+
+.nightmare-breach-pips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.nightmare-breach-pips i {
+  height: 5px;
+  border: 1px solid rgba(212, 138, 66, 0.58);
+  background: rgba(224, 186, 103, 0.62);
+  box-shadow: 0 0 6px rgba(226, 168, 76, 0.22);
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.nightmare-breach-pips i.is-spent {
+  border-color: rgba(230, 71, 38, 0.88);
+  background: #8d2d1d;
+  box-shadow: 0 0 9px rgba(238, 72, 36, 0.52);
+}
+
+.nightmare-breaches.is-overrun strong {
+  color: #ff8250;
+  text-shadow: 0 0 8px rgba(239, 76, 34, 0.48);
+}
+
+.nightmare-retry-button {
+  width: 100%;
+  min-height: 31px;
+  border: 1px solid #e05c32;
+  padding: 6px 8px;
+  color: #ffd19b;
+  background: rgba(139, 39, 23, 0.38);
+  font: 700 9px 'Courier New', monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nightmare-retry-button:hover,
+.nightmare-retry-button:focus-visible {
+  border-color: #ff8b54;
+  background: rgba(170, 51, 26, 0.5);
+  outline: none;
+  box-shadow: 0 0 13px rgba(232, 74, 35, 0.28);
+}
+
+.nightmare-order.is-victory {
+  border-color: rgba(158, 189, 114, 0.66);
+  background: rgba(67, 92, 47, 0.24);
+  box-shadow:
+    inset 3px 0 0 rgba(158, 189, 114, 0.7),
+    0 0 14px rgba(116, 151, 79, 0.14);
+}
+
+.nightmare-order.is-victory .hud-kicker,
+.nightmare-order.is-victory .mission-order-heading strong,
+.nightmare-order.is-victory .nightmare-phase-copy b {
+  color: #cfe49a;
+}
+
+.nightmare-order.is-defeat {
+  border-color: rgba(238, 74, 39, 0.9);
+  background:
+    repeating-linear-gradient(112deg, rgba(235, 71, 36, 0.065) 0 1px, transparent 1px 8px),
+    radial-gradient(circle at 80% 12%, rgba(228, 67, 31, 0.24), transparent 46%),
+    rgba(83, 20, 14, 0.52);
+  box-shadow:
+    inset 3px 0 0 rgba(238, 74, 39, 0.9),
+    0 0 17px rgba(174, 37, 19, 0.25);
+}
+
+.nightmare-defeat-overlay {
+  position: fixed;
+  z-index: 160;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(106, 29, 17, 0.3), transparent 38%),
+    rgba(5, 7, 4, 0.82);
+  backdrop-filter: blur(3px) saturate(0.7);
+  pointer-events: auto;
+}
+
+.nightmare-defeat-overlay section {
+  display: grid;
+  width: min(460px, calc(100vw - 40px));
+  gap: 14px;
+  border: 1px solid rgba(229, 87, 49, 0.85);
+  padding: 24px;
+  color: #d8c9a1;
+  background:
+    repeating-linear-gradient(107deg, rgba(229, 87, 49, 0.035) 0 1px, transparent 1px 12px),
+    rgba(16, 17, 11, 0.96);
+  box-shadow:
+    inset 4px 0 0 rgba(221, 66, 35, 0.72),
+    0 18px 80px rgba(0, 0, 0, 0.72),
+    0 0 28px rgba(177, 43, 22, 0.18);
+  font-family: 'Courier New', monospace;
+}
+
+.nightmare-defeat-overlay section > span {
+  color: #db623d;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.nightmare-defeat-overlay h2 {
+  margin: 0;
+  color: #f0c184;
+  font-size: clamp(21px, 4vw, 30px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nightmare-defeat-overlay p {
+  margin: 0;
+  color: #9d967b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.nightmare-defeat-overlay section > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  border-block: 1px solid rgba(221, 82, 45, 0.28);
+  padding-block: 10px;
+}
+
+.nightmare-defeat-overlay section > div strong {
+  color: #f06b42;
+  font-size: 22px;
+}
+
+.nightmare-defeat-overlay section > div small {
+  color: #806f5b;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.nightmare-defeat-overlay button {
+  min-height: 42px;
+  border: 1px solid #d8663f;
+  padding: 10px 14px;
+  color: #f4d09d;
+  background: rgba(135, 45, 25, 0.36);
+  font: 700 11px 'Courier New', monospace;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.nightmare-defeat-overlay button:hover,
+.nightmare-defeat-overlay button:focus-visible {
+  border-color: #f08c58;
+  color: #ffe4ba;
+  background: rgba(173, 57, 29, 0.48);
+  outline: none;
+  box-shadow: 0 0 17px rgba(232, 82, 39, 0.25);
+}
+
+.hud-targets {
+  border: 1px solid rgba(158, 175, 145, 0.25);
+  padding: 6px;
+  color: #b2bcaa;
+  font-size: 10px;
+}
+
+.hud-targets.is-armed {
+  border-color: #df6b37;
+  border-left-width: 3px;
+  background: #35251c;
+  color: #f0d2a0;
+  font-size: 11px;
+}
+
+.hud-armed-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.hud-targets.is-armed strong {
+  color: #ffd3a5;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.hud-disarm {
+  flex: none;
+  min-height: 26px;
+  border: 1px solid #d36a37;
+  padding: 4px 7px;
+  color: #ef9a62;
+  background: rgba(138, 50, 24, 0.12);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  pointer-events: auto;
+}
+
+.hud-targets kbd {
+  font-family: var(--game-number-font, monospace);
+  font-weight: 700;
+}
+
+.hud-disarm:hover {
+  background: rgba(181, 67, 30, 0.2);
+  box-shadow: 0 0 10px rgba(213, 93, 40, 0.3);
+}
+
+.hud-log {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: #b8c2b1;
+  font-size: 10px;
+}
+
+.hud-log > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.hud-log dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.armor-status {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(158, 175, 145, 0.25);
+  padding: 5px 6px;
+  background: rgba(29, 42, 32, 0.3);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.armor-status-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.armor-status-copy strong {
+  color: #d9c16f;
+  font-size: 12px;
+}
+
+.armor-status small {
+  color: #a2ad99;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.armor-meter {
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.42);
+  background: rgba(7, 10, 6, 0.86);
+}
+
+.armor-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #a64026, #d7a23f 46%, #91aa64 82%);
+  box-shadow: 0 0 9px rgba(190, 150, 57, 0.45);
+  transition: width 180ms ease-out;
+}
+
+.armor-status.is-hit {
+  border-color: #ec6835;
+  background: rgba(119, 34, 19, 0.28);
+  box-shadow: inset 0 0 20px rgba(239, 76, 34, 0.18), 0 0 12px rgba(239, 76, 34, 0.18);
+}
+
+.damage-vignette {
+  position: fixed;
+  z-index: 85;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 46%, rgba(139, 21, 10, 0.54) 100%);
+  mix-blend-mode: screen;
+  transition: opacity 220ms ease-out;
+}
+
+.damage-vignette.is-visible {
+  opacity: 1;
+  transition-duration: 45ms;
+}
+
+.weapon-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.weapon-selector button {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: 1px solid rgba(135, 155, 99, 0.28);
+  min-height: 27px;
+  padding: 4px;
+  color: #aeb9a5;
+  background: rgba(33, 43, 33, 0.36);
+  font-size: 9px;
+  text-align: left;
+  letter-spacing: 0.01em;
+}
+
+.weapon-selector button:hover,
+.weapon-selector button.is-selected {
+  border-color: #e3b341;
+  color: #f1df9b;
+  background: rgba(105, 89, 39, 0.24);
+  box-shadow: inset 3px 0 0 #e3b341;
+}
+
+.weapon-selector button span {
+  color: #e3b341;
+  font-weight: 700;
+}
+
+.weapon-selector button small {
+  color: #ef7b3f;
+  font-size: 9px;
+}
+
+.flame-fuel {
+  height: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.38);
+  background: rgba(8, 11, 6, 0.8);
+}
+
+.weapon-cycle {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid rgba(135, 155, 99, 0.2);
+  padding-top: 4px;
+}
+
+.weapon-cycle > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #7f876a;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.weapon-cycle strong {
+  color: #d8c16c;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.weapon-cycle > i {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(135, 155, 99, 0.4);
+  background: rgba(7, 10, 6, 0.88);
+}
+
+.weapon-cycle > i b {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #9c6b32, #d5b85c 62%, #a9c37b);
+  box-shadow: 0 0 7px rgba(211, 181, 84, 0.42);
+  transition: width 80ms linear;
+}
+
+.machinegun-cycle > i b {
+  background: linear-gradient(90deg, #afbd6e, #d7a444 62%, #db5430);
+}
+
+.machinegun-cycle.is-overheated strong {
+  color: #f07846;
+}
+
+.machinegun-cycle.is-overheated > i {
+  border-color: rgba(224, 91, 48, 0.65);
+}
+
+.machinegun-cycle.is-overheated > i b {
+  background: linear-gradient(90deg, #8c281b, #e65d34);
+  box-shadow: 0 0 8px rgba(224, 72, 38, 0.52);
+}
+
+.flame-fuel span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #b43c20, #ff8a32 62%, #ffe07a);
+  box-shadow: 0 0 8px rgba(255, 112, 42, 0.55);
+  transition: width 90ms linear;
+}
+
+.field-radio {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(135, 155, 99, 0.34);
+  padding: 5px;
+  background: rgba(29, 41, 31, 0.32);
+  box-shadow: none;
+}
+
+.field-radio-portrait {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid #a79b61;
+  border-radius: 50%;
+  background: #29311f;
+  box-shadow: none;
+}
+
+.field-radio-portrait::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: none;
+  content: '';
+  pointer-events: none;
+}
+
+.field-radio-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: sepia(0.18) saturate(0.86) contrast(1.08);
+  transform: scale(1.07);
+}
+
+.field-radio-portrait span {
+  position: absolute;
+  right: 2px;
+  bottom: 4px;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #25301d;
+  border-radius: 50%;
+  background: #d4b45d;
+  box-shadow: 0 0 7px rgba(227, 179, 65, 0.8);
+}
+
+.field-radio.is-muted .field-radio-portrait span {
+  background: #b95735;
+  box-shadow: 0 0 7px rgba(185, 87, 53, 0.7);
+}
+
+.field-radio-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  line-height: 1.15;
+}
+.field-radio .campaign-air-call { font-size:11px; color:#f2ce91; line-height:1.22; }
+
+.field-radio .hud-kicker {
+  overflow: hidden;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-radio strong {
+  overflow: hidden;
+  color: #e0e3d4;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-radio small {
+  overflow: hidden;
+  color: #97a48e;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-radio-mute {
+  min-width: 40px;
+  min-height: 27px;
+  border: 1px solid #879b63;
+  padding: 4px 5px;
+  color: #b9c68a;
+  background: rgba(57, 72, 39, 0.25);
+  cursor: pointer;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+
+.field-radio-mute:hover,
+.field-radio-mute:focus-visible {
+  border-color: #e3b341;
+  color: #f1df9b;
+  background: rgba(105, 89, 39, 0.24);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(227, 179, 65, 0.18);
+}
+
+.controls-ribbon {
+  position: fixed;
+  bottom: 12px;
+  left: 164px;
+  right: calc(var(--game-hud-width, 256px) + 28px);
+  z-index: 90;
+  display: flex;
+  max-width: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px 10px;
+  padding: 5px 7px;
+  border: 1px solid rgba(178, 189, 166, 0.23);
+  background: rgba(12, 18, 15, 0.75);
+  color: #afb9a5;
+  font-family: var(--game-ui-font, sans-serif);
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.controls-ribbon span {
+  white-space: nowrap;
+}
+
+.controls-ribbon kbd {
+  color: #d4c590;
+  font-family: var(--game-number-font, monospace);
+  font-weight: 700;
+}
+
+/* Quiet instrumentation: color communicates selection, danger and readiness;
+   decorative noise and stacked glows do not cover the battlefield. */
+.hud button {
+  font-family: inherit;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
+}
+
+.hud button:focus-visible {
+  outline: 2px solid #d4c590;
+  outline-offset: 2px;
+}
+
+.hud :is(.mission-order, .nightmare-order, .field-radio, .armor-status, .hud-targets) {
+  background-image: none;
+  box-shadow: none;
+}
+
+.hud :is(.mission-meter span, .armor-meter span, .weapon-cycle > i b,
+  .flame-fuel span, .nightmare-boss-health > i b, .nightmare-breach-pips i) {
+  box-shadow: none;
+}
+
+.hud :is(.weapon-cycle strong, .armor-status-copy strong, .nightmare-count strong,
+  .eagle-support-status strong, .nightmare-boss-health strong) {
+  font-family: var(--game-number-font, monospace);
+  font-variant-numeric: tabular-nums;
+  text-shadow: none;
+}
+
+.hud :is(.nightmare-phase-copy span, .nightmare-count, .eagle-support-status,
+  .nightmare-breaches > div:first-child, .weapon-cycle > div) {
+  color: #a8b29e;
+  font-size: 9px;
+  letter-spacing: 0.035em;
+}
+
+.scene-container .score-counter {
+  top: calc(var(--game-header-height, 46px) + 10px);
+  left: 12px;
+  min-width: 104px;
+  padding: 6px 9px;
+  border-color: rgba(179, 191, 169, 0.28);
+  background: rgba(12, 18, 15, 0.76);
+  font-family: var(--game-ui-font, sans-serif);
+  line-height: 1.15;
+  box-shadow: none;
+}
+
+.scene-container .score-label {
+  color: #a3ae9b;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-shadow: none;
+}
+
+.scene-container .score-value {
+  color: #dfd7b5;
+  font-family: var(--game-number-font, monospace);
+  font-size: 21px;
+  text-shadow: none;
+}
+
+.scene-container .boss-allies {
+  top: calc(var(--game-header-height, 46px) + 63px);
+  left: 12px;
+  width: 224px;
+  border: 1px solid rgba(179, 191, 169, 0.28);
+  border-left: 2px solid #b9aa73;
+  background: rgba(12, 18, 15, 0.8);
+  font-family: var(--game-ui-font, sans-serif);
+  line-height: 1.25;
+  box-shadow: none;
+}
+
+.scene-container .boss-allies-heading {
+  min-height: 22px;
+  letter-spacing: 0.05em;
+}
+
+.scene-container .boss-ally {
+  min-height: 41px;
+  padding: 4px 6px;
+  background: rgba(35, 46, 34, 0.25);
+}
+
+.scene-container .boss-ally-copy small {
+  color: #a0ad94;
+  font-size: 8px;
+  letter-spacing: 0.025em;
+}
+
+.scene-container .boss-ally-icon,
+.scene-container .boss-ally-meter span {
+  box-shadow: none;
+}
+
+.scene-container .boss-ally-icon::after {
+  background: none;
+}
+
+/* The radar's existing position is inline; scope these overrides to that
+   gameplay canvas rather than altering the WebGL canvas or menu controls. */
+.scene-container > canvas[data-game-ui] {
+  width: 132px;
+  height: 132px;
+  left: 12px !important;
+  bottom: 12px !important;
+  border: 1px solid rgba(179, 191, 169, 0.45) !important;
+}
+
+@media (max-width: 860px) {
+  .hud {
+    top: calc(var(--game-header-height, 46px) + 8px);
+    right: 8px;
+  }
+
+  .controls-ribbon {
+    left: 156px;
+    right: 58px;
+  }
+}
+
+@media (max-width: 720px) {
+  .hud {
+    top: calc(var(--game-header-height, 46px) + 8px);
+    right: 8px;
+    bottom: auto;
+    width: min(var(--game-hud-width, 256px), calc(100vw - 16px));
+    max-height: calc(100dvh - var(--game-header-height, 46px) - 132px);
+    padding: 6px;
+  }
+
+  .controls-ribbon {
+    right: 56px;
+    bottom: 12px;
+    left: 132px;
+    max-width: none;
+    max-height: 88px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    overflow-y: auto;
+    pointer-events: auto;
+  }
+
+  .scene-container .score-counter,
+  .scene-container .boss-allies {
+    left: 8px;
+  }
+
+  .scene-container .boss-allies {
+    width: min(224px, calc(100vw - var(--game-hud-width, 256px) - 28px));
+  }
+
+  .scene-container .boss-ally {
+    grid-template-columns: 23px minmax(0, 1fr) 24px;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .scene-container .boss-ally-icon {
+    width: 23px;
+    height: 23px;
+  }
+
+  .scene-container .boss-ally-copy strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .scene-container > canvas[data-game-ui] {
+    width: 104px;
+    height: 104px;
+  }
+}
+
+@media (max-width: 480px) {
+  .scene-container {
+    --game-hud-width: 210px;
+  }
+
+  .hud {
+    padding: 5px;
+  }
+
+  .field-radio {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .field-radio-portrait {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+@media (max-height: 700px) {
+  .hud {
+    gap: 4px;
+  }
+
+  .nightmare-order {
+    gap: 4px;
+    padding-block: 7px;
+  }
+
+  .nightmare-count,
+  .eagle-support-status {
+    min-height: 15px;
+    padding-top: 3px;
+  }
+
+  .nightmare-eagle-button {
+    min-height: 26px;
+    padding-block: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weapon-cycle > i b {
+    transition: none;
+  }
+}
+.embassy-file-health { display: grid; gap: 3px; margin: 6px 0; }
+.embassy-file-health > div { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; font-size: 10px; }
+.embassy-file-health meter { grid-column: 1 / -1; width: 100%; height: 5px; accent-color: #a7b884; }
+.embassy-file-health .is-under-attack { color: #ffc18d; border-left: 2px solid #ed823f; padding-left: 5px; }
+.embassy-file-health em { grid-column: 1 / -1; font-size: 10px; font-style: normal; color: #ffb270; }
+.turret-traverse-cue {
+  display: none;
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 5px;
+  color: #f0cf88;
+  background: #151a18df;
+  border-bottom: 1px solid #b49355;
+  font: 600 9px/1.2 ui-monospace, monospace;
+  letter-spacing: .1em;
+  white-space: nowrap;
+}
+.tank-pointer-sight[data-sweeping="true"] > .turret-traverse-cue { display: block; }
+.field-kit {
+  position:fixed; z-index:104; left:50%; bottom:clamp(3.5rem,9vh,6.5rem); transform:translateX(-50%);
+  box-sizing:border-box; width:min(29rem,90vw); padding:.7rem .85rem .6rem;
+  color:#e7e0ca; background:#17201df5; border:1px solid #827753; border-top:2px solid #e9bb72;
+  text-align:left; box-shadow:0 5px 22px #0008; font:12px/1.3 ui-monospace,monospace;
+}
+.field-kit__header,.field-protection {display:flex; justify-content:space-between; gap:.5rem; align-items:center;}
+.field-kit__header {color:#efc07c; font-size:11px; letter-spacing:.07em;}
+.field-kit p {font:inherit;color:#e7e0ca;margin:.35rem 0 .5rem}
+.field-kit__choices {display:grid; grid-template-columns:1fr 1fr;gap:4px;}
+.field-kit button {text-align:left; font:inherit; text-transform:none; letter-spacing:normal; padding:5px 7px; background:#28322b; border:1px solid #677058; color:#f1ecd8; cursor:pointer;}
+.field-kit button:hover,.field-kit button:focus-visible {outline:2px solid #f2c278;outline-offset:-2px; background:#354037;}
+.field-kit__choices b,.field-kit__choices span {display:block;overflow-wrap:anywhere;}
+.field-kit__choices span {font-size:10px;color:#c2c8ae;}
+.field-kit .field-kit__proceed {display:block;width:100%;margin-top:5px;color:#ffdaa0;border-color:#95815a;}
+.field-kit__proceed span {float:right;}
+.field-protection {font:600 10px/1.3 ui-monospace,monospace; color:#c7c6ac;}
+.field-protection b {color:#f2c984;white-space:nowrap;}
+.armor-status .surplus-plate{color:#efc281;letter-spacing:.06em;font-weight:700;}

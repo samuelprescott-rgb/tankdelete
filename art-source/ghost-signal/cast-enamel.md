@@ -1,0 +1,7 @@
+# Original cast-enamel pigment
+
+Built-in image generation, not a photograph, downloaded texture, or gameplay screenshot. Master: `cast-enamel-v1.png`; game sample: `public/images/textures/ghost-cast-enamel-v1.png` (512-square sRGB, with ordinary filtered mipmaps). The same material coordinates follow the physical mesh; red shark paint, markings and localized damage stay separate.
+
+## Original generation prompt
+
+Use case: stylized-concept. Asset type: seamless game albedo texture, a single square 1024x1024 full bleed orthographic pigment sample for cast steel on a weathered olive tank in Ghost Signal. Paint this as finely hand-clustered pixel art, not a photograph or CGI render. One square represents 1.2 metres of one continuous panel. 76 percent quiet subdued grey olive and dusty khaki enamel, areas of faded yellow-olive glaze and blue charcoal in crevices. Among the quiet areas, broken islands of tiny warm russet oxide chips contained by dark primer, short groups of shallow directional scrapes and soft dusty ochre deposit; irregular groups, not uniformly spattered. A few dull pewter flecks only. Readable medium-scale mottled value shapes with about an eight-step local pixel ramp; fine stipple only at transitions. Material only: no vehicle outline, no rivets, no panel boundaries, no pictograms or shark mouth, no words, lettering, lighting gradient, directionally cast shadows, highlights, border or watermark. Soft even neutral illumination, edges tile smoothly.

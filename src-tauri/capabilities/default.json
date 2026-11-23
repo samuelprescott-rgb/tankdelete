@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The simulation window does not require native commands.",
+  "windows": [
+    "main"
+  ],
+  "permissions": []
+}

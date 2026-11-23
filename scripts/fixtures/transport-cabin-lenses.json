@@ -1,0 +1,30 @@
+{
+  "pass": true,
+  "captureComplete": true,
+  "source": "vehicle-smoke-clearance-02/after/cabin-inspection/transport-cabin-both.json (1576), seated-near camera sample only",
+  "receiptSha256": "b5a9548353aa36ee46118286cf47a6783eddd0bad822371f05ca2ebc743e06ad",
+  "bundle": "GameSession-Dvh703BP.js",
+  "bundleSha256": "5f79dcc3966a68a8061ebc3a91d7346ecbcb7e856588115c28d9dc8d16535b4c",
+  "runs": [
+    {
+      "mode": "campaign",
+      "shots": [{
+        "label": "seated-near", "t": 5.957199999451627,
+        "air": [-10.1, 2.942890986870855, -0.55],
+        "camera": [-9.824089881627508, 3.052890986870855, -2.7129548323022554],
+        "quaternion": [-0.0010527502272260447, 0.998919869185171, 0.028938968844822433, 0.036338997595397986],
+        "fov": 60, "canvas": [1920, 1080]
+      }]
+    },
+    {
+      "mode": "embassy",
+      "shots": [{
+        "label": "seated-near", "t": 3.8403999999761567,
+        "air": [-4.42, 8.874067192430395, -15.54],
+        "camera": [-5.802698011616647, 8.984067192430395, -17.226014889813065],
+        "quaternion": [0.009009198834946074, 0.9499748854684466, 0.027521019915601512, -0.31098093957406664],
+        "fov": 60, "canvas": [1920, 1080]
+      }]
+    }
+  ]
+}

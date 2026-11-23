@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('../src/lib/scoreTicker.ts',import.meta.url),'utf8');
+const {outputText}=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}});
+const {animateScore}=await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
+const frames=new Map(),values=[];let id=0,t=0;
+const start=(a,b)=>animateScore(a,b,n=>values.push(n),()=>t,cb=>(frames.set(++id,cb),id),v=>frames.delete(v));
+const frame=ms=>{t=ms;const pending=[...frames.values()];frames.clear();pending.forEach(f=>f(t));};
+start(0,0);assert.equal(frames.size,0);
+const stop=start(0,2490);
+frame(100);assert.equal(values.at(-1),675);frame(500);assert.equal(values.at(-1),2179);
+stop();assert.equal(frames.size,0);const previous=values.at(-1);
+start(previous,0);for(const ms of [650,1000,1490,1499,1500])frame(ms);
+assert.equal(values.at(-1),0);assert.equal(frames.size,0);
+assert.equal(new Set(values).size,values.length);
+console.log('Score still animates, retargets and cancels with the original easing and timing; no duplicate paints or component state updates per tick.');

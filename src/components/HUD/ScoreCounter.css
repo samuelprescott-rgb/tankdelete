@@ -1,0 +1,55 @@
+.score-counter {
+  position: fixed;
+  top: 82px;
+  left: 16px;
+  z-index: 1000;
+
+  background: rgba(11, 16, 8, 0.9);
+  border: 1px solid #879b63;
+  border-radius: 2px;
+  min-width: 132px;
+  padding: 8px 12px;
+
+  box-shadow:
+    0 0 10px rgba(135, 155, 99, 0.35),
+    0 0 20px rgba(65, 84, 44, 0.2);
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.score-label {
+  font-size: 9px;
+  color: #879b63;
+  letter-spacing: 2px;
+  font-weight: 600;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 5px rgba(135, 155, 99, 0.65);
+}
+
+.score-value {
+  font-size: 23px;
+  color: #e3b341;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 10px rgba(227, 179, 65, 0.65),
+    0 0 20px rgba(135, 155, 99, 0.3);
+}
+
+@media (max-width: 720px) {
+  .score-counter {
+    top: 72px;
+    left: 8px;
+    min-width: 112px;
+    padding: 6px 9px;
+  }
+
+  .score-value {
+    font-size: 20px;
+  }
+}

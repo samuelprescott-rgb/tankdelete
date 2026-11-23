@@ -1,0 +1,8 @@
+{
+  "identifier": "cleanup-mac",
+  "description": "Local packaged Mac window: select files and request an individual native-confirmed Trash action. No scan, path command, permanent delete, shell, or network permissions.",
+  "platforms": ["macOS"],
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-cleanup-pick", "allow-cleanup-review", "allow-cleanup-forget"]
+}

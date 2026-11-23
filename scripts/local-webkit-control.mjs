@@ -1,0 +1,13 @@
+import {realpathSync,mkdtempSync,readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import path from 'node:path';
+import {execFileSync as exec} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const root=realpathSync(fileURLToPath(new URL('../',import.meta.url)));
+const out=mkdtempSync(path.join(root,'tmp/production-qa/local-mac-control-')),app=path.join(out,'Isolated WebKit Control.app');
+mkdirSync(path.join(app,'Contents/MacOS'),{recursive:true});
+const id='local.tankdelete.workshop.control'+path.basename(out).slice(-6).toLowerCase();
+writeFileSync(path.join(app,'Contents/Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${id}</string><key>CFBundleExecutable</key><string>control</string><key>CFBundleName</key><string>Offline WebKit Control</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string></dict></plist>`,{flag:'wx'});
+exec('/usr/bin/clang',['-fobjc-arc','-framework','AppKit','-framework','WebKit',path.join(root,'scripts/minimal-webkit-control.m'),'-o',path.join(app,'Contents/MacOS/control')]);
+exec('/usr/bin/codesign',['--force','--sign','-','--timestamp=none','--entitlements',path.join(root,'src-tauri/Entitlements.plist'),app]);
+exec('/usr/bin/codesign',['--verify','--deep','--strict',app]);writeFileSync(path.join(out,'entitlements.plist'),readFileSync(path.join(root,'src-tauri/Entitlements.plist')),{flag:'wx'});
+console.log(JSON.stringify({out,app,id}));

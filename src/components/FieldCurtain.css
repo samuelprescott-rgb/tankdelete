@@ -1,0 +1,31 @@
+.field-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: #111712;
+  color: #d9d6bc;
+}
+.field-curtain[data-stage="covering"] { animation: field-cover 360ms ease-in-out both; }
+.field-curtain[data-stage="revealing"] { animation: field-reveal 720ms ease-in-out both; }
+.field-curtain__status {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  font-family: ui-monospace, monospace;
+  animation: field-cover 250ms 500ms both;
+}
+.field-curtain__activity {
+  width: 6rem;
+  height: 2px;
+  background: #79816b;
+  animation: field-wait 1.6s ease-in-out infinite alternate;
+}
+@keyframes field-wait { from { opacity: .28; } to { opacity: .85; } }
+@keyframes field-cover { from { opacity: 0; } to { opacity: 1; } }
+@keyframes field-reveal { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .field-curtain[data-stage] { animation-duration: 70ms; }
+  .field-curtain__status, .field-curtain__activity { animation: none; }
+}

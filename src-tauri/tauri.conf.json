@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TankDelete",
+  "version": "0.1.1",
+  "identifier": "com.zacharyblevins.tauri-app",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "TankDelete",
+        "dragDropEnabled": false,
+        "width": 800,
+        "height": 600,
+        "minWidth": 800,
+        "minHeight": 600,
+        "maximized": true
+      }
+    ],
+    "security": {
+      "capabilities": ["default","cleanup-mac"],
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost blob: data:; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' blob: data:; media-src 'self' blob: data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; connect-src 'self' ws://localhost:1420 ws://127.0.0.1:1420 ipc: http://ipc.localhost blob: data:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; worker-src 'self' blob:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' blob: data:; media-src 'self' blob: data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "macOS": {"entitlements":"Entitlements.plist"},
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

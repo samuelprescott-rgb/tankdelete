@@ -1,0 +1,78 @@
+.achievement-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 6px 12px 6px 5px;
+  background: rgba(11, 16, 8, 0.96);
+  border: 2px solid #ad8741;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 2px #443c24, 3px 3px 0 #171e17;
+  opacity: 0;
+}
+
+.achievement-toast.visible {
+  opacity: 1;
+}
+
+.achievement-icon,
+.achievement-label {
+  image-rendering: pixelated;
+  background-size: 100% 1200%;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+}
+
+.achievement-icon {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  background-image: url('../../assets/field-medal.png');
+}
+
+.achievement-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 238px;
+  gap: 5px;
+}
+
+.achievement-label {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 119 / 7;
+  background-image: url('../../assets/unlock-decode.png');
+}
+
+/* The live region gets one stable phrase across the entire decode. */
+.achievement-label span {
+  position: absolute;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.achievement-name {
+  color: #fff2d3;
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 1.1;
+  text-shadow: 1px 2px #222c25;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .achievement-toast.visible :is(.achievement-icon, .achievement-label) {
+    animation: achievement-cels 880ms steps(11, end) both;
+  }
+}
+
+@keyframes achievement-cels {
+  from { background-position-y: 0%; }
+  to { background-position-y: 100%; }
+}
+
+@media (forced-colors: active) {
+  .achievement-label { background: none; aspect-ratio: auto; }
+  .achievement-label span { position: static; clip-path: none; }
+}
