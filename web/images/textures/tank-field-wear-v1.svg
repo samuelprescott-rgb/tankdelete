@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="512" viewBox="0 0 1024 512">
+  <title>Field paint study: two cast cheeks and two folded front guards</title>
+  <!-- Transparent between features. The left column unrolls the cheek from
+       bustle to mantlet; the right is the forward guard from rail to nose.
+       These are four specific locations, not a repeating material swatch. -->
+  <defs>
+    <linearGradient id="dry" x1="0" y1=".75" x2="1" y2=".25" gradientUnits="objectBoundingBox">
+      <stop stop-color="#7c8166" stop-opacity=".08"/><stop offset=".29" stop-color="#9d9e81" stop-opacity=".55"/>
+      <stop offset=".73" stop-color="#9fa286" stop-opacity=".74"/><stop offset="1" stop-color="#81876e" stop-opacity=".16"/>
+    </linearGradient>
+    <linearGradient id="steel"><stop stop-color="#605f54"/><stop offset=".37" stop-color="#93958a"/><stop offset=".76" stop-color="#adb09d"/><stop offset="1" stop-color="#707567"/></linearGradient>
+    <linearGradient id="silt" x1="0" y1="0" x2=".85" y2="1"><stop stop-color="#715c49" stop-opacity=".20"/><stop offset=".64" stop-color="#947a5b" stop-opacity=".73"/><stop offset="1" stop-color="#ad9872" stop-opacity=".49"/></linearGradient>
+    <linearGradient id="oldCoat" x1=".14" y1=".12" x2=".81" y2=".92"><stop stop-color="#65735e" stop-opacity=".04"/><stop offset=".46" stop-color="#53604f" stop-opacity=".49"/><stop offset=".78" stop-color="#5e6654" stop-opacity=".71"/><stop offset="1" stop-color="#837b63" stop-opacity=".29"/></linearGradient>
+  </defs>
+  <!-- Starboard cheek. The large irregular sunrub receives a narrower,
+       broken knife of exposed alloy at the proud shoulder past the number. -->
+  <g>
+    <path fill="url(#oldCoat)" d="m123 116 31-17 22-2 11-7 37-5 26-13 25-4 13-5 22 1 14-9 29-5 6 9-20 12-13 3-10 12-18 2-16 12-24 4-11 9-18 0-24 12-27 0-16 9-22 1-13 7-20-1z"/>
+    <path fill="url(#dry)" d="M115 122c31-9 39-20 67-28l13 2 18-10 23-3 9-6 18 0 17-5 19 2 20-11 14 0 21-9 17 1 28-15 17-3-25 19-18 5-10 8-18 6-19 0-16 8-26 4-5 4-21 1-17 8-19 0-18 8-18 1-20 8z"/>
+    <path fill="#838873" opacity=".58" d="m195 103 27-9 11 1 10-5 7 1-17 8-14 1zm88-28 21-8 9 1-12 6-9 1zm33-11 11-4 5 1-11 4z"/>
+    <path fill="#615d4c" opacity=".87" d="m401 47 20 1 19 9 7 6 12 6 11 14 6 5 9 17-3 2-8-12-8-5-6-10-15-8-9-10-13-5-15-3z"/>
+    <path fill="url(#steel)" d="m420 50 15 5 8 6-6-1-9-4-11-3zm26 11 13 10 5 7-8-6-3-5zm16 16 7 6 4 7-6-5z"/>
+    <path fill="#8e8e71" opacity=".80" d="m429 45 10 3 8 5-10-4zm40 24 6 9-8-8z"/>
+    <!-- Returned paint at the first two grab feet. The stain narrows
+         downhill, but the oxide and metal only sit at the upper contact. -->
+    <path fill="url(#silt)" d="m253 143 15-7 13-4 9 3 8 9-12 1-2 11-7 4-5 13-3 18-7-12 1-14-6-8 2-5-13 0zm-80 4 14-7 9 1 10 6-8 4-9 2-5 10-1 8-5-7 1-12z"/>
+    <path fill="#5b5142" d="m272 139 11-5 8 3 5 5-9-2-8 4-8 0zm-89 7 7-3 7 2-6 1-4 4z"/>
+    <path fill="url(#steel)" d="m276 138 9-2 6 2-8 1-7 2zm-89 7 5-2 3 1-6 2z"/>
+    <path fill="#a69b79" opacity=".77" d="m253 156 8-3 4 1-5 3zm19 14 4-8 2-2-3 8z"/>
+    <path fill="#8a876a" opacity=".74" d="m262 131 6-4 4 0-4 3zm-15 9 11-4-4 3-6 2zm49-9 6 3-1 2-5-2zm21-45 12-6 4 0-8 5zm23-10 5-3 3 1-6 3z"/>
+  </g>
+  <!-- Port cheek: an older olive repair to the casting and a shorter
+       exposed patch on the mantlet facing. The numeral is open on both. -->
+  <g transform="translate(0 256)">
+    <path fill="url(#oldCoat)" d="m118 115 26-17 29-2 19-9 21 0 17-11 19-2 10-7 24-3 15-8 22-1 13-7 29-6-7 11-19 7-11 10-17 2-15 12-19 3-15 10-26 4-14 9-28 1-22 10-18 0-12 4z"/>
+    <path fill="url(#dry)" d="m123 109 24-10 20-1 11-7 20 0 17-11 20-2 14-9 21 1 20-11 9 1 21-9 22 0 23-9 25-4-13 12-20 4-12 6-22 2-14 7-18 1-19 10-15-1-13 8-13-1-22 10-18 0-22 9-13 1z"/>
+    <path fill="#68745e" opacity=".67" d="m276 78 15-7 12-2 9-6 18-2-13 7-17 3-12 7zm53-19 17-4 10 0-13 4z"/>
+    <path fill="url(#silt)" d="m161 145 11-8 10 1 8-5 11 5 4 7-11 6-3 11-8 3-5 17-5-10 0-13-9-4zm113 8 6-11 11-5 7 2 2 6-9 4-4 16-8 8 1-15z"/>
+    <path fill="#595242" d="m175 143 9-5 6 0 9 3-1 3-9-2-12 5zm106 2 7-6 8 2-7 2-5 4z"/>
+    <path fill="url(#steel)" d="m178 142 8-3 7 1-7 1-7 3zm107 2 5-4 5 1-6 3z"/>
+    <path fill="#625d4e" d="m421 47 16 3 6 5 12 9 5 8 7 6 6 12-4-4-6-4-5-8-10-7-6-7-11-5-11-4z"/>
+    <path fill="url(#steel)" d="m426 49 10 3 6 5-6-2zm20 10 7 5 5 7-7-5z"/>
+  </g>
+  <!-- Starboard front sheet. A dragged olive-to-primer island crosses
+       the real downfold; silver metal is only at its outer torn corner. -->
+  <g transform="translate(512 0)">
+    <path fill="url(#oldCoat)" d="m28 141 32 0 29 7 31-3 27 5 39-1 23 5 39-1 22 4 41-5 22 2 32-5 19 1 33-9 27-1 21-6 24 2-6 42-20 17-7 17-26 3-24 9-42 2-32 10-39 2-37-2-27 3-39-6-24-1-19-6-32 0-20-6-29-1-18-8-23-3z"/>
+    <path fill="url(#silt)" d="m12 60 36-6 36 3 16-4 28 2-22 7-32 5-21-1-20 6-20-3zM334 92l37-2 24 2 17 8-8 13-14 3-9 10-17 2-31 14-27 4 17-15 20-8 7-9-18-8z"/>
+    <path fill="#6b6451" opacity=".83" d="m345 100 16-4 27 1 10 3-14 4-23 0-17 5 7-6z"/>
+    <path fill="#999785" opacity=".83" d="m364 98 20 0 4 2-21 1-8 2z"/>
+    <path fill="url(#dry)" d="m39 144 37-1 32 6 33-1 21 5 45-2 28 4 34-3 19 4 31-3 26 3 37-8 34 0 33-8 31 1-25 12-33 5-17 7-23-1-30 6-20-2-21 4-30-5-23 2-31-4-23 1-24-5-34-1-15-6-35-1z"/>
+    <path fill="#74644f" d="m466 146 13-7 15-2-3 9-8 4 3 8-6 5-4 13-7 5-1 12-9 8-5 15-8 7 3-15 7-12 1-11 8-10 1-7 6-5-2-9 5-4z"/>
+    <path fill="url(#steel)" d="m480 141 12-3-2 5-9 4zm1 12 3-2-3 10-5 4zm-8 18-3 9-5 5 2-8zm-12 24-2 7-5 6 1-6z"/>
+    <path fill="#746651" d="m54 228 16 1 13 6 25-1 20 5 37 2 16 6 34 2 12 5-44-2-21-5-28 0-23-5-33 0-17-8-17-2z"/>
+    <path fill="url(#steel)" d="m62 229 13 1 9 5-10-2zm47 6 18 2 9 3-17-1zm64 9 13 3 17 1-13 1z"/>
+    <path fill="#9b916e" opacity=".72" d="m24 190 13 0 17 6-13-1zm11 9 9 1 8 4-11-3z"/>
+    <path fill="#645e4e" opacity=".84" d="m450 183 12-5-3 6-10 4zm-4 12 9-6-1 4-7 4zm-72 23 24-9-8 5-15 6zm-265-9 18 4 13 6-15-5z"/>
+    <path fill="#a5a081" opacity=".81" d="m449 187 6-3-2 3-6 2zm-68 30 15-7-3 3-10 5zm-274-12 8 3-4 0z"/>
+  </g>
+  <!-- Port front sheet is greener and cleaner inboard, with one broad
+       ochre transfer and a shortened scrape licking over the leading rim. -->
+  <g transform="translate(512 256)">
+    <path fill="url(#oldCoat)" d="m23 144 31-2 27 4 27-1 24 4 18-2 26 4 23-2 35 5 22-2 28 3 34-3 25 1 31-6 19 0 31-8 21 1 28-6 19 1-5 37-20 15-8 19-22 3-25 11-34 1-18 7-35 3-27-3-28 3-25-4-31 2-27-5-26 0-19-6-26 0-17-6-27-1-14-9-14-2z"/>
+    <path fill="url(#silt)" d="m15 61 31-9 25 1 18-4 28 3-15 9-23 2-21 9-24-1-19 7zm325 43 23-9 24 2 18 6 3 10-11 5-10 0-13 8-20 3-23 10-19 0 18-12 18-6 7-8-22-1z"/>
+    <path fill="#685f4c" d="m352 103 16-5 19 1 11 5-15 1-12-3-13 5z"/>
+    <path fill="url(#steel)" d="m365 100 12-1 9 1-11 2-8 0z"/>
+    <path fill="url(#dry)" d="m20 140 31 0 26 4 29-2 20 4 23-2 31 4 23-2 29 4 31-2 28 4 34-4 19 1 32-6 29 0 22-5 22 2 28-8 18 1-22 9-12 1-20 8-23 2-17 8-31 1-24 7-30-1-29 3-18-4-36 1-21-4-36 0-24-6-19 1-20-7-28-2z"/>
+    <path fill="url(#silt)" d="m331 158 32-7 19 0 14-7 24 0 14-5 22 1-16 11-14 2-21 10-20 0-15 5-23 1-19 5-21-2z"/>
+    <path fill="#756550" d="m486 144 12-5-4 12-9 5 1 5-7 8-6 16-7 7-3 12-7 6 2-15 7-11 3-14 7-6 2-9-3-4zM82 232l14 1 15 7 31-1 19 6 27 1 17 6-33-2-15-3-23 0-24-6-18-1z"/>
+    <path fill="url(#steel)" d="m486 146 9-5-2 5-7 5zm-8 18 6-6-2 7-7 7zm-6 13-3 9-4 5 2-7zm-380 57 9 1 7 4-8-2zm48 6 15 3 9 3-13-2z"/>
+    <path fill="#726650" opacity=".82" d="m425 180 17-9-4 6-13 5zm16-10 9-6 5-1-7 5zm-291 51 26 3 21 7-19-3zm245-11 12-5-3 3-9 4z"/>
+    <path fill="#aba286" opacity=".81" d="m432 176 9-6 2 0-9 7zm-257 50 16 4-6 0z"/>
+  </g>
+</svg>

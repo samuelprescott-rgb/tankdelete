@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="384" viewBox="0 0 1024 384">
+  <title>Hand-lettered shark grin, painted on the forward glacis</title>
+  <defs>
+    <linearGradient id="oxide" x1="0" y1="0" x2=".91" y2=".32">
+      <stop stop-color="#ac4940"/><stop offset=".32" stop-color="#b64c40"/>
+      <stop offset=".59" stop-color="#9b4339"/><stop offset=".78" stop-color="#ad4b3d"/>
+      <stop offset="1" stop-color="#b45143"/>
+    </linearGradient>
+    <!-- The two brush-loads of bone paint have different warm undertones.
+         Coordinates span the whole jaw, not each individual fang. -->
+    <linearGradient id="upperIvory" gradientUnits="userSpaceOnUse" x1="352" y1="109" x2="349" y2="171">
+      <stop stop-color="#dbcbaf"/><stop offset=".28" stop-color="#eadac0"/>
+      <stop offset=".68" stop-color="#eee0c8"/><stop offset="1" stop-color="#e0ceb0"/>
+    </linearGradient>
+    <linearGradient id="lowerIvory" gradientUnits="userSpaceOnUse" x1="448" y1="186" x2="457" y2="278">
+      <stop stop-color="#e7d8bb"/><stop offset=".52" stop-color="#efe2ca"/>
+      <stop offset="1" stop-color="#d8c5a5"/>
+    </linearGradient>
+    <linearGradient id="paintCoverage" gradientUnits="userSpaceOnUse" x1="196" y1="118" x2="833" y2="210">
+      <stop stop-color="#e6e6e6"/><stop offset=".36" stop-color="#fafafa"/>
+      <stop offset=".63" stop-color="#f2f2f2"/><stop offset="1" stop-color="#e6e6e6"/>
+    </linearGradient>
+    <mask id="wear" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="384">
+      <path fill="url(#paintCoverage)" d="M0 0h1024v384H0z"/>
+      <!-- Chips follow the horizontal rub at the casting break and a few
+           distinct brush edges. Bare olive underneath is the actual hull. -->
+      <path d="m111 142 23 7-15-2zm73 51 35 4-32-1zm32 11 9 1-6 2zm27-146 11 4-13-1zm-10 201 22 5-9 1zm76-55 28-1-18 3zm7 80 16 3-8 2zm64-121 12-2-5 3zm47-4 9-1-7 4zm58 158 26-3-15 5zm55-76 13-3-6 4zm52-84 39-5-23 6zm31 141 23-6-9 5zm71-20 19-8-7 5zm69-99 39-8-26 8zm12 10 10-2-7 4zm50-120 21-7-15 7zm36 103 18-6-11 6zm19-51 25-11-17 10z"/>
+      <path d="m148 109 23 7-13-1-6 1z m14 10 10 3-7 1z m641 47 22-13-8 8-7 2z m14-2 9-6-4 5z"/>
+      <path fill="#969696" d="m312 199 20 4 8 0 13 4-15-1-17-4zm38 9 9 1 7 3-11-2zm137 25 24 2 16-3 9 2-20 3-17-1zm222-44 16-8 9-2-5 4-12 5z"/>
+      <path fill="#535353" d="m326 204 17 2 8 3-15-2zm173 30 11 1-6 2zm221-48 11-5-5 4z"/>
+      <!-- Broken rubs have a broad burnished shoulder and a much shorter
+           exposed core. Each continues through the red field and ivory. -->
+      <g id="casting-rubs">
+        <path fill="#bababa" d="M237 126l25 4 14 2 6 2 21 3 8 3-20-2-19-4-12-1z M313 140l19 3 7 2 17 2 5 3-21-3-11-2z M365 149l19 3 6 3-17-3z M575 245l28-8 17-4 10-4 16-3-13 6-23 5-11 4z M651 225l19-7 12-2-15 6z"/>
+        <path fill="#616161" d="M255 130l17 3 12 1 11 3-16-2-7 0z M315 141l17 2 6 3-14-2z M596 240l18-6 9-1-11 5z M630 230l12-4-4 3z"/>
+        <path fill="#242424" d="M266 132l14 2-5 2z M321 142l11 2-4 1z M606 237l10-3-3 3z"/>
+      </g>
+      <!-- Tiny missing curls along the outer lip and eye-brush edges. -->
+      <path id="lip-chips" fill="#454545" d="M218 112l12 2 4 3-7-1z M392 106l15-1 7 3-12 1z M478 278l14 1 7 3-16-1z M688 240l13-5-6 5-6 2z M869 87l12-5-5 4-7 4z M228 49l13 5 4 3-12-5z M763 45l13-5-5 4-8 3z"/>
+    </mask>
+  </defs>
+  <g mask="url(#wear)">
+    <!-- Two independent brush silhouettes: brows crowd toward the centre. -->
+    <g transform="translate(36 -3) scale(.93 .85)">
+    <g fill="#302a20">
+      <path d="M166 34q84 12 164 69-26 11-60 2-69-18-104-71z"/>
+      <path d="M856 32q-82 13-164 70 27 11 59 2 68-20 105-72z"/>
+    </g>
+    <g fill="#d0ad62">
+      <path d="M184 45q75 17 133 54-36 5-75-15-32-16-58-39z"/>
+      <path d="M838 43q-71 18-130 55 36 4 72-14 34-18 58-41z"/>
+    </g>
+    <g fill="#30291f">
+      <path d="M270 75q12 4 21 11l1 14q-16-4-20-10zM750 74q-12 5-20 11l-1 15q15-3 19-11z"/>
+    </g>
+    <g fill="#e5d29b">
+      <path d="m197 49 53 19-32-9zM827 48l-40 15 22-6z"/>
+    </g>
+    </g>
+    <!-- A boat-shaped open jaw, set high enough that its lower fangs cross
+         onto the sunlit armor. A few dark-red planes describe the throat,
+         rather than outlining the whole mouth in black. -->
+    <path fill="#a22929" d="M119 91C230 118 285 105 400 106c54 0 85 5 114 10 61-10 105-12 178-12 95 0 143-5 213-29-23 42-65 91-128 129-71 44-160 69-258 80-106-4-204-29-277-77-56-35-93-76-123-116z"/>
+    <path fill="url(#oxide)" d="M132 99c110 27 173 11 270 14 49 0 83 3 112 10 61-12 121-15 180-13 89 0 136-6 200-28-24 37-63 78-121 115-79 50-163 73-253 81-106-6-198-28-269-73q-75-42-119-106z"/>
+    <path fill="#902d2a" d="M146 107c99 25 212 3 312 14l56 8q48-8 102-12c112-6 167 5 258-24-38 19-66 29-95 48-28 21-46 39-89 50-27 8-54 17-80 15-29-2-41 6-77 6-51-3-82-18-118-21-34-2-65-8-102-22-51-20-96-24-167-62z"/>
+    <path fill="#a82f2c" d="M191 133q56 14 100 40c50 33 96 31 133 50-58-11-86-12-132-37-47-27-63-36-101-53z M552 225q52-24 102-31c61-10 95-51 142-62-38 19-59 49-103 67-54 19-83 10-141 26z"/>
+    <!-- Fine knife-like fangs: skinny uneven roots, swept points. There is
+         open crimson between teeth in both directions, even at thumbnail size. -->
+    <g fill="url(#upperIvory)">
+      <path d="M151 106l13 3q8 15 18 22-18-3-31-25z M178 112l15 2q8 19 17 28-20-6-32-30z M208 116l16 1q6 21 19 35-22-10-35-36z M242 118h18q5 24 18 41-24-12-36-41z M278 117l21-1q4 34 22 59-32-20-43-58z M321 114l17-1q4 21 12 35-20-8-29-34z M355 113h22q0 40 19 74-31-25-41-74z M398 113l19 1q-1 25 11 47-22-13-30-48z M439 116l21 2q-2 31 9 55-25-18-30-57z M478 121l19 3q-2 23 4 39-18-13-23-42z"/>
+      <path d="M526 125l20-4q-3 22-20 43 5-21 0-39z M562 119l21-2q-5 31-28 53 11-29 7-51z M604 115l19-1q-5 25-29 44 10-20 10-43z M643 113l22-1q-7 37-37 60 16-29 15-59z M686 113l18-1q-7 22-27 38 10-20 9-37z M721 112l21-2q-9 32-37 55 14-29 16-53z M763 109l18-3q-7 25-33 45 12-24 15-42z M800 104l17-4q-10 25-33 41 10-15 16-37z M834 96l16-4q-9 19-30 33 9-15 14-29z M864 88l14-5q-9 16-26 26 6-8 12-21z"/>
+    </g>
+    <g fill="url(#lowerIvory)">
+      <path d="M175 142l15 15q-8-22-26-34 8 13 11 19z M197 161l16 14q-7-25-30-41 9 15 14 27z M224 182l18 13q-6-32-31-52 12 24 13 39z M257 203l19 11q-6-31-32-61 14 25 13 50z M291 221l19 10q-5-38-30-73 14 39 11 63z M335 240l22 8q-4-43-28-77 12 31 6 69z M379 256l20 5q-1-43-17-75 6 30-3 70z M419 267l22 4q0-40-17-88 4 47-5 84z M462 275l19 2q2-37-9-70 2 30-10 68z M502 280h23q3-48-6-85-2 40-17 85z"/>
+      <path d="M541 277l21-3q3-35 17-73-27 36-38 76z M583 271l21-5q4-47 22-98-36 57-43 103z M626 260l19-5q9-39 24-69-31 32-43 74z M665 245l21-8q12-42 28-73-36 39-49 81z M702 226l18-9q11-31 26-57-29 26-44 66z M736 204l19-10q12-35 30-60-35 36-49 70z M771 182l16-12q11-25 23-42-26 22-39 54z M800 158l15-12q10-19 21-32-23 14-36 44z M830 138l14-14q8-14 16-23-20 11-30 37z"/>
+    </g>
+    <!-- Desaturated ochre on a few tooth flanks, never across their points. -->
+    <path fill="#c6ae8e" d="m278 117 21-1 2 9-8-6zm77-4h22l1 15-8-12zm84 3 21 2-1 11-7-8zm204-3 22-1-7 14-4-10zm120-4 18-3-7 10-5-4z M337 244l-1-13 12 17z M422 267l9-19 1 20z M586 270l12-19-2 17z M669 247l18-23-3 16z"/>
+    <path fill="#d4503d" d="M131 99q49 11 82 13-33 1-77-9z M365 107q53-2 88 4-42-3-71-2z M518 278q26-2 51-7-24 8-50 9z M825 99q36-8 67-19-32 14-62 20z"/>
+  </g>
+</svg>

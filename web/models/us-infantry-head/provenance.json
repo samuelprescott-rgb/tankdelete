@@ -1,0 +1,66 @@
+{
+  "license": "CC0-1.0",
+  "sourceMesh": "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj",
+  "sourceMorph": "https://raw.githubusercontent.com/makehumancommunity/mpfb2/master/src/mpfb/data/targets/macrodetails/caucasian-male-young.target.gz",
+  "sourceSkinPack": "https://files2.makehumancommunity.org/asset_packs/skins02/skins02_cc0.zip",
+  "skinLicenseEvidence": "https://static.makehumancommunity.org/assets/assetpacks/skins02.html",
+  "meshMorphLicenseEvidence": "https://github.com/makehumancommunity/mpfb2/blob/master/LICENSE.md",
+  "skin": {
+    "asset": "mindfront_aksel_skin",
+    "author": "Mindfront",
+    "license": "CC0",
+    "source": "http://www.makehumancommunity.org/node/850"
+  },
+  "sourceVertices": 19158,
+  "sourceBodyQuads": 13378,
+  "headQuads": 4226,
+  "headTriangles": 8452,
+  "headUvSplitVertices": 4444,
+  "farTriangles": 2452,
+  "farVertices": 1444,
+  "neckBoundaryVertices": 52,
+  "neckBoundaryY": -0.008,
+  "binaryBytes": 253840,
+  "dimensionsMetres": [
+    0.17666000127792358,
+    0.258030011318624,
+    0.220869991928339
+  ],
+  "boundsMetres": {
+    "min": [
+      -0.08833000063896179,
+      -0.00800000037997961,
+      -0.16103999316692352
+    ],
+    "max": [
+      0.08833000063896179,
+      0.2500300109386444,
+      0.05982999876141548
+    ]
+  },
+  "textures": {
+    "diffuse": [
+      2048,
+      2048
+    ],
+    "normalNotUsed": true,
+    "specularNotUsed": true
+  },
+  "files": [
+    {
+      "path": "base.obj",
+      "bytes": 1749303,
+      "sha256": "8e761e6624b8f54536409135d1636da63b32486a90d4897f84e121d144f6fb4c"
+    },
+    {
+      "path": "caucasian-male-young.target.gz",
+      "bytes": 127922,
+      "sha256": "ffe69537e53148edff2776204ba48cf3bf1f3cbc72966592c8a562ab80b07333"
+    },
+    {
+      "path": "skins/mindfront_aksel_skin/Aksel_Skin_diffuse.png",
+      "bytes": 4247107,
+      "sha256": "268ee6d1ea9665f8050d040c7b47971884428628021418ae52f68912859f5e60"
+    }
+  ]
+}

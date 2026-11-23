@@ -1,0 +1,204 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Tank Delete offline CC0 infantry head build"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0,
+        1
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "head-near",
+      "mesh": 0
+    },
+    {
+      "name": "head-far",
+      "mesh": 1
+    }
+  ],
+  "meshes": [
+    {
+      "name": "head-near",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "head-far",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Mindfront Aksel CC0 diffuse only",
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 0
+        },
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    }
+  ],
+  "images": [
+    {
+      "uri": "Aksel_Skin_diffuse.png"
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987,
+      "wrapS": 33071,
+      "wrapT": 33071
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "us-male-head.bin",
+      "byteLength": 253840
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 53328
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 53328,
+      "byteLength": 53328
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 106656,
+      "byteLength": 35552
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 142208,
+      "byteLength": 50712
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 192920,
+      "byteLength": 17328
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 210248,
+      "byteLength": 17328
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 227576,
+      "byteLength": 11552
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 239128,
+      "byteLength": 14712
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 4444,
+      "type": "VEC3",
+      "min": [
+        -0.08833000063896179,
+        -0.00800000037997961,
+        -0.16103999316692352
+      ],
+      "max": [
+        0.08833000063896179,
+        0.2500300109386444,
+        0.05982999876141548
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 4444,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 4444,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 25356,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 1444,
+      "type": "VEC3",
+      "min": [
+        -0.08833000063896179,
+        -0.00800000037997961,
+        -0.16103999316692352
+      ],
+      "max": [
+        0.08833000063896179,
+        0.2500300109386444,
+        0.05982999876141548
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 1444,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 1444,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 7356,
+      "type": "SCALAR"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Tropical shrubs, variant 05",
+  "author": "Yughues / Nobiax",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/tropical-shrubs",
+  "download": "https://opengameart.org/sites/default/files/tropical%20shrubs.7z",
+  "triangles": 608,
+  "files": [
+    {"path":"trop_shrub_05.obj","bytes":40043,"sha256":"d696eb4b64df0452f60c2956edd7bc6de20459c7801c44a5435c4aa555ad4592"},
+    {"path":"diffuse.tga","bytes":2097196,"sha256":"5fd41614f8f7217f1500b5bf3aa5692c109a5e0cc92218e429afddaa409f60dd"}
+  ]
+}

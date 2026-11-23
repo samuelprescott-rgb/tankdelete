@@ -1,0 +1,13 @@
+{
+  "name": "Palm tree v2 low-poly edition",
+  "author": "Yughues / Nobiax",
+  "reductionAuthor": "Julius",
+  "license": "CC0-1.0",
+  "source": "https://opengameart.org/content/palm-tree-v2-low-poly-edition",
+  "download": "https://opengameart.org/sites/default/files/palm_tree_v2_lowpolyedition.zip",
+  "triangles": 451,
+  "files": [
+    {"path":"palm_tree_lowpoly.obj","bytes":45676,"sha256":"29f4597428376236d4c1b836ba789a3c87685138bcf996dc570c872e8457099f"},
+    {"path":"diffus512.tga","bytes":484280,"sha256":"2772913b857f7c2e9951c510baf0b90ee2f42abc87ca7575c3e885948018cbe9"}
+  ]
+}
