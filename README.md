@@ -6,7 +6,7 @@ Drive a tank across one continuous battlefield. The bridge is open from the star
 
 ### Contributing with Zach
 
-This branch holds the editable React, TypeScript, and Three.js project. [Play the frozen browser build 1613](https://samuelprescott-rgb.github.io/tankdelete/1613/) if you just want to play. Pushing to this source branch does not update that site.
+This branch holds the editable React, TypeScript, and Three.js project. [Play the latest published browser playtest](https://samuelprescott-rgb.github.io/tankdelete/) if you just want to play. The old 1613 link opens the same playtest. Publishing is separate from pushing source. To produce the portable browser build, run `npm run build -- --base=./`.
 
 With Git and Node.js 22.12 or newer installed:
 

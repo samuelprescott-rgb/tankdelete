@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useFrame, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { contactBillboardGLSL } from './contactBillboard';
 
 const clips = {
   soil:  { row: 0, duration: .72, width: 3.8, pivot: .156 },
@@ -20,12 +21,15 @@ attribute vec4 contact;
 attribute vec4 style;
 varying vec2 atlasUv;
 varying float opacity;
+${contactBillboardGLSL}
 void main() {
   vec4 eye = modelViewMatrix * vec4(contact.xyz, 1.);
+  float depth = -eye.z;
+  float width = style.y * contactSizeScale(depth);
   // Fold the lower half onto the field. The ripple can spread toward the
   // camera while the upper half carries the upright plume.
   float tileY = uv.y < .5 ? uv.y * 2. * style.z : mix(style.z, 1., uv.y * 2. - 1.);
-  float height = (tileY - style.z) * .866 * style.y;
+  float height = (tileY - style.z) * .866 * width;
   if (height < 0. && style.x < 1.5) {
     vec2 toward = cameraPosition.xz - contact.xz;
     vec2 ground = toward / max(length(toward), .001) * -height;
@@ -33,11 +37,11 @@ void main() {
   } else {
     eye.y += height;
   }
-  eye.x += position.x * style.y;
+  eye.x += position.x * width;
   gl_Position = projectionMatrix * eye;
   vec2 tileUv = clamp(vec2(uv.x, tileY), vec2(.5 / 128.), vec2(1. - .5 / 128.));
   atlasUv = (vec2(contact.w, 2. - style.x) + tileUv) / vec2(12., 3.);
-  opacity = style.w;
+  opacity = style.w * contactNearOpacity(depth);
 }`;
 const fragmentShader = `
 uniform sampler2D atlas;

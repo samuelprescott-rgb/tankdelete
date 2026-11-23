@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useFrame, useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { contactBillboardGLSL } from './contactBillboard';
 
 const clips = {
   rifle: {row:0, width:1.55, seconds:.32},
@@ -69,18 +70,25 @@ export function InfantryContactArt({feed}:{feed:ReturnType<typeof createInfantry
         attribute vec2 slope;
         varying vec2 tileUv;
         varying float groundMark, impactLight;
+        varying float coverOpacity;
+        ${contactBillboardGLSL}
         void main(){
           vec2 p=position.xy*style.y;
           groundMark=float(style.x==4.);
           bool undeadHit=style.x==5.;
           impactLight=undeadHit ? 1.-smoothstep(1.,5.,contact.w) : 0.;
           vec4 eye=modelViewMatrix*vec4(contact.xyz,1.);
+          coverOpacity=1.;
           if(groundMark>.5){
             vec2 ground=mat2(style.z,style.w,-style.w,style.z)*(p*vec2(1.22,1.0));
             eye.xyz+=mat3(viewMatrix)*vec3(ground.x,.015+dot(ground,slope),ground.y);
           }else{
-            eye.xy+=vec2(p.x*style.z,p.y);
             eye.z+=.13;
+            if(style.x==2.){
+              p*=contactSizeScale(-eye.z);
+              coverOpacity=contactNearOpacity(-eye.z);
+            }
+            eye.xy+=vec2(p.x*style.z,p.y);
           }
           gl_Position=projectionMatrix*eye;
           tileUv=(vec2(contact.w,4.-(undeadHit ? 0. : style.x))+clamp(uv,.0053,.9947))/vec2(12.,5.);
@@ -89,8 +97,10 @@ export function InfantryContactArt({feed}:{feed:ReturnType<typeof createInfantry
         uniform sampler2D atlas;
         varying vec2 tileUv;
         varying float groundMark, impactLight;
+        varying float coverOpacity;
         void main(){
           vec4 ink=texture2D(atlas,tileUv);
+          ink.a*=coverOpacity;
           if(ink.a<.04)discard;
           ink.rgb += vec3(.96,.43,.19)*impactLight*smoothstep(.20,.66,ink.r);
           if(groundMark>.5){

@@ -1,11 +1,12 @@
 import {eclipseReflectionGLSL} from './hordeEclipse';
 import { reflectWeapons } from './weaponWater';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useFrame, useLoader } from '@react-three/fiber';
 import { FACADE_LAMPS, addFacadeHardware } from './embassyFacadeLamps';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { EMBASSY_ARCHIVE_SLOTS, type EmbassyArchive } from '../../lib/embassyDefense';
+import { useFoliageSightline } from './FoliageSightline';
 import { EmbassyFires } from './EmbassyFires';
 import {createGhostSignalArchive} from './ghostSignalArchive';
 import {createEmbassyCheckpoint} from './embassyCheckpoint';
@@ -539,13 +540,49 @@ function createWetCourt(burn:THREE.Texture,aggregate?:THREE.Texture,streetPower=
   return {material,online,dispatchOnline,stormAge};
 }
 
-function ArchiveAlarmRails({archives}:{archives:readonly EmbassyArchive[]}) {
+// Clip only the part of the building between the chase lens and the tank.
+// The sightline provider updates after camera follow, including a rear-view flip.
+// View-space offsets keep the opening centered during a shoulder orbit.
+function applyBuildingCutaway(material: THREE.Material, sight: ReturnType<typeof useFoliageSightline>) {
+  if (!sight) return;
+  const compile = material.onBeforeCompile;
+  const cacheKey = material.customProgramCacheKey;
+  const key = cacheKey.call(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    compile.call(material, shader, renderer);
+    shader.uniforms.uCoverTank = sight.foliageSubject;
+    shader.uniforms.uCoverEnabled = sight.foliageSightlineEnabled;
+    shader.vertexShader = 'uniform vec3 uCoverTank; varying vec3 vCoverOffset;\n' + shader.vertexShader
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+        vec3 tankView = (viewMatrix * vec4(uCoverTank + vec3(0., .45, 0.), 1.)).xyz;
+        vec2 sightCenter = tankView.xy * (mvPosition.z / min(-.1, tankView.z));
+        vCoverOffset = vec3(mvPosition.xy - sightCenter, mvPosition.z - tankView.z);`);
+    shader.fragmentShader = 'uniform float uCoverEnabled; varying vec3 vCoverOffset;\n' + shader.fragmentShader
+      .replace(/void main\s*\(\s*\)\s*\{/, `void main() {
+        if (vCoverOffset.z > 0. && uCoverEnabled > .001) {
+          float radius = length(vCoverOffset.xy * vec2(.82, 1.));
+          float cut = (1. - smoothstep(2.35, 2.85, radius)) * uCoverEnabled;
+          vec2 pixel = floor(gl_FragCoord.xy * .5);
+          float ink = fract(dot(vec2(.06711056, .00583715), pixel));
+          if (cut > fract(52.9829189 * ink)) discard;
+        }`);
+  };
+  material.customProgramCacheKey = () => key + '-chase-cutaway';
+  material.needsUpdate = true;
+  return () => {
+    material.onBeforeCompile = compile;
+    material.customProgramCacheKey = cacheKey;
+    material.needsUpdate = true;
+  };
+}
+
+function ArchiveAlarmRails({archives, material}:{archives:readonly EmbassyArchive[]; material:THREE.Material}) {
   const signal=useMemo(()=>{
     const paddle=createArchiveAlarmPaddle();
-    const mesh=new THREE.InstancedMesh(paddle,MASONRY,EMBASSY_ARCHIVE_SLOTS.length);
+    const mesh=new THREE.InstancedMesh(paddle,material,EMBASSY_ARCHIVE_SLOTS.length);
     mesh.name='archive-door-alarm-wickets';
     return {mesh,paddle,update:createPreparedArchiveAlarmDriver(mesh)};
-  },[]);
+  },[material]);
   // Same clock as attackEmbassyArchive. A still scene with no further hits
   // retires the last signal at its deadline without scheduling a React update.
   useFrame(()=>signal.update(archives,Date.now()));
@@ -559,20 +596,53 @@ export function EmbassyDefense({archives}: {archives:readonly EmbassyArchive[]})
   useMemo(()=>{for(const t of [plaster,aggregate]){t.colorSpace=THREE.SRGBColorSpace;
     t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.NearestFilter;
     t.minFilter=THREE.LinearMipmapLinearFilter;t.anisotropy=4;t.needsUpdate=true;}},[plaster,aggregate]);
+  const sight = useFoliageSightline();
+  const emissiveEffects = useRef<THREE.Group>(null);
+  // Flame and smoke batches own their animated materials. Decorate them once
+  // in place so their frame clocks and shared instance buffers keep updating.
+  useLayoutEffect(() => {
+    const materials = new Set<THREE.Material>();
+    emissiveEffects.current?.traverse(object => {
+      if (object instanceof THREE.Mesh && !Array.isArray(object.material)) materials.add(object.material);
+    });
+    const restore = Array.from(materials, material => applyBuildingCutaway(material, sight));
+    return () => restore.forEach(undo => undo?.());
+  }, [sight]);
+  const checkpointMasonry = useMemo(() => {
+    const material = MASONRY.clone();
+    material.onBeforeCompile = MASONRY.onBeforeCompile;
+    material.customProgramCacheKey = MASONRY.customProgramCacheKey;
+    applyBuildingCutaway(material, sight);
+    return material;
+  }, [sight]);
+  useEffect(() => () => checkpointMasonry.dispose(), [checkpointMasonry]);
+  const signal = useMemo(() => {
+    const material = ARCHIVE_SIGNAL.clone();
+    material.onBeforeCompile = ARCHIVE_SIGNAL.onBeforeCompile;
+    applyBuildingCutaway(material, sight);
+    return material;
+  }, [sight]);
+  useEffect(() => () => signal.dispose(), [signal]);
   const burn=useMemo(createBurnOcclusion,[]);
   const masonry=useMemo(()=>{
     const m=MASONRY.clone();m.onBeforeCompile=s=>paintConcrete(s,burn,plaster);
-    m.customProgramCacheKey=()=>'ghost-archive-masonry-chipped-v5';return m;
-  },[burn,plaster]);
+    m.customProgramCacheKey=()=>'ghost-archive-masonry-chipped-v5';
+    applyBuildingCutaway(m, sight); return m;
+  },[burn,plaster,sight]);
   const streetLamp=useMemo(createStreetlamp,[]);
   useEffect(()=>()=>streetLamp.dispose(),[streetLamp]);
   const facade=useMemo(()=>{
     const m=MASONRY.clone();m.onBeforeCompile=s=>paintConcrete(s,burn,plaster,true,streetLamp.power);
-    m.customProgramCacheKey=()=>'embassy-lit-facade-v2';return m;
-  },[burn,plaster,streetLamp]);
+    m.customProgramCacheKey=()=>'embassy-lit-facade-v2';
+    applyBuildingCutaway(m, sight); return m;
+  },[burn,plaster,streetLamp,sight]);
   useEffect(()=>()=>facade.dispose(),[facade]);
   const wetCourt=useMemo(()=>createWetCourt(burn,aggregate,streetLamp.power),[burn,aggregate,streetLamp]);
-  const wingLight=useMemo(createAnnexFirelight,[]);
+  const wingLight=useMemo(() => {
+    const light = createAnnexFirelight();
+    applyBuildingCutaway(light.interiorMaterial, sight);
+    return light;
+  }, [sight]);
   const colors=useMemo(createEmbassyColors,[]);
   useFrame(({clock})=>{wetCourt.stormAge.value=clock.elapsedTime;colors.time.value=clock.elapsedTime;streetLamp.advance(clock.elapsedTime);});
   useEffect(()=>()=>{colors.pole.dispose();colors.cloth.dispose();colors.material.dispose();colors.map.dispose();},[colors]);
@@ -598,13 +668,15 @@ export function EmbassyDefense({archives}: {archives:readonly EmbassyArchive[]})
     <mesh name="embassy-halyard-and-staff" geometry={colors.pole} material={MASONRY} castShadow receiveShadow/>
     <mesh name="embassy-50-star-colors" geometry={colors.cloth} material={colors.material}/>
     <mesh name="annex-lit-interiors-and-rubble-fires" geometry={wingLight.interiorGeometry} material={wingLight.interiorMaterial}/>
-    <EmbassyFires pockets={wingLight.pockets}/>
+    <group ref={emissiveEffects}>
+      <EmbassyFires pockets={wingLight.pockets}/>
+      <mesh geometry={geometry.practicals}><meshBasicMaterial vertexColors toneMapped={false}/></mesh>
+    </group>
     <mesh name="compound-breached-walls" geometry={geometry.walls} material={masonry} castShadow receiveShadow />
-    <mesh name="embassy-road-checkpoint" geometry={geometry.checkpoint} material={MASONRY} receiveShadow/>
+    <mesh name="embassy-road-checkpoint" geometry={geometry.checkpoint} material={checkpointMasonry} receiveShadow/>
     <mesh name="embassy-service-track" geometry={geometry.track} material={TRACK_SOIL} receiveShadow />
-    <mesh geometry={geometry.practicals}><meshBasicMaterial vertexColors toneMapped={false}/></mesh>
     <mesh name="compound-drained-apron" geometry={geometry.court} material={wetCourt.material} receiveShadow />
-    <ArchiveAlarmRails archives={archives}/>
+    <ArchiveAlarmRails archives={archives} material={checkpointMasonry}/>
     {EMBASSY_ARCHIVE_SLOTS.map(slot=>{
       const archive=archives.find(item=>item.id===slot.id);
       const lost=!archive||archive.health<=0;
@@ -612,8 +684,8 @@ export function EmbassyDefense({archives}: {archives:readonly EmbassyArchive[]})
         <mesh name={`embassy-${slot.id}-masonry`}
           geometry={lost?(slot.id==='chancery'?geometry.ruins:geometry[`${slot.id}Shell`]):geometry[slot.id]}
           material={lost?masonry:facade} castShadow receiveShadow />
-        {!lost && <mesh name={`ghost-signal-${slot.id}-online`} geometry={geometry[`${slot.id}Signal`]} material={ARCHIVE_SIGNAL}/>}
-        {!lost && slot.id==='chancery' && <mesh name={CHANCERY_NEON.text} geometry={geometry.chanceryNeon} material={ARCHIVE_SIGNAL}/>}
+        {!lost && <mesh name={`ghost-signal-${slot.id}-online`} geometry={geometry[`${slot.id}Signal`]} material={signal}/>}
+        {!lost && slot.id==='chancery' && <mesh name={CHANCERY_NEON.text} geometry={geometry.chanceryNeon} material={signal}/>}
       </group>;
     })}
   </group>;
