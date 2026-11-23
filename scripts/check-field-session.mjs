@@ -78,6 +78,11 @@ const plugin={name:'mounted-field',enforce:'pre',resolveId(id,importer){
   ].join(';');
   if(!id.startsWith(stub('')))return;
   const name=id.slice(stub('').length);
+  // These modules also export state factories and hit handlers used by the
+  // session. Keep those real; replace only their WebGL components.
+  if(['UndeadDeathMarks','InfantryContactArt','CharacterFires'].includes(name)){
+    return componentSource(name)+'export * from '+JSON.stringify(dir+'/src/components/Scene/'+name+'.tsx')+';';
+  }
   if(name==='VietnamEnvironment')return 'export const CRASHED_HUEY_TRANSFORM={position:[-9,0,-17],rotation:[0,.18,0]}';
   if(name==='drei')return componentSource('Html')+componentSource('KeyboardControls');
   if(name==='toast')return 'export default globalThis.fieldSessionAdapters.toast';
@@ -158,7 +163,7 @@ async function exercise(guardFirst) {
   }
   const infantry=props('ProjectileManager').enemies.map(e=>e.id);
   assert.equal(infantry.length,12,'Opening formation');
-  assert.equal(props('HUD').hostileCount,infantry.length+12+1,'HUD includes the two tunnel batches and guard');
+  assert.equal(props('HUD').hostileCount,infantry.length+1,'HUD counts deployed infantry and the guard, not future relief');
   for(const z of [game.RIVER_CROSSING_Z-2,game.RIVER_CROSSING_Z,game.RIVER_CROSSING_Z+2]){
     await position(0,z);sameWorld();
   }
@@ -216,7 +221,9 @@ async function exercise(guardFirst) {
       await advance(65);assert.match(props('HUD').campaignBrief,/TUNNEL OPENING/);
       await change(manifest);await advance(320);assert.equal(pm().enemies.length,0);
       await change(closeManifest);await advance(247);
-      assert.equal(pm().enemies.length,6);await clear();
+      assert.equal(pm().enemies.length,1,'The first reinforcement emerges alone');
+      await advance(180);
+      assert.equal(pm().enemies.length,6,'The rest of the squad follows at intervals');await clear();
     }
     assert.equal(seen.size,24);await change(key);locked('Killing every hostile never substitutes for demolition');
   }
@@ -246,11 +253,20 @@ async function exercise(guardFirst) {
     await change(closeManifest);
   }else await change(()=>props('FileBlocks').onDeletionComplete(last));
   const expected=['outpost-radio-transcript.txt'];
+  assert.equal(props('FieldCurtain').stage,'covering');
+  locked('The field stays active until the transition covers it');
+  await change(()=>props('FieldCurtain').onCovered());
+  assert.equal(props('FieldCurtain').stage,'covered');
   assert.deepEqual(awards,[expected]);
   assert.equal(props('HUD').bonusPhase,'warning');
-  assert.deepEqual(props('EmbassyDefense').fileNames,expected);
-  assert.equal(props('EmbassyDefense').archives.length,expected.length);
-  assert.ok(props('EmbassyDefense').archives.every((a,i)=>a.label.endsWith(expected[i])));
+  const archives=props('EmbassyDefense').archives, labeled=props('HUD').defenseArchives;
+  assert.equal(archives.length,expected.length);
+  assert.deepEqual(labeled.map(a=>a.id),archives.map(a=>a.id),'HUD labels belong to the defended archives');
+  assert.deepEqual(labeled.map(a=>a.label),archives.map((a,i)=>a.label+' · '+expected[i]));
+  await change(()=>props('Scene').onReady());
+  assert.equal(props('FieldCurtain').stage,'revealing');
+  await change(()=>props('FieldCurtain').onRevealed());
+  assert.equal(observations.has('FieldCurtain'),false);
   await change(()=>{
     key();now+=game.ZOMBIE_WARNING_MS;
     for(const [id,t] of timers)if(t.at<=now && timers.delete(id))t.fn();
